@@ -4,7 +4,7 @@
 
 Starfall Lab（流火实验室，简称流火）是《红色警戒 2：尤里的复仇》的 32 位 DLL 扩展。通过 INI 配置单位被动、科研选项、国家限制和前置项目。玩家可通过地图触发器或建筑获取科研点，每 100 点购买一项研究。
 
-当前版本：**0.36**。支持事件触发与持续状态、可叠加被动、信号联动，以及可配置的科研三选一。自定义点选超武可用 `Type=ActionSequence` 执行 INI 结果和 Lua 脚本。[超武配置示例](examples/ActionSequence/Rules.ini) · [规则手册](https://windswhisper.github.io/starfall/docs/manual.html)
+当前版本：**0.36.1**。此平台分支支持在原生与 GPU 输出中绘制科研和主动技能界面。支持事件触发与持续状态、可叠加被动、信号联动，以及可配置的科研三选一。自定义点选超武可用 `Type=ActionSequence` 执行 INI 结果和 Lua 脚本。[超武配置示例](examples/ActionSequence/Rules.ini) · [规则手册](https://windswhisper.github.io/starfall/docs/manual.html)
 
 ![科研三选一界面示意图](docs/images/research-selection.png)
 
@@ -17,7 +17,7 @@ Starfall Lab（流火实验室，简称流火）是《红色警戒 2：尤里的
 安装 Git 和 Visual Studio 2022（Community 或 Build Tools）。勾选“使用 C++ 的桌面开发”，包含 MSVC v143 x86/x64 工具和 Windows SDK。编译本身无需安装游戏。
 
 ```bat
-git clone --recurse-submodules https://github.com/windswhisper/starfall.git
+git clone --recurse-submodules https://github.com/Topo-RA2/starfall.git
 cd starfall
 .\build.cmd
 ```

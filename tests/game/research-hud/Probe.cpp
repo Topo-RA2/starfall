@@ -3,6 +3,7 @@
 #include <WWKeyboardClass.h>
 #include <VocClass.h>
 #include "ResearchAudio.h"
+#include "starfall_hud_v1.h"
 #include <Drawing.h>
 
 EXPORT_FUNC(SF_ResearchDraw);
@@ -19,6 +20,52 @@ void click(Point2D point) {input(point,1);input(point,4);}
 int pixel(int x,int y) {
     Point2D p{x,y};
     return DSurface::Composite->GetPixel(&p);
+}
+// Sample the producer's actual ordered source-over stream, with no GPU or platform DLL.
+struct OverlaySample {
+    Point2D point;
+    unsigned alpha=0;
+    void blend(unsigned source) {alpha=source+((255-source)*alpha+127)/255;}
+};
+struct OverlayProbe {
+    OverlaySample shade,card,tab;
+    int beginCount=0,endCount=0,complete=0;
+    OverlaySample* samples[3]={&shade,&card,&tab};
+};
+int STARFALL_HUD_CALL beginOverlay(void* context,int,int) {
+    ++static_cast<OverlayProbe*>(context)->beginCount;
+    return 2;
+}
+int STARFALL_HUD_CALL fillOverlay(void* context,int x,int y,int w,int h,uint32_t rgba) {
+    for(auto* s:static_cast<OverlayProbe*>(context)->samples)
+        if(s->point.X>=x && s->point.X<x+w && s->point.Y>=y && s->point.Y<y+h) s->blend(rgba>>24);
+    return 1;
+}
+int STARFALL_HUD_CALL pixelsOverlay(void* context,int x,int y,int w,int h,int pitch,const uint8_t* rgba) {
+    for(auto* s:static_cast<OverlayProbe*>(context)->samples) {
+        int dx=s->point.X-x,dy=s->point.Y-y;
+        if(dx>=0 && dx<w && dy>=0 && dy<h) s->blend(rgba[dy*pitch+dx*4+3]);
+    }
+    return 1;
+}
+void STARFALL_HUD_CALL endOverlay(void* context,int complete) {
+    auto& probe=*static_cast<OverlayProbe*>(context);
+    ++probe.endCount;probe.complete=complete;
+}
+void verifyTransparentOverlay(Point2D shade,Point2D middleCard,Point2D border) {
+    OverlayProbe probe{{shade},{middleCard},{border}};
+    StarfallHudSinkV1 sink{sizeof(sink),1,&probe,beginOverlay,fillOverlay,pixelsOverlay,endOverlay};
+    verify(Starfall_SetHudSinkV1(&sink)!=0,"registered GPU-only HUD sink");
+    auto surface=DSurface::Composite;
+    const int original=pixel(border.X,border.Y);
+    surface->SetPixel(&border,COLOR_PURPLE);
+    SF_ResearchDraw(nullptr);
+    verify(pixel(border.X,border.Y)==COLOR_PURPLE,"GPU-only HUD leaves native Composite untouched");
+    surface->SetPixel(&border,original);
+    verify(Starfall_SetHudSinkV1(nullptr)!=0,"released HUD sink");
+    verify(probe.beginCount==1 && probe.endCount==1 && probe.complete,"one complete GPU HUD frame");
+    verify(probe.shade.alpha==45*255/100 && probe.card.alpha==255 && probe.tab.alpha==255,
+        "transparent battlefield shade, opaque card body and research rim");
 }
 void captureHud(const char* name,int x0,int top,int width,int height) {
     auto surface=DSurface::Composite;
@@ -190,6 +237,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         captureHud("research-opening.ppm",cx-(3*cw+2*gap)/2-18,view.Y+(view.Height-ch-72)/2-10,3*cw+2*gap+36,ch+92);
         Sleep(360);
         SF_ResearchDraw(nullptr);
+        verifyTransparentOverlay({view.X+2,view.Y+view.Height-3},{cx,cy},{x+24,y+1});
         captureHud("research-cards.ppm",cx-(3*cw+2*gap)/2-18,view.Y+(view.Height-ch-72)/2-10,3*cw+2*gap+36,ch+92);
         input({cx,cy},1);input({view.X+3,view.Y+view.Height-3},4);
         verify(Research::expanded && Research::unlocked[house].empty(),"card drag cannot select behind");
