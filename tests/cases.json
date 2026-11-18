@@ -4,6 +4,7 @@
     "LuaRuntimeTest",
     "ResearchAudioTest",
     "ResearchTextTest",
+    "HudFrameTest",
     "ResourceCacheTest",
     "ResearchModelTest",
     "ActionArgumentsTest"
@@ -1434,6 +1435,9 @@
           "PASS disabled at 99",
           "PASS funded mid-click",
           "PASS full border",
+          "PASS one complete GPU HUD frame",
+          "PASS GPU-only HUD leaves native Composite untouched",
+          "PASS transparent battlefield shade, opaque card body and research rim",
           "PASS ini disables refresh",
           "PASS independent refresh",
           "PASS three free refreshes",

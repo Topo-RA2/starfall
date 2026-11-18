@@ -1,5 +1,7 @@
 #pragma once
 #include <Drawing.h>
+#include <Surface.h>
+#include "HudFrame.h"
 #include <map>
 #include <list>
 #include <string>
@@ -70,21 +72,48 @@ inline const Mask& maskFor(const wchar_t* text,int size) {
     static Cache cache;
     return cache.get(text,size);
 }
+// Raster the game's bitmap font on a local surface when GDI cannot produce a mask.
+inline void drawNativeFont(const wchar_t* text,int x,int y,int ink,int maxWidth) {
+    auto surface=DSurface::Composite;
+    if(HudFrame::active() && x<surface->GetWidth() && y<surface->GetHeight()) {
+        auto bounds=Drawing::GetTextDimensions(text,{0,0},static_cast<int>(TextPrintType::NoShadow),0,0);
+        const int w=std::min({bounds.Width,maxWidth,surface->GetWidth()-x});
+        const int h=std::min(bounds.Height,surface->GetHeight()-y);
+        if(w>0 && h>0 && static_cast<size_t>(w)*h<=4*1024*1024) {
+            BSurface bitmap(w,h);
+            if(bitmap.Buffer.Buffer) {
+                std::memset(bitmap.Buffer.Buffer,0,static_cast<size_t>(w)*h*2);
+                RectangleStruct rect{0,0,w,h};Point2D origin{},end{};
+                Simple_Text_Print_Wide(&end,text,&bitmap,&rect,&origin,COLOR_WHITE,0,TextPrintType::NoShadow,0);
+                auto pixels=static_cast<const WORD*>(bitmap.Buffer.Buffer);
+                auto rgb=Drawing::Int_To_RGB(ink);
+                for(int j=0;j<h;++j) for(int i=0;i<w;++i) {
+                    if(pixels[j*w+i]) HudFrame::overPixel(x+i,y+j,rgb.R,rgb.G,rgb.B);
+                }
+            }
+        }
+    }
+    if(HudFrame::drawNative()) surface->DrawText(text,x,y,ink);
+}
 inline void draw(const wchar_t* text,int x,int y,int color,int size=15,int maxWidth=INT_MAX) {
     const Mask& mask=maskFor(text,size);
     auto surface=DSurface::Composite;
-    if(mask.alpha.empty() || surface->GetBytesPerPixel()!=2) { surface->DrawText(text,x,y,color); return; }
+    if(mask.alpha.empty() || surface->GetBytesPerPixel()!=2) { drawNativeFont(text,x,y,color,maxWidth); return; }
     int width=std::min({mask.w,surface->GetWidth()-x,maxWidth}),height=std::min(mask.h,surface->GetHeight()-y);
     if(x<0 || y<0 || width<=0 || height<=0) return;
     int pitch=surface->GetPitch();
-    auto base=static_cast<BYTE*>(surface->Lock(x,y));
-    if(!base) return;
+    const bool gpu=HudFrame::active();
+    auto base=HudFrame::drawNative()?static_cast<BYTE*>(surface->Lock(x,y)):nullptr;
+    if(!base && !gpu) return;
+    const auto rgb=Drawing::Int_To_RGB(color);
     const int shifts[]={Drawing::RedShiftLeft,Drawing::GreenShiftLeft,Drawing::BlueShiftLeft};
     const int masks[]={255>>Drawing::RedShiftRight,255>>Drawing::GreenShiftRight,255>>Drawing::BlueShiftRight};
     for(int j=0;j<height;++j) {
-        auto row=reinterpret_cast<WORD*>(base+j*pitch);
+        auto row=base?reinterpret_cast<WORD*>(base+j*pitch):nullptr;
         for(int i=0;i<width;++i) {
             int a=mask.alpha[j*mask.w+i]; if(!a) continue;
+            if(gpu) HudFrame::overPixel(x+i,y+j,rgb.R,rgb.G,rgb.B,a);
+            if(!row) continue;
             int pixel=0;
             for(int k=0;k<3;++k) {
                 int fg=(color>>shifts[k])&masks[k],bg=(row[i]>>shifts[k])&masks[k];
@@ -93,6 +122,6 @@ inline void draw(const wchar_t* text,int x,int y,int color,int size=15,int maxWi
             row[i]=static_cast<WORD>(pixel);
         }
     }
-    surface->Unlock();
+    if(base) surface->Unlock();
 }
 }

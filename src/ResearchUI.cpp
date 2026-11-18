@@ -180,6 +180,30 @@ int hitTest(const Layout& l, Point2D p) {
     return Research::expanded && inside(DSurface::ViewBounds,p)?inertHit:-1;
 }
 int color(int r,int g,int b) { return Drawing::RGB_To_Int(r,g,b); }
+// All HUD coordinates are on the game's logical Composite, including the clip bounds.
+void hudFill(RectangleStruct rect,int ink) {
+    if(HudFrame::active()) {
+        const auto rgb=Drawing::Int_To_RGB(ink);
+        HudFrame::fill(rect.X,rect.Y,rect.Width,rect.Height,rgb.R,rgb.G,rgb.B);
+    }
+    if(HudFrame::drawNative()) DSurface::Composite->FillRect(&rect,ink);
+}
+void hudOutline(RectangleStruct rect,int ink) {
+    if(HudFrame::active() && rect.Width>0 && rect.Height>0) {
+        const auto rgb=Drawing::Int_To_RGB(ink);
+        int right=rect.X+rect.Width-1,bottom=rect.Y+rect.Height-1;
+        HudFrame::line(rect.X,rect.Y,right,rect.Y,rgb.R,rgb.G,rgb.B);
+        HudFrame::line(right,rect.Y,right,bottom,rgb.R,rgb.G,rgb.B);
+        HudFrame::line(right,bottom,rect.X,bottom,rgb.R,rgb.G,rgb.B);
+        HudFrame::line(rect.X,bottom,rect.X,rect.Y,rgb.R,rgb.G,rgb.B);
+    }
+    if(HudFrame::drawNative()) DSurface::Composite->DrawRect(&rect,ink);
+}
+void hudShade(RectangleStruct rect,ColorStruct rgb,int opacity) {
+    if(HudFrame::active())
+        HudFrame::fill(rect.X,rect.Y,rect.Width,rect.Height,rgb.R,rgb.G,rgb.B,opacity*255/100);
+    if(HudFrame::drawNative()) DSurface::Composite->FillRectTrans(&rect,&rgb,opacity);
+}
 struct PngImage { int width=0,height=0; std::vector<BYTE> pixels; };
 using ImageKey=std::tuple<std::string,int,Research::Rarity>;
 auto& imageCache() {
@@ -233,18 +257,22 @@ bool drawPng(const PngImage& image,RectangleStruct rect,int crop) {
     int x=std::max(0,rect.X),y=std::max(0,rect.Y);
     int right=std::min(surface->GetWidth(),rect.X+rect.Width),bottom=std::min(surface->GetHeight(),rect.Y+rect.Height);
     if(x>=right || y>=bottom) return true;
-    auto base=static_cast<BYTE*>(surface->Lock(x,y));if(!base) return false;
+    const bool gpu=HudFrame::active();
+    auto base=HudFrame::drawNative()?static_cast<BYTE*>(surface->Lock(x,y)):nullptr;
+    if(!base && !gpu) return false;
     int pitch=surface->GetPitch();
     crop=std::min({crop,(image.width-1)/2,(image.height-1)/2});
     const int shifts[]={Drawing::RedShiftLeft,Drawing::GreenShiftLeft,Drawing::BlueShiftLeft};
     const int rightShifts[]={Drawing::RedShiftRight,Drawing::GreenShiftRight,Drawing::BlueShiftRight};
     for(int dy=y;dy<bottom;++dy) {
-        auto row=reinterpret_cast<WORD*>(base+(dy-y)*pitch);
+        auto row=base?reinterpret_cast<WORD*>(base+(dy-y)*pitch):nullptr;
         int sy=crop+static_cast<int>(static_cast<long long>(dy-rect.Y)*(image.height-2*crop)/rect.Height);
         for(int dx=x;dx<right;++dx) {
             int sx=crop+static_cast<int>(static_cast<long long>(dx-rect.X)*(image.width-2*crop)/rect.Width);
             const BYTE* p=&image.pixels[(static_cast<size_t>(sy)*image.width+sx)*4];int alpha=p[3];
             if(!alpha) continue;
+            if(gpu) HudFrame::overPixel(dx,dy,p[2],p[1],p[0],alpha);
+            if(!row) continue;
             int pixel=0;
             for(int k=0;k<3;++k) {
                 int mask=255>>rightShifts[k],fg=p[2-k]>>rightShifts[k],bg=(row[dx-x]>>shifts[k])&mask;
@@ -253,7 +281,8 @@ bool drawPng(const PngImage& image,RectangleStruct rect,int crop) {
             row[dx-x]=static_cast<WORD>(pixel);
         }
     }
-    surface->Unlock();return true;
+    if(base) surface->Unlock();
+    return true;
 }
 // Map luminance to the rarity palette while keeping alpha unchanged.
 void colorRarityIcon(PngImage& image,Research::Rarity rarity) {
@@ -424,9 +453,8 @@ void drawTooltip(const Layout& l,int slot,int option, const RectangleStruct* anc
     x=std::clamp(x,view.X,std::max(view.X,view.X+view.Width-width));
     y=std::clamp(y,view.Y,std::max(view.Y,view.Y+view.Height-height));
     RectangleStruct rect{x,y,width,height};
-    auto surface=DSurface::Composite;
-    surface->FillRect(&rect,color(15,19,35));
-    surface->DrawRect(&rect,color(117,125,178));
+    hudFill(rect,color(15,19,35));
+    hudOutline(rect,color(117,125,178));
     auto title=std::wstring(L"[")+rarityName(Research::options[option].rarity)+L"] "+Research::options[option].name;
     int titleColor=project.rarity==Research::Rarity::Insane?color(255,111,117):project.rarity==Research::Rarity::Epic?color(255,213,112):color(211,201,255);
     ResearchText::draw(title.c_str(),x+14,y+8,titleColor,17,width-28);
@@ -437,7 +465,7 @@ void drawResearchButton(RectangleStruct tab,int points) {
     auto surface=DSurface::Composite;
     RectangleStruct face{tab.X+4,tab.Y+4,tab.Width-8,tab.Height-8};
     if(!blit("sfrlab.pcx",face,5)) {
-        surface->FillRect(&face,color(17,29,48));
+        hudFill(face,color(17,29,48));
         ResearchText::draw(L"研",face.X+10,face.Y+8,color(212,236,255),20);
     }
     if(surface->GetBytesPerPixel()!=2 || tab.X<0 || tab.Y<0 ||
@@ -451,29 +479,35 @@ void drawResearchButton(RectangleStruct tab,int points) {
     int glow=color(12,126+50*pulse/400,165+45*pulse/400);
     int light=color(60+120*pulse/400,218+35*pulse/400,251);
     const int pitch=surface->GetPitch();
-    auto base=static_cast<BYTE*>(surface->Lock(tab.X,tab.Y));
-    if(!base) return;
+    const bool gpu=HudFrame::active();
+    auto base=HudFrame::drawNative()?static_cast<BYTE*>(surface->Lock(tab.X,tab.Y)):nullptr;
+    if(!base && !gpu) return;
     // Clip the chamfered frame by screen height, so both sides rise together.
     for(int y=0;y<tab.Height;++y) {
         int dy=std::min(y,tab.Height-1-y);
         int cut=std::max(0,6-dy);
         bool lit=y>=tab.Height-litRows;
-        auto row=reinterpret_cast<WORD*>(base+y*pitch);
+        auto row=base?reinterpret_cast<WORD*>(base+y*pitch):nullptr;
         for(int x=cut;x<tab.Width-cut;++x) {
             int dx=std::min(x,tab.Width-1-x);
             int depth=std::min({dy,dx,(dx+dy-6)*2/3});
             if(depth>=4) continue;
-            row[x]=static_cast<WORD>(depth==3?inner:depth==0?(lit?glow:rim):(lit?light:track));
+            auto ink=static_cast<WORD>(depth==3?inner:depth==0?(lit?glow:rim):(lit?light:track));
+            if(gpu) {
+                const auto rgb=Drawing::Int_To_RGB(ink);
+                HudFrame::overPixel(tab.X+x,tab.Y+y,rgb.R,rgb.G,rgb.B);
+            }
+            if(row) row[x]=ink;
         }
     }
-    surface->Unlock();
+    if(base) surface->Unlock();
 }
 void drawPointsTip(const RectangleStruct& tab,int points) {
     const auto& view=DSurface::ViewBounds;
     int width=std::min(212,view.Width);
     RectangleStruct tip{std::max(view.X,tab.X+tab.Width-width),tab.Y+tab.Height+5,width,50};
-    DSurface::Composite->FillRect(&tip,color(14,23,36));
-    DSurface::Composite->DrawRect(&tip,color(75,111,131));
+    hudFill(tip,color(14,23,36));
+    hudOutline(tip,color(75,111,131));
     wchar_t line[64]{};
     swprintf_s(line,L"科研點數  %d / %d",points,Research::price);
     ResearchText::draw(line,tip.X+10,tip.Y+4,color(218,240,251),16,width-20);
@@ -485,9 +519,9 @@ void drawInfoTip(const RectangleStruct& icon) {
     const auto& view=DSurface::ViewBounds;
     int width=std::min(180,view.Width);
     RectangleStruct tip{std::max(view.X,icon.X+icon.Width-width),icon.Y+icon.Height+4,width,52};
-    DSurface::Composite->FillRect(&tip,color(14,23,36));
-    DSurface::Composite->DrawRect(&tip,color(75,111,131));
-    ResearchText::draw(L"流火实验室 0.36",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
+    hudFill(tip,color(14,23,36));
+    hudOutline(tip,color(75,111,131));
+    ResearchText::draw(L"流火实验室 0.36.1",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
     ResearchText::draw(L"By 斩断云天",tip.X+10,tip.Y+28,color(159,194,210),14,width-20);
 }
 void centered(const std::wstring& text,RectangleStruct bounds,int y,int ink,int size) {
@@ -505,8 +539,8 @@ void drawCardSkin(RectangleStruct rect) {
     if(rect.Width<=0 || rect.Height<=0) return;
     if(art->pixels.empty() || surface->GetBytesPerPixel()!=2 ||
        static_cast<size_t>(rect.Width)*rect.Height>maxSkinPixels) {
-        surface->FillRect(&rect,color(16,28,46));
-        surface->DrawRect(&rect,color(155,161,204));
+        hudFill(rect,color(16,28,46));
+        hudOutline(rect,color(155,161,204));
         return;
     }
     if(rect.Width!=width || rect.Height!=height || source.lock()!=art) {
@@ -518,6 +552,13 @@ void drawCardSkin(RectangleStruct rect) {
             pixels[y*width+x]=static_cast<WORD>(color(p[2],p[1],p[0]));
         }
     }
+    if(HudFrame::active()) {
+        for(int y=0;y<height;++y) for(int x=0;x<width;++x) {
+            const auto rgb=Drawing::Int_To_RGB(pixels[y*width+x]);
+            HudFrame::overPixel(rect.X+x,rect.Y+y,rgb.R,rgb.G,rgb.B);
+        }
+    }
+    if(!HudFrame::drawNative()) return;
     int pitch=surface->GetPitch();
     auto dest=static_cast<BYTE*>(surface->Lock(rect.X,rect.Y));
     if(!dest) return;
@@ -556,7 +597,7 @@ void drawCard(const Layout& l,int slot,int index,Point2D pointer,bool showRefres
         o.rarity==Research::Rarity::Rare?color(109,211,250):color(169,205,213);
     if(hovering) {
         auto outline=c;
-        DSurface::Composite->DrawRect(&outline,enabled?accent:color(100,112,123));
+        hudOutline(outline,enabled?accent:color(100,112,123));
     }
     int iconSize=std::min(96,c.Height/3);
     RectangleStruct icon{c.X+(c.Width-iconSize)/2,c.Y+(c.Height/2-iconSize)/2,iconSize,iconSize};
@@ -575,9 +616,8 @@ void drawCard(const Layout& l,int slot,int index,Point2D pointer,bool showRefres
         auto button=l.refresh(slot);
         bool used=Research::slotUsed(house->ArrayIndex,slot);
         bool active=Research::canRefresh(house->ArrayIndex,house->Type->ID,slot);
-        auto surface=DSurface::Composite;
-        surface->FillRect(&button,active && inside(button,pointer)?color(38,61,84):color(15,25,40));
-        surface->DrawRect(&button,active?accent:color(64,75,89));
+        hudFill(button,active && inside(button,pointer)?color(38,61,84):color(15,25,40));
+        hudOutline(button,active?accent:color(64,75,89));
         centered(used?L"已刷新":active?L"↻  刷新":L"無可替換",button,button.Y+4,active?color(226,240,254):color(144,153,167),15);
     }
 }
@@ -588,9 +628,12 @@ void drawAnimatedCard(const Layout& l,int slot,int index,Point2D pointer,double 
     if(surface->GetBytesPerPixel()!=2 || c.X<0 || c.Y<0 || c.X+c.Width>surface->GetWidth() || c.Y+c.Height>surface->GetHeight()) {
         drawCard(l,slot,index,pointer,false,selected);return;
     }
-    static std::vector<WORD> before,after;
-    before.resize(static_cast<size_t>(c.Width)*c.Height);after.resize(before.size());
+    int w=std::max(1,static_cast<int>(std::lround(c.Width*scale)));
+    int h=std::max(1,static_cast<int>(std::lround(c.Height*scale)));
+    int dx=c.X+(c.Width-w)/2,dy=c.Y+(c.Height-h)/2+shiftY;
+    const auto& view=DSurface::ViewBounds;
     int pitch=surface->GetPitch();
+    static std::vector<WORD> before,after;
     auto capture=[&](std::vector<WORD>& pixels,bool restore) {
         auto base=static_cast<BYTE*>(surface->Lock(c.X,c.Y));if(!base) return false;
         for(int y=0;y<c.Height;++y) {
@@ -599,14 +642,21 @@ void drawAnimatedCard(const Layout& l,int slot,int index,Point2D pointer,double 
         }
         surface->Unlock();return true;
     };
-    if(!capture(before,false)) return;
-    drawCard(l,slot,index,pointer,false,selected);
+    bool native=HudFrame::drawNative();
+    if(native) {
+        before.resize(static_cast<size_t>(c.Width)*c.Height);after.resize(before.size());
+        native=capture(before,false);
+    }
+    bool gpuCard=HudFrame::active() && HudFrame::beginCard(c.X,c.Y,c.Width,c.Height);
+    if(!gpuCard && !native) return;
+    {
+        HudFrame::NativePause pauseNative(!native);
+        drawCard(l,slot,index,pointer,false,selected);
+    }
+    if(gpuCard) HudFrame::endCard(dx,dy,w,h,opacity,view.X,view.Y,view.Width,view.Height);
+    if(!native) return;
     if(!capture(after,false)) {capture(before,true);return;}
     if(!capture(before,true)) return;
-    int w=std::max(1,static_cast<int>(std::lround(c.Width*scale)));
-    int h=std::max(1,static_cast<int>(std::lround(c.Height*scale)));
-    int dx=c.X+(c.Width-w)/2,dy=c.Y+(c.Height-h)/2+shiftY;
-    const auto& view=DSurface::ViewBounds;
     int left=std::max({dx,0,view.X}),top=std::max({dy,0,view.Y});
     int right=std::min({dx+w,surface->GetWidth(),view.X+view.Width});
     int bottom=std::min({dy+h,surface->GetHeight(),view.Y+view.Height});
@@ -636,24 +686,28 @@ void glowSweep(RectangleStruct rect,double progress,int strength) {
     int right=std::min({surface->GetWidth(),rect.X+rect.Width,view.X+view.Width});
     int bottom=std::min({surface->GetHeight(),rect.Y+rect.Height,view.Y+view.Height});
     if(left>=right || top>=bottom) return;
-    auto base=static_cast<BYTE*>(surface->Lock(left,top));if(!base) return;
+    const bool gpu=HudFrame::active();
+    auto base=HudFrame::drawNative()?static_cast<BYTE*>(surface->Lock(left,top)):nullptr;
+    if(!gpu && !base) return;
     int pitch=surface->GetPitch();
     const int shifts[]={Drawing::RedShiftLeft,Drawing::GreenShiftLeft,Drawing::BlueShiftLeft};
     const int masks[]={255>>Drawing::RedShiftRight,255>>Drawing::GreenShiftRight,255>>Drawing::BlueShiftRight};
     const int tint[]={180>>Drawing::RedShiftRight,225>>Drawing::GreenShiftRight,255>>Drawing::BlueShiftRight};
     double center=-0.6+progress*2.2;
     for(int y=top;y<bottom;++y) {
-        auto row=reinterpret_cast<WORD*>(base+(y-top)*pitch);
+        auto row=base?reinterpret_cast<WORD*>(base+(y-top)*pitch):nullptr;
         for(int x=left;x<right;++x) {
             double diagonal=double(x-rect.X)/rect.Width+0.35*double(y-rect.Y)/rect.Height;
             int alpha=static_cast<int>(strength*std::max(0.0,1.0-std::abs(diagonal-center)/0.17));
             if(alpha<=0) continue;
+            if(gpu) HudFrame::overPixel(x,y,180,225,255,alpha);
+            if(!row) continue;
             WORD old=row[x-left];int out=0;
             for(int k=0;k<3;++k) {int bg=(old>>shifts[k])&masks[k];out|=((tint[k]*alpha+bg*(255-alpha)+127)/255)<<shifts[k];}
             row[x-left]=static_cast<WORD>(out);
         }
     }
-    surface->Unlock();
+    if(base) surface->Unlock();
 }
 void draw() {
     struct Notice {unsigned generation=0;int house=-1;bool ready=false;};
@@ -663,7 +717,6 @@ void draw() {
     bool available=!Research::soundFiles[static_cast<size_t>(Research::SoundCue::Available)].empty() && hasAvailableResearch();
     if(available && !notice.ready) ResearchAudio::play(Research::SoundCue::Available);
     notice.ready=available;
-    auto surface=DSurface::Composite;
     ULONGLONG now=GetTickCount64();
     if(cardAnimation.selecting && now-cardAnimation.selectAt>=700) {
         cardAnimation.selecting=false;Research::expanded=false;Research::rewardPanel=0;
@@ -684,18 +737,18 @@ void draw() {
     if(Research::expanded) {
         auto bounds=DSurface::ViewBounds;
         ColorStruct shade{5,10,20};
-        surface->FillRectTrans(&bounds,&shade,45);
+        hudShade(bounds,shade,45);
     }
     for(const auto& button:buildingButtons()) {
         auto rect=button.rect;
-        if(!blit("sfrlab.pcx",rect)) surface->FillRect(&rect,color(18,22,38));
-        if(inside(rect,pointer)) surface->DrawRect(&rect,accent);
+        if(!blit("sfrlab.pcx",rect)) hudFill(rect,color(18,22,38));
+        if(inside(rect,pointer)) hudOutline(rect,accent);
     }
     auto tab=l.tab;
     drawResearchButton(tab,points);
     auto info=infoRect(tab);
-    surface->FillRect(&info,color(14,23,36));
-    surface->DrawRect(&info,inside(info,pointer)?accent:color(75,111,131));
+    hudFill(info,color(14,23,36));
+    hudOutline(info,inside(info,pointer)?accent:color(75,111,131));
     ResearchText::draw(L"i",info.X+7,info.Y+1,color(182,228,245),15);
     auto completed=completedProjects();
     auto page=badgePage(static_cast<int>(completed.size()));
@@ -704,16 +757,16 @@ void draw() {
     for(int slot=0;slot<page.count;++slot) {
         auto rect=completedRect(tab,slot);
         int index=completed[page.first+slot];
-        surface->FillRect(&rect,color(14,23,35));
+        hudFill(rect,color(14,23,35));
         RectangleStruct glyph{rect.X+2,rect.Y+2,rect.Width-4,rect.Height-4};
         drawProjectIcon(Research::options[index],glyph);
-        surface->DrawRect(&rect,color(56,73,89));
-        if(inside(rect,pointer)) { hoveredCompleted=index;hoverRect=rect;surface->DrawRect(&rect,accent); }
+        hudOutline(rect,color(56,73,89));
+        if(inside(rect,pointer)) { hoveredCompleted=index;hoverRect=rect;hudOutline(rect,accent); }
     }
     if(page.pages>1) {
         auto rect=completedRect(tab,iconColumns()-1);
-        surface->FillRect(&rect,color(14,23,36));
-        surface->DrawRect(&rect,color(75,111,131));
+        hudFill(rect,color(14,23,36));
+        hudOutline(rect,color(75,111,131));
         centered(L"‹",rect,rect.Y+(rect.Height-23)/2,color(182,228,245),23);
     }
     if(!Research::expanded) {
@@ -725,8 +778,8 @@ void draw() {
     auto panel=l.panel;
     auto close=l.close();
     centered(Research::title,panel,panel.Y,color(235,245,252),23);
-    surface->FillRect(&close,color(18,29,44));
-    surface->DrawRect(&close,inside(close,pointer)?accent:muted);
+    hudFill(close,color(18,29,44));
+    hudOutline(close,inside(close,pointer)?accent:muted);
     centered(L"×",close,close.Y,white,20);
     auto offered=cardAnimation.selecting?cardAnimation.selectionOffers:currentOffers();
     int hovered=-1;
@@ -754,7 +807,7 @@ void draw() {
                     RectangleStruct glow{card.X-border,card.Y-border,card.Width+2*border,card.Height+2*border};
                     if(glow.X>=view.X && glow.Y>=view.Y && glow.X+glow.Width<=view.X+view.Width && glow.Y+glow.Height<=view.Y+view.Height) {
                         int pulse=static_cast<int>(std::sin(3.141592653589793*t)*opacity*170/(border+1));
-                        surface->DrawRect(&glow,color(30+pulse/2,80+pulse,110+pulse/2));
+                        hudOutline(glow,color(30+pulse/2,80+pulse,110+pulse/2));
                     }
                 }
                 glowSweep(card,std::min(1.0,t*1.6),static_cast<int>(130*(1.0-t)));
@@ -783,6 +836,8 @@ void draw() {
 #include "ActiveSkillUI.inc"
 }
 DEFINE_HOOK(0x4F4583, SF_ResearchDraw, 6) {
+    auto surface=DSurface::Composite;
+    HudFrame::Frame frame(surface?surface->GetWidth():0,surface?surface->GetHeight():0);
     ResearchAudio::pump();
     if(visible() && WWMouseClass::Instance) draw();
     else cardAnimation=CardAnimation{};

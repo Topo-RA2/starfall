@@ -5242,7 +5242,7 @@ SYRINGE_HANDSHAKE(info) {
     if(!info || info->cbSize<sizeof(SyringeHandshakeInfo)) return E_INVALIDARG;
     if(info->exeCRC!=0x54CC0A13) return E_FAIL;
     if(info->Message && info->cchMessage>0)
-        _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"Starfall Lab 0.36");
+        _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"Starfall Lab 0.36.1");
     return S_OK;
 }
 

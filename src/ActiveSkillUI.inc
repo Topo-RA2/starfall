@@ -135,7 +135,14 @@ bool input(Point2D p,int flags) {
 }
 void line(Point2D a,Point2D b,int rgb) {
     auto clip=DSurface::ViewBounds;
-    DSurface::Composite->DrawLineEx(&clip,&a,&b,rgb);
+    if(HudFrame::active()) {
+        auto start=a,end=b;
+        if(Line_In_Bounds(&start,&end,&clip)) {
+            const auto tint=Drawing::Int_To_RGB(rgb);
+            HudFrame::line(start.X,start.Y,end.X,end.Y,tint.R,tint.G,tint.B);
+        }
+    }
+    if(HudFrame::drawNative()) DSurface::Composite->DrawLineEx(&clip,&a,&b,rgb);
 }
 Point2D project(CoordStruct p) {return TacticalClass::Instance->CoordsToClient(p).first;}
 void circle(CoordStruct pos,int radius,int rgb) {
@@ -177,30 +184,29 @@ void draw() {
     if(!available() || !WWMouseClass::Instance || Research::expanded) return;
     auto items=groups();if(items.empty()) return;
     auto mouse=WWMouseClass::Instance->XY1;
-    auto surface=DSurface::Composite;
     int per=pageSize(),pages=(static_cast<int>(items.size())+per-1)/per;ui.page%=pages;
     const Group* hover=nullptr;const Group* aiming=nullptr;
     for(int i=ui.page*per;i<std::min<int>((ui.page+1)*per,items.size());++i) {
         auto& g=items[i];auto& s=ActiveSkills::specs[g.index];auto rect=button(i%per);
         bool over=inside(rect,mouse),chosen=g.index==ui.aiming,enabled=!g.ready.empty();
-        surface->FillRect(&rect,color(13,25,37));
+        hudFill(rect,color(13,25,37));
         RectangleStruct icon{rect.X+5,rect.Y+5,54,54};
         if(s.icon.empty() || !blit(s.icon.c_str(),icon)) blit("sfactive_default.png",icon);
-        if(!enabled) {ColorStruct shade{5,12,22};surface->FillRectTrans(&icon,&shade,55);}
+        if(!enabled) {ColorStruct shade{5,12,22};hudShade(icon,shade,55);}
         blit("sfframe.png",rect);
-        if(chosen||over) surface->DrawRect(&rect,color(74,224,206));
+        if(chosen||over) hudOutline(rect,color(74,224,206));
         RectangleStruct label{rect.X+5,rect.Y+43,54,15};
-        ColorStruct shade{5,12,22};surface->FillRectTrans(&label,&shade,65);
+        ColorStruct shade{5,12,22};hudShade(label,shade,65);
         centered(s.name,label,label.Y,enabled?color(224,240,245):color(150,160,170),12);
         auto count=std::to_wstring(g.ready.size())+L"/"+std::to_wstring(g.members.size());
-        RectangleStruct badge{rect.X+36,rect.Y+2,26,15};surface->FillRect(&badge,color(13,25,37));
-        surface->DrawRect(&badge,color(64,140,167));
+        RectangleStruct badge{rect.X+36,rect.Y+2,26,15};hudFill(badge,color(13,25,37));
+        hudOutline(badge,color(64,140,167));
         ResearchText::draw(count.c_str(),badge.X+2,badge.Y+1,enabled?color(200,244,245):color(149,158,170),11,22);
         if(over) hover=&g;if(chosen) aiming=&g;
     }
     if(pages>1) {
-        auto rect=button(per);rect.Width=36;surface->FillRect(&rect,color(13,25,37));
-        surface->DrawRect(&rect,color(64,85,105));ResearchText::draw(L"›",rect.X+12,rect.Y+9,color(200,230,238),20);
+        auto rect=button(per);rect.Width=36;hudFill(rect,color(13,25,37));
+        hudOutline(rect,color(64,85,105));ResearchText::draw(L"›",rect.X+12,rect.Y+9,color(200,230,238),20);
     }
     if(aiming && !hover && inside(DSurface::ViewBounds,mouse)) preview(*aiming,mouse);
     auto info=hover?hover:aiming;
@@ -211,7 +217,7 @@ void draw() {
         if(info==aiming) text+=s.kind==Kind::Unit?L" · 选择单位，右键取消":s.kind==Kind::Direction?L" · 选择方向，右键取消":L" · 选择位置，右键取消";
         auto rect=button(0);rect.Y-=26;rect.Height=24;
         rect.Width=std::min(DSurface::ViewBounds.Width-16,ResearchText::maskFor(text.c_str(),14).w+16);
-        surface->FillRect(&rect,color(13,25,37));ResearchText::draw(text.c_str(),rect.X+8,rect.Y+3,color(207,229,238),14,rect.Width-12);
+        hudFill(rect,color(13,25,37));ResearchText::draw(text.c_str(),rect.X+8,rect.Y+3,color(207,229,238),14,rect.Width-12);
     }
 }
 bool command(EventClass* event) {
