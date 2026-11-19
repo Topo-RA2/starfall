@@ -9,6 +9,34 @@ UnitClass* testTank(DWORD id) {
     for(auto unit:UnitClass::Array) if(unit && unit->UniqueID==id) return unit;
     return nullptr;
 }
+void checkLinkedSources(UnitClass* tank,UnitClass* peer) {
+    checkCloak(!skills.contains("linkcycle") && !skills.contains("linkmissing"),"invalid link definitions rejected");
+    grantToUnit(tank,PassiveGrant{{"linka","linkother"},-1});
+    checkCloak(ownsPassive(tank,"linknested") && ownsPassive(tank,"linkgained") &&
+        stackCount(tank->UniqueID,"linkgained")==0,"nested diamond grants once without layers");
+    auto acquisitions=[&]() {
+        return std::count_if(pending.begin(),pending.end(),[&](const Event& e) {
+            return e.holder==tank->UniqueID && e.trigger=="onpassivegained" && includes(e.snapshot,"linkgained");
+        });
+    };
+    checkCloak(acquisitions()==1,"one gain event across several links");
+    PassiveAction steal;steal.amount=1;steal.passiveList={"linkgained"};
+    checkCloak(!removeHeldPassive(tank,"linkgained") && !stealPassives(peer,tank,steal),"linked copy protected");
+    grantToUnit(tank,PassiveGrant{{"linkgained"},-1});
+    counts[tank->UniqueID]["linkgained"].next=900;
+    checkCloak(stealPassives(peer,tank,steal) && ownsPassive(peer,"linkgained") && ownsPassive(tank,"linkgained") &&
+        counts[tank->UniqueID]["linkgained"].next==900 && acquisitions()==1,"ordinary copy transferred without resetting linked copy");
+    tank->Health=1;refreshLinkedPassives(tank);
+    checkCloak(!ownsPassive(tank,"linknested") && ownsPassive(tank,"linkgained"),"remaining parent keeps child");
+    removeHeldPassive(tank,"linkother");
+    checkCloak(!ownsPassive(tank,"linkgained") && !counts[tank->UniqueID].contains("linkgained"),"last source clears progress");
+    tank->Health=tank->Type->Strength;
+    refreshLinkedPassives(tank);observeGains(tank);
+    checkCloak(acquisitions()==2,"condition reentry grants again");
+    steal.passiveList={"linka"};
+    checkCloak(stealPassives(peer,tank,steal) && !ownsPassive(tank,"linknested") && ownsPassive(peer,"linknested"),"stealing parent transfers package");
+    removeHeldPassive(peer,"linka");removeHeldPassive(peer,"linkgained");
+}
 void checkSaveValidation() {
     IStream* stream=nullptr;
     checkCloak(SUCCEEDED(CreateStreamOnHGlobal(nullptr,TRUE,&stream)) && saveState(stream),"memory save");
@@ -54,8 +82,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestCloakable,5) {
         }
         checkCloak(tank && peer && !tank->Cloakable && !tank->Type->Cloakable,"native non-cloaking tanks");
         std::ofstream("cloakable.ids")<<tank->UniqueID<<' '<<peer->UniqueID;
+        checkLinkedSources(tank,peer);
         checkCloak(skills.contains("delayedcloak") && skills.contains("alwayscloak") && skills.contains("cloakoff") &&
-            !skills.contains("invalidcloakvalue") && !skills.contains("invalidcloakevent") && !skills.contains("invalidcloakcondition"),"configuration validation");
+            !skills.contains("invalidcloakvalue") && !skills.contains("invalidcloakevent") && skills.contains("invalidcloakcondition"),"configuration validation");
         tank->SetTarget(nullptr);tank->ForceMission(Mission::Guard);
         peer->SetTarget(nullptr);peer->ForceMission(Mission::Guard);
         tank->Health=tank->Type->Strength/2;
@@ -78,9 +107,18 @@ DEFINE_HOOK(0x55B4EB,SF_TestCloakable,5) {
         grantToUnit(tank,PassiveGrant{{"alwayscloak"},70});
         tickStates();
         checkSaveValidation();
+        grantToUnit(peer,PassiveGrant{{"linkother"},-1});
+        dispatch();
+        std::ofstream("linked-gains.txt")<<triggerTotals[peer->UniqueID]["linkgained"];
         checkCloak(ScenarioClass::SaveGame(GetModuleHandleA("CnCNet-Spawner.dll")?"Cloakable.sav":"Saved Games\\Cloakable.sav",L"Cloakable"),"saved while cloaked");
     }
-    if(f==65) checkCloak(tank->IsCloakable() && !tank->Cloakable && tank->CloakState==CloakState::Cloaked,"cloak and capability survive save");
+    if(f==65) {
+        checkCloak(tank->IsCloakable() && !tank->Cloakable && tank->CloakState==CloakState::Cloaked,"cloak and capability survive save");
+        checkCloak(ownsPassive(peer,"linkgained") && !removeHeldPassive(peer,"linkgained") &&
+            includes(gainSeen[peer->UniqueID],"linkgained"),"linked child and gain history survive save");
+        int saved=0;std::ifstream("linked-gains.txt")>>saved;
+        checkCloak(saved>0 && triggerTotals[peer->UniqueID]["linkgained"]==saved,"loaded package does not replay acquisition");
+    }
     if(f==75) {
         tank->Health=tank->Type->Strength;tickStates();
         checkCloak(tank->IsCloakable(),"overlapping source remains");

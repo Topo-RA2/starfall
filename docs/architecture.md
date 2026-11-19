@@ -13,6 +13,8 @@
 | `src/HudFrame.cpp` / `src/starfall_hud_v1.h` | 为支持 GPU 的宿主输出科研与技能的透明 HUD。宿主在游戏线程上以 `Starfall_SetHudSinkV1` 注册回调；每次绘制由宿主选择原生、原生与 GPU 并行准备、或仅 GPU 输出。图片为逐行 straight RGBA8，按回调顺序做 source-over 混合；空帧撤下 HUD，失败帧整体丢弃。 |
 | `src/ResourceCache.h` / `ResearchAudio.h` / `ResearchText.h` | 有界资源缓存及音频、文字展示工具 |
 | `src/VisualScale.cpp` | 原生 SHP、VXL、弹体及附着动画的视觉缩放 |
+| `src/BuildingSpawn.h` / `BuildingSpawn.cpp` | 生成建筑的类型约束、完整占地检查、确定性邻近空地搜索和原生创建；无独立持久状态 |
+| `src/BuildingTransform.h` / `BuildingTransform.cpp` | 完整占地一致性、建筑转换资格、原生对象创建与身份衔接；运行时回调重绑定缓存，已有按 ID 保存的被动和 Lua 状态继续使用 |
 | `src/Starfall.cpp` | 被动配置和运行时、事件分发、建筑科研适配、被动说明生成、引擎 Hook、存读档及模块协调 |
 
 ## 接口与生命周期

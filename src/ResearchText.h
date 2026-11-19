@@ -95,15 +95,19 @@ inline void drawNativeFont(const wchar_t* text,int x,int y,int ink,int maxWidth)
     }
     if(HudFrame::drawNative()) surface->DrawText(text,x,y,ink);
 }
-inline void draw(const wchar_t* text,int x,int y,int color,int size=15,int maxWidth=INT_MAX) {
+inline void draw(const wchar_t* text,int x,int y,int color,int size=15,int maxWidth=INT_MAX,Surface* surface=DSurface::Composite) {
+    if(!surface) return;
+    const bool composite=surface==DSurface::Composite;
     const Mask& mask=maskFor(text,size);
-    auto surface=DSurface::Composite;
-    if(mask.alpha.empty() || surface->GetBytesPerPixel()!=2) { drawNativeFont(text,x,y,color,maxWidth); return; }
+    if(mask.alpha.empty() || surface->GetBytesPerPixel()!=2) {
+        if(composite) drawNativeFont(text,x,y,color,maxWidth);
+        return;
+    }
     int width=std::min({mask.w,surface->GetWidth()-x,maxWidth}),height=std::min(mask.h,surface->GetHeight()-y);
     if(x<0 || y<0 || width<=0 || height<=0) return;
     int pitch=surface->GetPitch();
-    const bool gpu=HudFrame::active();
-    auto base=HudFrame::drawNative()?static_cast<BYTE*>(surface->Lock(x,y)):nullptr;
+    const bool gpu=composite && HudFrame::active();
+    auto base=(!composite || HudFrame::drawNative())?static_cast<BYTE*>(surface->Lock(x,y)):nullptr;
     if(!base && !gpu) return;
     const auto rgb=Drawing::Int_To_RGB(color);
     const int shifts[]={Drawing::RedShiftLeft,Drawing::GreenShiftLeft,Drawing::BlueShiftLeft};

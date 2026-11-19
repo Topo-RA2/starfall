@@ -11,7 +11,7 @@ return {
         }))
         assert(ctx:action("ForceMove", {
             BlowWeight = 4.5, AffectsIronCurtain = true,
-            Target = ctx.target, Offset = { x = 3, y = -1.5 }, Height = 2, Duration = 12,
+            Target = ctx.target, Offset = { x = 3, y = -1.5 }, Height = 2, AirborneHeight = 1.5, Duration = 12,
         }))
     end,
 }

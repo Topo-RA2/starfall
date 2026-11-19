@@ -2,6 +2,7 @@
 #include <TacticalClass.h>
 #include <Surface.h>
 #include <WWMouseClass.h>
+#include <Drawing.h>
 #include "../WindowMouse.h"
 EXPORT_FUNC(SF_ResearchDraw);
 namespace {
@@ -16,7 +17,7 @@ bool input(Point2D p,int flags) {
 }
 void click(Point2D p) {check(input(p,1) && input(p,4),"click captured");}
 Point2D button(int slot) {
-    auto v=DSurface::ViewBounds;return {v.X+25+slot*70,v.Y+v.Height-30};
+    auto v=DSurface::ViewBounds;return {v.X+25+slot*64,v.Y+v.Height-30};
 }
 Point2D screen(CoordStruct at) {
     auto tactical=TacticalClass::Instance;
@@ -25,6 +26,24 @@ Point2D screen(CoordStruct at) {
     tactical->TacticalPos={screen.X-view.Width/2,screen.Y-view.Height/2};
     auto p=tactical->CoordsToClient(at).first;
     return {view.X+p.X,view.Y+p.Y};
+}
+void capturePreview(const char* filename) {
+    auto aim=WWMouseClass::Instance->XY1;
+    MapClass::Instance.MarkNeedsRedraw(2);
+    GScreenClass::Instance.Render();
+    WWMouseClass::Instance->XY1=aim;
+    SF_ResearchDraw(nullptr);
+    auto surface=DSurface::Composite;auto r=DSurface::ViewBounds;
+    auto base=static_cast<const BYTE*>(surface->Lock(r.X,r.Y));check(base!=nullptr,"preview capture lock");
+    std::ofstream out(filename,std::ios::binary);out<<"P6\n"<<r.Width<<" "<<r.Height<<"\n255\n";
+    int pitch=surface->GetPitch();
+    const int shifts[]={Drawing::RedShiftLeft,Drawing::GreenShiftLeft,Drawing::BlueShiftLeft};
+    const int masks[]={255>>Drawing::RedShiftRight,255>>Drawing::GreenShiftRight,255>>Drawing::BlueShiftRight};
+    for(int y=0;y<r.Height;++y) for(int x=0;x<r.Width;++x) {
+        auto p=reinterpret_cast<const WORD*>(base+y*pitch)[x];
+        for(int k=0;k<3;++k) out.put(static_cast<char>(((p>>shifts[k])&masks[k])*255/masks[k]));
+    }
+    surface->Unlock();
 }
 }
 DEFINE_HOOK(0x4690D4,SF_TestActiveImpact,6) {
@@ -61,6 +80,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestActiveOrders,5) {
         check(specs.size()==6 && ActiveSkills::held(tank).size()==5 && ActiveSkills::held(v3).size()==2,"both skills bound");
         check(specs[0].name==L"区域轰炸" && specs[0].radius==3 && specs[0].range==16 &&
               skills.at("sf_activebarrage").scriptParams.at("warhead")=="HE","INI display and parameters");
+        auto point=std::find_if(specs.begin(),specs.end(),[](const auto& s){return s.id=="test_point";});
+        check(point!=specs.end() && point->indicatorTexture=="missing-preview.png" && point->indicatorOpacity==80 &&
+              point->arrowWidth==1.25 && point->arrowHead==22 && point->arrowTail==32,"indicator configuration parsed");
         grantToUnit(v3,PassiveGrant{{"z_pointvariant"},-1});
         check(ActiveSkills::execute(h->ArrayIndex,5,v3->UniqueID,0,v3->GetMapCoords()) &&
               cd(v3,5)==77 && scriptTimers.state.at({v3->UniqueID,"z_pointvariant","value"}).integer==23,"shared script variant");
@@ -76,15 +98,23 @@ DEFINE_HOOK(0x55B4EB,SF_TestActiveOrders,5) {
         check(!ActiveSkills::execute(h->ArrayIndex,0,tank->UniqueID,0,{76,80}),"outside cast range rejected");
         check(!ActiveSkills::execute(h->ArrayIndex,2,tank->UniqueID,0,{}),"missing unit rejected");
     }
+    if(frame==21 || frame==35) {
+        CellStruct at=frame==21?CellStruct{62,63}:CellStruct{65,66};
+        screen(MapClass::Instance.GetCellAt(at)->GetCoordsWithBridge());
+    }
     if(frame==22) {
         click(button(0));
         auto cell=tank->GetMapCoords();cell.X+=3;cell.Y+=2;
-        auto p=screen(MapClass::Instance.GetCellAt(cell)->GetCoordsWithBridge());click(p);
+        auto p=screen(MapClass::Instance.GetCellAt(cell)->GetCoordsWithBridge());
+        auto oldMouse=WWMouseClass::Instance->XY1;WWMouseClass::Instance->XY1=p;
+        capturePreview("active-area-preview.ppm");WWMouseClass::Instance->XY1=oldMouse;click(p);
     }
     if(frame==36) {
         check(cd(tank,0)>0 && !cd(v3,0) && strikes>0,"single nearest caster");
         click(button(1));
-        CellStruct aim{65,66};click(screen(MapClass::Instance.GetCellAt(aim)->GetCoordsWithBridge()));
+        CellStruct aim{65,66};auto p=screen(MapClass::Instance.GetCellAt(aim)->GetCoordsWithBridge());
+        auto oldMouse=WWMouseClass::Instance->XY1;WWMouseClass::Instance->XY1=p;
+        capturePreview("active-direction-preview.ppm");WWMouseClass::Instance->XY1=oldMouse;click(p);
     }
     if(frame>36 && frame<48) for(auto b:BulletClass::Array) {
         if(b->Owner && b->WeaponType==WeaponTypeClass::Find("120mm") && passiveBullets.contains(b->UniqueID) && b->Target) {
@@ -96,6 +126,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestActiveOrders,5) {
     }
     if(frame==48) {
         check(cd(v3,1)>0 && cd(tank,1)>0 && shotOwners.contains(tank->UniqueID) && shotOwners.contains(v3->UniqueID) && ObjectClass::CurrentObjects.Count==2,"both directional shots");
+        capturePreview("active-cooldown-preview.ppm");
         click(button(2));click(screen(v3->GetCenterCoords()));
     }
     if(frame==52) {

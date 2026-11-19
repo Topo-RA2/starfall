@@ -4,7 +4,7 @@
 
 Starfall Lab（流火实验室，简称流火）是《红色警戒 2：尤里的复仇》的 32 位 DLL 扩展。通过 INI 配置单位被动、科研选项、国家限制和前置项目。玩家可通过地图触发器或建筑获取科研点，每 100 点购买一项研究。
 
-当前版本：**0.36.1**。此平台分支支持在原生与 GPU 输出中绘制科研和主动技能界面。支持事件触发与持续状态、可叠加被动、信号联动，以及可配置的科研三选一。自定义点选超武可用 `Type=ActionSequence` 执行 INI 结果和 Lua 脚本。[超武配置示例](examples/ActionSequence/Rules.ini) · [规则手册](https://windswhisper.github.io/starfall/docs/manual.html)
+本分支源码基于上游 **0.37**，保留科研与主动技能界面的原生和 GPU HUD 渲染支持。支持事件触发与持续状态、可叠加被动、信号联动，以及可配置的科研三选一。自定义点选超武可用 `Type=ActionSequence` 执行 INI 结果和 Lua 脚本。[超武配置示例](examples/ActionSequence/Rules.ini) · [规则手册](https://windswhisper.github.io/starfall/docs/manual.html)
 
 ![科研三选一界面示意图](docs/images/research-selection.png)
 
@@ -58,6 +58,8 @@ Starfall.Passives=SF_KillRepair
 ```
 
 把示例合并到现有配置时，请使用空闲的注册编号，并把被动 ID 追加到单位已有的 `Starfall.Passives` 列表。更多科研配置见 [海克斯玩法示例](examples/Starfall.HexBrawl.ini)。
+
+海克斯另提供 [PCX 版配置](examples/Starfall.HexBrawl.PCX.ini)，配套 [HexBrawlIconsPCX](examples/HexBrawlIconsPCX) 中的 42 张图标。将其中的 hx_*.pcx 文件直接复制到游戏根目录，不要另放在子目录中。选择 PNG 或 PCX 其中一版作为 `Starfall.ini`，或合并到已有配置。两版玩法相同，仅图标路径不同；PCX 为 96×96、256 色，洋红色透明，不保留半透明。可用 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/art/hex-pcx.ps1` 从 PNG 版重新生成。
 
 ## Lua 技能
 

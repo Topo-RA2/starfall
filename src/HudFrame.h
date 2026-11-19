@@ -21,6 +21,16 @@ private:
     bool old_;
 };
 
+class CapturePause {
+public:
+    explicit CapturePause(bool pause);
+    ~CapturePause();
+    CapturePause(const CapturePause&) = delete;
+    CapturePause& operator=(const CapturePause&) = delete;
+private:
+    bool old_;
+};
+
 bool active();
 bool drawNative();
 void overPixel(int x, int y, int r, int g, int b, int a = 255);

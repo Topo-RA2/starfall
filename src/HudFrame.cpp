@@ -67,7 +67,7 @@ struct Tile {
 struct Recorder {
     StarfallHudSinkV1 sink{};
     int mode = 0;
-    bool inside = false, failed = false, cardOpen = false, nativePaused = false;
+    bool inside = false, failed = false, cardOpen = false, nativePaused = false, capturePaused = false;
     Rect screen{}, card{};
     int columns = 0;
     std::vector<std::unique_ptr<Tile>> tiles;
@@ -89,7 +89,7 @@ struct Recorder {
     }
 
     void paint(int x, int y, Pixel c) {
-        if (!mode || failed || !(c >> 24)) return;
+        if (!mode || failed || capturePaused || !(c >> 24)) return;
         if (cardOpen) {
             const int64_t dx = int64_t(x) - card.x, dy = int64_t(y) - card.y;
             if (dx >= 0 && dx < card.w && dy >= 0 && dy < card.h)
@@ -149,10 +149,12 @@ Frame::~Frame() {
     state.inside = false;
 }
 
-bool active() { return state.mode != 0 && !state.failed; }
+bool active() { return state.mode != 0 && !state.failed && !state.capturePaused; }
 bool drawNative() { return state.mode != 2 && !state.nativePaused; }
 NativePause::NativePause(bool pause) : old_(state.nativePaused) { state.nativePaused |= pause; }
 NativePause::~NativePause() { state.nativePaused = old_; }
+CapturePause::CapturePause(bool pause) : old_(state.capturePaused) { state.capturePaused |= pause; }
+CapturePause::~CapturePause() { state.capturePaused = old_; }
 
 void overPixel(int x, int y, int r, int g, int b, int a) {
     state.paint(x, y, rgba(r, g, b, a));

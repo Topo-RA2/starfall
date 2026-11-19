@@ -1,4 +1,5 @@
 #include "../../../src/Starfall.cpp"
+#include <MessageListClass.h>
 #include <sstream>
 #include <iomanip>
 #include <TacticalClass.h>
@@ -10,6 +11,7 @@ namespace MultiplayerTest {
 std::vector<HouseClass*> players;
 std::array<TechnoClass*,2> casters{},targets{};
 std::array<int,2> credits{},health{};
+std::array<int,2> buildingCounts{};
 std::array<CellStruct,2> starts{};
 int skillIndex=-1;
 void check(bool ok,const char* message) {
@@ -28,13 +30,17 @@ void snapshot(int frame) {
     for(auto n:random.Table) native<<' '<<n;
     native<<'\n';
     for(auto h:HouseClass::Array) if(h) native<<"H "<<h->ArrayIndex<<' '<<h->Type->ID<<' '
-        <<h->IsHumanPlayer<<' '<<h->Defeated<<' '<<h->Available_Money()<<'\n';
+        <<h->IsHumanPlayer<<' '<<h->Defeated<<' '<<h->Available_Money()<<' '
+        <<hash(std::string(reinterpret_cast<const char*>(h->ThreatPosedEstimates),sizeof(h->ThreatPosedEstimates)))<<'\n';
     std::map<DWORD,TechnoClass*> objects;
     for(auto t:TechnoClass::Array) if(t) objects.emplace(t->UniqueID,t);
     for(auto [id,t]:objects) native<<"T "<<id<<' '<<t->GetTechnoType()->ID<<' '
         <<(t->Owner?t->Owner->ArrayIndex:-1)<<' '<<t->Health<<' '<<t->IsAlive<<' '<<t->InLimbo<<' '
         <<t->Location.X<<' '<<t->Location.Y<<' '<<t->Location.Z<<' '<<int(t->CurrentMission)<<' '<<t->Ammo<<' '
         <<t->Cloakable<<' '<<int(t->CloakState)<<' '<<t->CloakProgress.Value<<' '<<t->CloakDelayTimer.GetTimeLeft()<<'\n';
+    for(auto foot:FootClass::Array) if(foot) native<<"F "<<foot->UniqueID<<' '<<foot->LastMapCoords.X<<' '
+        <<foot->LastMapCoords.Y<<' '<<foot->ThreatPosed<<' '<<foot->IsInAir()<<' '<<foot->GetTargetCoords().Z<<'\n';
+    for(int i=0;i<400;++i) for(auto unit:ForceMove::trackerVector(i)) native<<"A "<<i<<' '<<unit->UniqueID<<'\n';
     IStream* stream=nullptr;
     if(FAILED(CreateStreamOnHGlobal(nullptr,TRUE,&stream))) check(false,"snapshot stream");
     // Unrefreshed offer boards are lazy local presentation state. Compare all
@@ -103,6 +109,14 @@ void refresh(int role) {
     EventClass event(h->ArrayIndex,EventType::SpecialPlace,-0x5347,{0,static_cast<short>(board[0])});
     send(event,"local refresh queued");send(event,"duplicate refresh queued");
 }
+int selectionMessages(HouseClass* house) {
+    auto completed=Research::completedProjects(house->ArrayIndex);
+    check(completed.size()==1,"research selected for notification test");
+    auto message=std::wstring(house->UIName)+L" 已研究「"+Research::options[completed.front()].name+L"」。";
+    int count=0;
+    for(const auto& text:MessageListClass::Instance.MessageBuffers) if(message==text) ++count;
+    return count;
+}
 void purchase(int role) {
     auto h=players[role];if(h!=HouseClass::CurrentPlayer) return;
     auto board=Research::offers(h->ArrayIndex,h->Type->ID);
@@ -118,6 +132,7 @@ void setup() {
     skillIndex=0;
     for(int role=0;role<2;++role) {
         auto h=players[role];credits[role]=h->Available_Money();
+        for(auto b:BuildingClass::Array) if(b && b->Owner==h && !_stricmp(b->Type->ID,"GAPOWR")) ++buildingCounts[role];
         for(int kind=0;kind<2;++kind) {
             auto unit=static_cast<TechnoClass*>(UnitTypeClass::Find("MTNK")->CreateObject(h));
             CellStruct cell{static_cast<short>(45+role*7),static_cast<short>(73+kind*3)};
@@ -161,10 +176,24 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
     if(frame==240) {cast(0,true);cast(1,true);}
     if(frame==320) {
         for(int role=0;role<2;++role) check(state(role,"casts")==2 && state(role,"pulses")==8,"both players skills and delayed actions executed exactly twice");
+        for(int role=0;role<2;++role) {
+            int count=0;for(auto b:BuildingClass::Array) if(b && b->Owner==players[role] && !_stricmp(b->Type->ID,"GAPOWR")) ++count;
+            check(count==buildingCounts[role]+1,"building fallback executed once per owner on both peers");
+            auto id=static_cast<DWORD>(state(role,"buildingId"));
+            BuildingClass* building=nullptr;for(auto b:BuildingClass::Array) if(b && b->UniqueID==id) building=b;
+            check(building && building->Owner==players[role] && !_stricmp(building->Type->ID,"GAPOWR"),"building conversion keeps script identity on both peers");
+        }
         check(Research::unlocked[players[0]->ArrayIndex].size()==1 && Research::unlocked[players[1]->ArrayIndex].empty(),"research purchase owner isolation");
+    }
+    if(frame==280) {
+        check(Research::announceSelection && selectionMessages(players[0])==1,"one default research announcement on each peer");
+        check(WritePrivateProfileStringA("Starfall.Research","AnnounceSelection","no",configPath),"disable announcements in fixture");
+        Research::readConfiguration(configPath);
+        check(!Research::announceSelection,"announcement switch read");
     }
     if(frame==340) refresh(1);
     if(frame==380) purchase(1);
+    if(frame==430) check(selectionMessages(players[1])==0,"disabled research stays silent on each peer");
     if(frame==440) {
         auto local=HouseClass::CurrentPlayer;
         int role=local==players[0]?0:1;

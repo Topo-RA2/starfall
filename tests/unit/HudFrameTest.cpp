@@ -70,6 +70,14 @@ int main() {
     {
         HudFrame::Frame frame(8, 8);
         assert(HudFrame::active() && HudFrame::drawNative());
+        {
+            HudFrame::CapturePause pause(true);
+            HudFrame::CapturePause nested(false);
+            assert(!HudFrame::active() && HudFrame::drawNative());
+            HudFrame::fill(6, 6, 1, 1, 255, 0, 0);
+            HudFrame::overPixel(7, 7, 255, 0, 0);
+        }
+        assert(HudFrame::active() && HudFrame::drawNative());
         HudFrame::line(2, 4, 0, 2, 8, 8, 8);
     }
     assert(f.events.size() == 1 && f.events[0].colors[0] && f.events[0].colors[4] &&

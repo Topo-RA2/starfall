@@ -22,6 +22,9 @@
       "action-sequence"
     ],
     "passives": [
+      "ground-pickups",
+      "building-transform",
+      "spawn-building",
       "condition-formula",
       "passive-gained",
       "reapply",
@@ -43,6 +46,8 @@
       "passenger-consume"
     ],
     "lua": [
+      "building-transform",
+      "spawn-building",
       "lua-skills",
       "lua-timers",
       "lua-anim",
@@ -74,7 +79,10 @@
       "multiplayer"
     ],
     "full": [
+      "ground-pickups",
       "unit",
+      "building-transform",
+      "spawn-building",
       "action-sequence",
       "active-skills",
       "area-barrage",
@@ -119,6 +127,91 @@
     ]
   },
   "Cases": [
+    {
+      "Name": "ground-pickups",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Pickups.sav",
+      "Log": "ground-pickups.log",
+      "Phases": ["fresh", "load"],
+      "Standalone": true,
+      "Expected": {
+        "fresh": ["PASS visible SHP changes ground pixels", "PASS default pickup art available", "PASS event spawns independent pickup", "PASS custom SHP loads", "PASS occupied cell uses nearby slot", "PASS saved occupied and expiring pickups", "PASS collector receives rewards exactly once", "PASS random actions execute per draw", "PASS random refresh rejects occupied final cell", "PASS relocated crate retains reward and pickup remains", "PASS pickup avoids existing native crate", "PASS full neighborhood rejects targeted crate"],
+        "load": ["PASS collector receives rewards exactly once", "PASS collected and expired removed", "PASS random actions execute per draw", "PASS random refresh rejects occupied final cell", "PASS relocated crate retains reward and pickup remains", "PASS pickup avoids existing native crate", "PASS full neighborhood rejects targeted crate"]
+      }
+    },
+    {
+      "Name": "building-transform",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "BuildingTransform.sav",
+      "Log": "building-transform.log",
+      "Phases": ["fresh", "load"],
+      "Standalone": true,
+      "Expected": {
+        "fresh": [
+          "PASS matching native foundations",
+          "PASS different bib footprint rejected",
+          "PASS same bounds different occupied cells rejected",
+          "PASS foundation order is irrelevant",
+          "PASS different footprint leaves original intact",
+          "PASS placement failure restores original building and state",
+          "PASS Lua identity and immediate continuation",
+          "PASS native handle follows replacement",
+          "PASS passive animation follows replacement",
+          "PASS health ratio bonus and rank retained",
+          "PASS native ownership counts updated once",
+          "PASS temporary effects and original deadlines retained",
+          "PASS cooldown and queued callbacks retained",
+          "PASS INI building conversion",
+          "PASS saved conversion with queued scripts",
+          "PASS retired buildings cleaned before save",
+          "PASS repeated conversion and callbacks survive save load",
+          "PASS temporary effects expire at original time"
+        ],
+        "load": [
+          "PASS repeated conversion and callbacks survive save load",
+          "PASS native target index survives cleanup and load",
+          "PASS effects and cooldown persist across second conversion",
+          "PASS converted buildings participate in power",
+          "PASS temporary effects expire at original time"
+        ]
+      }
+    },
+    {
+      "Name": "spawn-building",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "SpawnBuilding.sav",
+      "Log": "spawn-building.log",
+      "Phases": ["fresh", "load"],
+      "Standalone": true,
+      "Expected": {
+        "fresh": [
+          "PASS INI configuration",
+          "PASS superweapon point and owner aliases",
+          "PASS exact anchor and owner",
+          "PASS blocked radius fails without leaked objects",
+          "PASS nearest deterministic fallback preserves blocker",
+          "PASS partial foundation obstruction rejected",
+          "PASS fallback preserves occupying infantry",
+          "PASS reject incompatible water terrain",
+          "PASS reject foundation extending outside map",
+          "PASS Lua direct and section actions with victim owner",
+          "PASS destroyed victim location and snapshotted owner",
+          "PASS saved pending building result",
+          "PASS pending INI result executes exactly once",
+          "PASS spawned buildings supply power",
+          "PASS no duplicate creation"
+        ],
+        "load": [
+          "PASS pending INI result executes exactly once",
+          "PASS building identity position and owner preserved",
+          "PASS spawned buildings supply power",
+          "PASS no duplicate creation"
+        ]
+      }
+    },
     {
       "Name": "action-sequence",
       "Kind": "game",
@@ -225,6 +318,7 @@
           "PASS both skills bound",
           "PASS INI binding overrides legacy",
           "PASS INI display and parameters",
+            "PASS indicator configuration parsed",
           "PASS shared script variant",
           "PASS independent skill parameters",
           "PASS canceled without orders",
@@ -463,6 +557,14 @@
       "Standalone": true,
       "Expected": {
         "fresh": [
+          "PASS nested diamond grants once without layers",
+          "PASS linked copy protected",
+          "PASS ordinary copy transferred without resetting linked copy",
+          "PASS remaining parent keeps child",
+          "PASS last source clears progress",
+          "PASS condition reentry grants again",
+          "PASS stealing parent transfers package",
+          "PASS loaded package does not replay acquisition",
           "PASS cloak and capability survive save",
           "PASS overlapping source remains",
           "PASS native capability coexists",
@@ -488,6 +590,8 @@
           "PASS saved while cloaked"
         ],
         "load": [
+          "PASS linked child and gain history survive save",
+          "PASS loaded package does not replay acquisition",
           "PASS cloak and capability survive save",
           "PASS overlapping source remains",
           "PASS native capability coexists",
@@ -664,7 +768,7 @@
         "fresh",
         "load"
       ],
-      "Standalone": false,
+      "Standalone": true,
       "Expected": {
         "fresh": [
           "PASS overlap in transit without damage",
@@ -700,7 +804,35 @@
           "PASS Lua and INI start",
           "PASS orders rejected",
           "PASS wall stops ground push",
-          "PASS saved in flight"
+          "PASS saved in flight",
+          "PASS native threat position follows displacement",
+          "PASS threat removed from old region and added to new region",
+          "PASS enemy acquires displaced target at new position",
+          "PASS native shot aims at displaced coordinates",
+          "PASS leaving range restores threat totals and removes old target candidate",
+          "PASS sensors follow displaced position",
+          "PASS round trip preserves sensors and neighbour counts",
+          "PASS sensor registration cleaned on removal",
+          "PASS vehicle and infantry tracking follows motion after save load",
+            "PASS custom airborne threshold survives save load",
+            "PASS air targeting restored after save load",
+            "PASS native AA missile damages airborne ground unit",
+            "PASS saved airborne target cleans up",
+            "PASS below threshold remains ground target",
+            "PASS threshold admits AA and excludes ground-only acquisition",
+            "PASS target coordinates include lift once",
+            "PASS air registration has no duplicates",
+            "PASS aerial scan follows horizontal displacement",
+            "PASS replacement applies custom threshold immediately",
+            "PASS zero threshold disables air classification",
+            "PASS descent restores ground acquisition",
+            "PASS AA missile aims at elevated target",
+            "PASS infantry supports airborne targeting",
+            "PASS destroyed airborne unit leaves tracker",
+            "PASS INI custom airborne threshold",
+            "PASS Lua custom airborne threshold",
+            "PASS below-threshold lifted target takes normal damage",
+            "PASS air and ground chains do not duplicate splash damage"
         ],
         "load": [
           "PASS overlap in transit without damage",
@@ -722,7 +854,12 @@
           "PASS pull stops at occupied center",
           "PASS interrupt moving unit",
           "PASS canceled path stays canceled",
-          "PASS interrupted vehicle reaches new order"
+          "PASS interrupted vehicle reaches new order",
+          "PASS vehicle and infantry tracking follows motion after save load",
+            "PASS custom airborne threshold survives save load",
+            "PASS air targeting restored after save load",
+            "PASS native AA missile damages airborne ground unit",
+            "PASS saved airborne target cleans up"
         ]
       }
     },
@@ -803,13 +940,31 @@
           "PASS atlas and rarity",
           "PASS PCX and fallback",
           "PASS bounded image cache and LRU",
-          "PASS image reload and card cache cleanup"
+            "PASS image reload and card cache cleanup",
+            "PASS projected PNG indicators and viewport clipping",
+            "PASS arrow caps preserved across lengths",
+            "PASS animated markers and bright blue validity color",
+            "PASS GPU-only projected indicator",
+            "PASS active UI alpha in ready cooldown and fallback states",
+            "PASS cached and animated card alpha",
+            "PASS active icon and label stay inside frame",
+            "PASS cooldown countdown rounding grouping and rendering",
+            "PASS all HexBrawl PCX icons and transparency"
         ],
         "load": [
           "PASS atlas and rarity",
           "PASS PCX and fallback",
           "PASS bounded image cache and LRU",
-          "PASS image reload and card cache cleanup"
+            "PASS image reload and card cache cleanup",
+            "PASS projected PNG indicators and viewport clipping",
+            "PASS arrow caps preserved across lengths",
+            "PASS animated markers and bright blue validity color",
+            "PASS GPU-only projected indicator",
+            "PASS active UI alpha in ready cooldown and fallback states",
+            "PASS cached and animated card alpha",
+            "PASS active icon and label stay inside frame",
+            "PASS cooldown countdown rounding grouping and rendering",
+            "PASS all HexBrawl PCX icons and transparency"
         ]
       }
     },
@@ -1418,6 +1573,8 @@
           "PASS purchase",
           "PASS purchase animation closes panel",
           "PASS no alternative preserves allowance",
+          "PASS native diplomacy dialog opens and returns",
+          "PASS switching players is read-only",
           "PASS scenario reset releases voices and cached audio",
           "PASS configuration reload preserves playing audio and clears cache",
           "PASS legacy options ignored",
@@ -1456,6 +1613,8 @@
           "PASS purchase",
           "PASS purchase animation closes panel",
           "PASS no alternative preserves allowance",
+          "PASS native diplomacy dialog opens and returns",
+          "PASS switching players is read-only",
           "PASS scenario reset releases voices and cached audio"
         ]
       }

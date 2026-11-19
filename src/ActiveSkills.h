@@ -9,6 +9,9 @@ namespace ActiveSkills {
 enum class Kind { None, Unit, Point, Area, Direction };
 struct Spec {
     std::string id,icon;
+    std::string indicatorTexture,arrowTexture;
+    double arrowWidth=0.75;
+    int arrowHead=25,arrowTail=37,indicatorOpacity=90;
     std::wstring name;
     Kind kind=Kind::None;
     int range=0,radius=0,distance=0;
