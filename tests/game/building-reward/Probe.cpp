@@ -1,4 +1,6 @@
 #include "../../../src/Starfall.cpp"
+#include <MessageListClass.h>
+EXPORT_FUNC(SF_ResearchCommand);
 namespace {
 DWORD actualId=0;
 void check(bool ok,const char* label) {
@@ -63,7 +65,18 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
         check(claimed->SetOwningHouse(house,false),"claim building transfer");tickBuildings();
         authorizeBuildingReward(engineer,claimed,Research::BuildingRewardSource::Engineer);
         auto choices=Research::buildingOptions(claimed->UniqueID,house->ArrayIndex);
-        check(!choices.empty() && Research::claimBuilding(claimed->UniqueID,house->ArrayIndex,choices[0]),"claim reward");
+        check(!choices.empty(),"free research offers");
+        const int option=choices.front();
+        const auto id=claimed->UniqueID;
+        EventClass selection(house->ArrayIndex,EventType::SpecialPlace,-0x100000-option,
+            CellStruct{static_cast<short>(id),static_cast<short>(id>>16)});
+        REGISTERS regs{};regs.ESI(&selection);
+        SF_ResearchCommand(&regs);SF_ResearchCommand(&regs);
+        check(Research::owns(house->ArrayIndex,Research::options[option].id),"claim reward");
+        const auto notice=std::wstring(house->UIName)+L" 已研究「"+Research::options[option].name+L"」。";
+        int messages=0;
+        for(const auto& text:MessageListClass::Instance.MessageBuffers) if(notice==text) ++messages;
+        check(messages==1,"free research announced once");
         check(claimed->SetOwningHouse(foe,false),"claimed transfer");tickBuildings();
         authorizeBuildingReward(spy,claimed,Research::BuildingRewardSource::Spy);
         check(Research::buildingOptions(claimed->UniqueID,house->ArrayIndex).empty() && Research::buildingRewards.at(claimed->UniqueID).claimed,"claimed once");

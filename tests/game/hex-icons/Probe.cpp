@@ -18,8 +18,8 @@ std::vector<WORD> snapshot(RectangleStruct rect) {
     surface->Unlock();
     return result;
 }
-void capture(RectangleStruct rect) {
-    std::ofstream f("hex-icons.ppm",std::ios::binary);
+void capture(RectangleStruct rect,const char* filename="hex-icons.ppm") {
+    std::ofstream f(filename,std::ios::binary);
     f<<"P6\n"<<rect.Width<<" "<<rect.Height<<"\n255\n";
     int shifts[]={Drawing::RedShiftLeft,Drawing::GreenShiftLeft,Drawing::BlueShiftLeft};
     int masks[]={255>>Drawing::RedShiftRight,255>>Drawing::GreenShiftRight,255>>Drawing::BlueShiftRight};
@@ -27,6 +27,10 @@ void capture(RectangleStruct rect) {
         f.put(static_cast<char>(((value>>shifts[k])&masks[k])*255/masks[k]));
 }
 }
+#include "Indicators.inc"
+#include "Alpha.inc"
+#include "Cooldown.inc"
+#include "PCX.inc"
 DEFINE_HOOK(0x55B4EB,SF_TestHexIcons,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES || Unsorted::CurrentFrame!=20) return 0;
     Research::ensureReady();
@@ -173,6 +177,10 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexIcons,5) {
         DeleteFileA(file);
         std::ofstream("hex-icons.log",std::ios::app)<<"PASS image reload and card cache cleanup\n";
     }
+    testHexPCX();
+    testUIAlpha();
+    testCooldown();
+    testIndicators();
     TerminateProcess(GetCurrentProcess(),0);
     return 0;
 }

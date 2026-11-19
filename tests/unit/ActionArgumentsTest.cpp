@@ -14,12 +14,22 @@ int main() {
     ScriptFields valid{{"action","givecredits"},{"action.amount","$(100+50)"},{"action.target","self"}};
     auto typo=valid;typo["action.amunt"]="999";
     if(!readAction(step,"review",&valid) || readAction(step,"review",&typo)) return 5;
+    ScriptFields motion{{"action","forcemove"},{"action.forcemove.mode","launch"},{"action.forcemove.duration","20"}};
+    if(!readAction(step,"review",&motion) || step.actions.back().forceMove.airborneHeight!=256) return 6;
+    for(auto [value,expected]:{std::pair{"0",0},{"0.5",128},{"2",512},{"512",131072}}) {
+        motion["action.forcemove.airborneheight"]=value;
+        if(!readAction(step,"review",&motion) || step.actions.back().forceMove.airborneHeight!=expected) return 7;
+    }
+    for(auto value:{"-1","nan","inf","512.1","1x",""}) {
+        motion["action.forcemove.airborneheight"]=value;
+        if(readAction(step,"review",&motion)) return 8;
+    }
     int checked=0;
     for(int state=0;state<128;++state) {
         auto L=luaL_newstate();if(!L)return 1;
         for(auto expression:{"{Amount=1,amount=2}","{Amount=1,['Action.Amount']=2}",
             "{Offset='1,2',['Action.ForceMove.Offset']='3,4'}","{Duration=1,['Action.ForceMove.Duration']=2}",
-            "{Target='Self',target='Victim'}"}) {
+            "{Target='Self',target='Victim'}","{AirborneHeight=1,['Action.ForceMove.AirborneHeight']=2}"}) {
             lua_pushcfunction(L,parseArguments);
             string code="return "+string(expression);
             if(luaL_loadstring(L,code.c_str()) || lua_pcall(L,0,1,0)) return 2;

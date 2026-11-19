@@ -24,7 +24,7 @@ try {
     $source=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'src') -Recurse -File | Where-Object Extension -in '.h','.inc','.cpp' | ForEach-Object FullName)
     $commonSource=@($source | Where-Object {[IO.Path]::GetFileName($_) -notin 'Starfall.cpp','ResearchUI.cpp'})
     $lua=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'references/lua') -File | Where-Object Extension -in '.h','.c' | ForEach-Object FullName)
-    $assets=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'assets/research') -Recurse -File | ForEach-Object FullName)
+    $assets=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'assets') -Recurse -File | ForEach-Object FullName)
     function Build-Part([string]$Kind,[string]$Name,[string[]]$Dependencies,[string[]]$Outputs) {
         $key=if($Name) {"$Kind-$Name"} else {$Kind}
         $fingerprint=Get-TestFingerprint ($control+$Dependencies) $signature
@@ -36,7 +36,11 @@ try {
         # Invalidate before compiling: an interrupted/failed build cannot be reused.
         if(Test-Path -LiteralPath $stamp) {Remove-Item -LiteralPath $stamp}
         Write-Host "BUILD $key"
-        & (Join-Path $PSScriptRoot 'compile.cmd') $Kind $Name
+        # Explicit CALL preserves an EXIT /B from a parenthesized batch branch.
+        # PowerShell's implicit batch launcher can otherwise report success and
+        # let an old modules.lib be stamped as a fresh build after a compile error.
+        $compile=Join-Path $PSScriptRoot 'compile.cmd'
+        & $env:ComSpec /d /c "call `"$compile`" $Kind $Name"
         if($LASTEXITCODE) {throw "Compile failed: $key ($LASTEXITCODE)"}
         Save-BuildCache $stamp $fingerprint $Outputs
     }

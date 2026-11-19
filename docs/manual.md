@@ -1,7 +1,7 @@
 # Starfall Lab: Configuration and Lua Reference
 
 Document language: English. Audience: mod authors, AI assistants, and maintainers.
-Applies to: Starfall Lab 0.36, as implemented in this repository on 2026-11-14.
+Applies to: Starfall Lab 0.37, as implemented in this repository on 2026-11-19.
 Runtime: a 32-bit DLL extension for Command & Conquer: Yuri's Revenge.
 
 This is a reference for the implemented interfaces, not a proposal for future features. Field names in code font are literal configuration keys. `required` means that omission makes the described configuration invalid. Defaults apply when a field is omitted, subject to configuration inheritance. Native game fields such as `Spawns`, `Locomotor`, and `SuperWeapon` belong to the game or another extension; Starfall does not redefine them.
@@ -172,7 +172,7 @@ For deploy, promotion, and passive-acquisition actions, `Target` resolves to `Se
 
 Default `Action.Target` is `Target` for `StealPassive` and `OnBeforeDealDamage`; otherwise it is `Self`. `SelfDestruct` and `ReplaceWeapon` require `Self`. Damage-interception targeting is more restrictive than ordinary targeting.
 
-The positional actions are exactly `FireWeapon`, `DetonateWarhead`, `SpawnUnit`, `SpawnCrate`, `PlayAnim`, `PlaySound`, `ShakeScreen`, and `SpawnParticleSystem`. They accept `VictimLocation`; Lua can supply a point table as their `Target`. A missing/dead unit does not become a valid heal or transformation target merely because its old position is known.
+The positional actions are exactly `FireWeapon`, `DetonateWarhead`, `SpawnUnit`, `SpawnBuilding`, `SpawnCrate`, `SpawnPickup`, `PlayAnim`, `PlaySound`, `ShakeScreen`, and `SpawnParticleSystem`. They accept `VictimLocation`; Lua can supply a point table as their `Target`. A missing/dead unit does not become a valid heal or transformation target merely because its old position is known.
 
 ### Event pipeline and snapshots
 
@@ -253,7 +253,7 @@ The first qualifying replacement is considered. If it cannot fire at the target,
 
 Nearby counting uses a planar circular cell range, excludes the holder, and deduplicates objects/buildings. Hostile cloaked/disguised objects must satisfy the visibility/detection checks. Nearby cache progress is saved.
 
-A `WhileState` definition needs a state condition and a modifier or supported visual result. Use `Condition.Formula=$(1)` for an always-true condition. Passenger support via `Modifier.TransportPassives` is the exception that can omit a condition. Event-only fields such as `Action.*`, `Actions`, `Filter.*`, `Chance`, and `Condition.Count` are invalid in `WhileState`.
+A `WhileState` definition needs a modifier or supported visual result. When no state condition is specified, it is active continuously; `Condition.StateDurationSeconds` still applies when specified. Event-only fields such as `Action.*`, `Actions`, `Filter.*`, `Chance`, and `Condition.Count` are invalid in `WhileState`.
 
 Leaving the map or entering limbo normally suspends continuous evaluation and removes its modifiers; re-entry restarts any wait. Interval progress restarts when the holder becomes eligible again. Timed grant expiry still advances while the unit is inside a transport or building. See the passenger-support exception below.
 
@@ -285,6 +285,7 @@ All following fields belong to a `WhileState` passive. Omitted numeric multiplie
 | `Modifier.Immune` | `yes` / `no` | Native-style immunity to ordinary health damage. |
 | `Modifier.ImmuneToMindControl` | `yes` / `no` | Block supported new mind-control attempts; does not release existing control. |
 | `Modifier.SpawnPassives` | Registered passive ID list | Give passives to direct native `Spawns=` children. |
+| `Modifier.LinkedPassives` | Comma-separated registered passive IDs | While the parent state holds, the holder owns each child once. The link grants no stacks. |
 | `Modifier.TransportPassives` | Registered passive ID list | Passenger grants passives to its direct ground-vehicle transport. |
 | `Modifier.TransportPassives.Stack` | `yes` / `no`, default `no` | Each contributing passenger provides one source-owned layer when enabled. Requires `Modifier.TransportPassives`. |
 
@@ -338,6 +339,15 @@ Aura coverage uses horizontal center distance, includes the boundary, and refres
 
 Passenger support is evaluated for passengers even while they are transported. It cannot use spatial nearby conditions or target/distance-dependent conditions. Normal on-map continuous effects are suspended off-map, but supported passenger combat evaluation can retain firepower, weapon range, fire rate, and multishot for relevant firing paths; spatial/distance restrictions still apply. Do not assume every off-map modifier remains active. The direct transport relationship matters, not arbitrary nesting.
 
+A linked child runs its own trigger. Removing or stealing an independently owned copy leaves the linked copy active. The final source disappearing ends ownership. Overlapping links preserve counters, cooldowns and acquisition history. Missing IDs and cycles disable the affected parents.
+
+```ini
+[SF_CombatPackage]
+Trigger=WhileState
+Condition.Formula=$(1)
+Modifier.LinkedPassives=SF_KillHeal,SF_FieldArmor
+```
+
 ### Sources, stacks, and removal
 
 Sources include unit bindings, map bindings, research, temporary/permanent grants, auras, spawn parents, and passenger support. One unit executes one copy of a given passive ID even when sources overlap.
@@ -375,9 +385,11 @@ The following table describes ordinary INI action sections. Context restrictions
 | `ChangeFireRate` | Same `Action.Percent` contract. | Permanently change standard fire-rate base. |
 | `ChangeScale` | Nonzero signed integer percentage points in `Action.Percent`; no formula. | Permanently change mobile-unit drawing size. |
 | `ChangeProjectileScale` | Nonzero signed integer percentage points in `Action.Percent`; no formula. | Change future projectile/explosion/spread scale. |
-| `SpawnUnit` | `Action.UnitType`; optional `Action.Owner=Self`. | Spawn infantry, vehicle, or aircraft, searching up to three rings if necessary; no buildings. |
-| `Transform` | `Action.UnitType`. | Convert a living unit in place; see conversion restrictions. |
+| `SpawnUnit` | `Action.UnitType` or `Action.UnitTypes`; optional `Action.Weights`, `Action.RandomCount`, and `Action.Owner=Self`. | Spawn infantry, vehicle, or aircraft, searching up to three rings if necessary; no buildings. Random candidates use matching nonnegative weights (equal by default, not all zero); `RandomCount` defaults to 1 and supports 1–256 independent draws with replacement. |
+| `SpawnBuilding` | `Action.BuildingType`; optional `Action.Owner=Self`, `Action.SearchRadius=3`. | Create one completed standalone building at the target cell or the nearest valid empty foundation within the search radius. |
+| `Transform` | `Action.UnitType` (also used for building IDs). | Convert a living object within its class. Buildings require exactly matching occupied foundation cells; see conversion restrictions. |
 | `ChangeOwner` | Optional `Action.Owner=Self`. | Transfer a living unit; skip if already owned by that house or under mind control. |
+| `SpawnPickup` | Required `Action.PickupType`, an ID registered in `[Starfall.PickupTypes]`. | Place a non-blocking ground pickup at the selected cell, searching outward up to 3 cells if necessary. |
 | `SpawnCrate` | Optional `Action.CrateType=Random`. | Place a crate near the target position. |
 | `SelfDestruct` | `Action.Target=Self` only. | Destroy the holder through the supported normal death path. |
 | `ConsumePassenger` | No `Action.Amount`. | Consume first direct passenger and its nested cargo; emit one direct-passenger event. |
@@ -407,9 +419,103 @@ Maximum-health increases also add the increase to current health; decreases only
 
 `Action.Owner` accepts `Self,Attacker,Victim,Neutral,Player1,Player2,Player3,Player4,Player5,Player6,Player7,Player8`. Player numbers refer to starting positions. The `Owner` target/owner alias belongs to sequence contexts, not arbitrary ordinary passives.
 
+### Custom ground pickups
+
+Register each type in `[Starfall.PickupTypes]`. Its section accepts `Image` (optional theater unit-palette SHP, transparent index 0, one animation frame per four game frames), `Lifetime` (positive game frames, default `-1` for permanent), and one of `Action`, `Actions`, or `RandomActions` with the usual action parameters. The default art is used when the custom image is omitted or unavailable. Native crate limits and expiration are independent. Pickups skip native crate overlays. Targeted native crates whose final cell contains a pickup search within three cells for a legal alternative, failing if none exists. Random crate refreshes skip occupied cells through the normal retry path.
+
+A ground infantry or vehicle on the cell collects it once, regardless of owner. Self and Target resolve to the collector, VictimLocation to the pickup cell. If several units occupy the same cell, the lowest object ID wins. A full-health collector still consumes a healing pickup. Ground pickups persist in saves.
+
+```ini
+[Starfall.PickupTypes]
+0=SF_MedKit
+
+[SF_MedKit]
+Image=sfmedkit.shp
+Lifetime=900
+Actions=SF_KitHeal,SF_KitMoney
+
+[SF_KitHeal]
+Action=Heal
+Action.Target=Self
+Action.Amount=50
+
+[SF_KitMoney]
+Action=GiveCredits
+Action.Amount=200
+
+[Starfall.PassiveTypes]
+100=SF_DropKit
+
+[SF_DropKit]
+Trigger=OnKill
+Filter.TargetHouse=Enemies
+Action=SpawnPickup
+Action.Target=VictimLocation
+Action.PickupType=SF_MedKit
+```
+
 `Action.CrateType` accepts `Random,Money,Unit,HealBase,Cloak,Explosion,Napalm,Squad,Darkness,Reveal,Armor,Speed,Firepower,ICBM,Invulnerability,Veteran,IonStorm,Gas,Tiberium,Pod`. `Random` uses the current native `[Powerups]` weights.
 
+### Building creation
+
+`SpawnBuilding` uses the target cell as the foundation's top-left anchor (not the building's center). `Action.Target` defaults to `Self`; it also accepts the usual positional recipients, including `VictimLocation`. Lua can pass `Target={x=60,y=62}` or `Target=ctx.point`. `Action.BuildingType` must name an existing standalone building type. Upgrade attachments (`PowersUpBuilding`), overlay walls (`ToOverlay`), and pavement (`ToTile`) are rejected; `Action.UnitType` and `Action.Destination` do not apply.
+
+`Action.SearchRadius` is an integer `0..32`, default `3`, measured in map cells. Zero tries only the requested anchor. Search is circular, ordered by squared distance from the anchor, then increasing Y and X for equal distances. Every candidate must fit the complete native foundation, including its bib, inside the playable map. Occupants, bridges, slopes, unequal cell heights, and terrain rejected by the native building placement check make a site unusable. Existing units and buildings are preserved. A completed building is placed immediately with normal owner tracking and power behavior; this is a free scripted grant rather than a purchase from the construction sidebar.
+
+If no candidate works, the result fails (`false` in Lua) without leaving a limbo building. Invalid/defeated/observer owners also fail. Buildings are saved by the native game; pending passive events retain the existing save format. Site selection never depends on local selection, camera, or visibility state.
+
+```ini
+[SF_CreatePowerPlant]
+Trigger=OnDeploy
+Action=SpawnBuilding
+Action.BuildingType=GAPOWR
+Action.Target=Self
+Action.Owner=Self
+Action.SearchRadius=5
+```
+
+Register the passive in `[Starfall.PassiveTypes]` and grant/bind it to the deploying unit. For a Lua point-targeted active skill:
+
+```lua
+local created = ctx:action("SpawnBuilding", {
+    BuildingType = "GAPOWR", Target = ctx.point, Owner = "Self", SearchRadius = 5,
+})
+```
+
+### Building transformation
+
+Use `Action=Transform` and `Action.UnitType=<building ID>` on a living building. The destination must be a different standalone building. Source and destination must have exactly the same occupied-cell offsets, both without and with the bib. Bib settings and extents must also match explicitly because the vanilla engine ignores the foundation API's bib argument. Equal width/height or equal cell count alone is insufficient; ordering of foundation entries is irrelevant. There is no relocation or nearby search during conversion. In the standard game, `GAPOWR` and `NAHAND` have matching 2x2 foundations, while `NAPOWR` has a different 3x2 foundation. Always check the actual art rules used by the mod.
+
+```ini
+[SF_BuildingConversion]
+Trigger=OnFire
+Action=Transform
+Action.Target=Self
+Action.UnitType=NAHAND
+```
+
+Lua uses the same result, e.g. `ctx:action("Transform", {Target=building, UnitType="NAHAND"})`. A rejected conversion returns `false` and preserves the original building. The engine replaces its native object at the same site, handing the original public ID to the new object. Starfall rebinds its live-object references before retiring the previous object. Lua unit handles, `ctx.state`, queued callbacks and their data, granted passives, stacks, cooldowns, timers and controlled Lua animations therefore continue using the same identity. Temporary grants keep their original expiry frame; conversion does not renew their duration. Owner, veterancy, proportional health, extra maximum-health points and native iron-curtain time are retained. Native building placement updates the owner's building counts, power and production availability for the new type. The private save format is unchanged.
+
+Construction/selling, active production, passengers, garrison occupants, upgrades, docking/radio links, mind-control/spawn/slave/temporal controllers, C4, attached map-trigger tags and other linked native states can prevent conversion. Third-party extension-owned per-object effects are outside this preservation contract. Building conversion uses native creation/placement rather than the FootClass-only Phobos conversion API.
+
 ### Multiple actions
+`RandomActions` selects action sections by weight. `RandomActions.Weights` provides nonnegative integer weights matching the list (equal by default, not all zero); `RandomActions.Count` defaults to 1 and permits 1–256 independent draws with replacement. Failed actions are not retried. Cooldown starts if any action succeeds. `Action`, `Actions`, and `RandomActions` are mutually exclusive.
+
+```ini
+[SF_RandomReward]
+Trigger=OnKill
+RandomActions=SF_Heal,SF_Money
+RandomActions.Weights=60,40
+RandomActions.Count=2
+
+[SF_Heal]
+Action=Heal
+Action.Amount=50
+
+[SF_Money]
+Action=GiveCredits
+Action.Amount=200
+```
 
 **Fragment**; register and bind only `SF_KillReward`:
 
@@ -444,7 +550,8 @@ All INI fields in this table have the full `Action.ForceMove.` prefix. They are 
 | `Action.ForceMove.Mode` | required if Offset omitted | `Push`, `Pull`, `Launch`. Do not write `Mode=Offset`; supply Offset instead. |
 | `Action.ForceMove.Center` | `Self` | `Self` or `Impact`. Only for non-Offset modes. |
 | `Action.ForceMove.Distance` | `0` | Finite `0..512` cells. Push/Pull require a positive effective distance; Launch can omit it. |
-| `Action.ForceMove.Height` | `1` for Launch, otherwise `0` | Finite `0..512` cells of visual lift. |
+| `Action.ForceMove.Height` | `1` for Launch, otherwise `0` | Finite `0..512` cells of lift; also raises the targeting position. |
+| `Action.ForceMove.AirborneHeight` | `1` | Finite `0..512` cells. At or above this current lift, the unit is an air target; below it, a ground target. `0` disables air classification. Supports fractions. |
 | `Action.ForceMove.Duration` | required | Positive integer simulation frames. |
 | `Action.ForceMove.Easing` | `Linear` | `Linear,EaseIn,EaseOut,EaseInOut`; affects horizontal progress. |
 | `Action.ForceMove.Tilt` | `yes` | `yes` / `no`; supported voxel vehicles lean and settle afterward. |
@@ -452,9 +559,13 @@ All INI fields in this table have the full `Action.ForceMove.` prefix. They are 
 | `Action.ForceMove.BlowWeight` | omitted | Finite threshold; target native `Weight` must be **strictly less**. Omitted means no weight threshold. |
 | `Action.ForceMove.AffectsIronCurtain` | `no` | Allow true iron-curtained targets if `yes`; force shield is not classified as true iron curtain by this check. |
 
-At least one effective horizontal offset/distance or height must be nonzero. Coordinates are rounded to engine sub-cell units. Pull does not overshoot the chosen center. Targets must be supported living, on-map ground infantry/vehicles; carried, airborne, deploying, sinking, warping, and other incompatible locomotor states are rejected.
+At least one effective horizontal offset/distance or height must be nonzero. Coordinates are rounded to engine sub-cell units. Pull does not overshoot the chosen center. Targets must be supported living, on-map ground infantry/vehicles; carried, naturally flying, deploying, sinking, warping, and other incompatible locomotor states are rejected. Units already airborne through ForceMove can receive a replacement ForceMove.
 
 During movement, ordinary movement, firing, deployment, and active skills are blocked, but damage can still occur. A new ForceMove replaces the current movement from its current location/lift. With `IgnoreCollision=yes`, landing can crush ground units regardless of owner; a building receives base impact damage based on the falling unit's current health and the falling unit dies; impassable landing terrain can also kill it. With `no`, horizontal travel stops at an obstacle, lift completes, and landing collision damage is not applied. Both modes respect map boundaries.
+
+Horizontal motion updates the real position, cell chain, native threat-region registration, sensors and neighbouring-cell counts as cells change. Target coordinates follow the current horizontal position and lift. At or above `AirborneHeight`, the unit joins native aerial scans and uses normal anti-air weapon eligibility and aerial damage calculations. Descending below the threshold restores ground targeting immediately. The threshold is measured above the current terrain/bridge deck, not absolute map elevation. Unit type and locomotor remain unchanged. These tracking updates do not execute ordinary cell-entry actions during transit; landing rules are unchanged.
+
+A replacement ForceMove preserves current lift and applies its own threshold immediately. Saves preserve the configured threshold and rebuild aerial tracking without duplicates. Motions loaded from older saves retain ground classification until replaced or finished; subsequent ForceMove actions use the new default.
 
 **Fragment**:
 
@@ -467,6 +578,7 @@ Action.ForceMove.Mode=Push
 Action.ForceMove.Center=Self
 Action.ForceMove.Distance=3
 Action.ForceMove.Height=1
+Action.ForceMove.AirborneHeight=1
 Action.ForceMove.Duration=12
 Action.ForceMove.Easing=EaseOut
 Action.ForceMove.IgnoreCollision=no
@@ -542,6 +654,8 @@ The amount example requires a supported damage event. A constant formula does no
 
 ## Research projects
 
+On the Tab diplomacy screen, select Research beside a player to see that house's completed projects in acquisition order, including free building research. Hover over an icon for its name, rarity and effect details. Use the arrows to page through longer rows.
+
 ### Project schema
 
 Register every project in `[Starfall.ResearchTypes]`. Ordinary purchase costs exactly **100 research points** per project, once per house/project ID. There is no configurable `Price` field.
@@ -597,6 +711,7 @@ Fields in `[Starfall.Research]`:
 | Field | Default | Constraint / behavior |
 | --- | --- | --- |
 | `Enabled` | `yes` | `yes,true,1` enable; `no,false,0` disable research UI, point awards, purchases, and free building research. Stored ownership/points are retained. |
+| `AnnounceSelection` | `yes` | Show the player and project name to everyone after a successful ordinary or free building research choice. Set to `no` to turn off these messages. |
 | `AllowCardRefresh` | `yes` | Same boolean forms; controls ordinary card refresh. |
 | `Title` | Built-in Chinese text meaning “Choose an upgrade” | Set explicitly for an English interface. |
 | `InitialPoints` | `0` | Nonnegative integer initial points per participating house. |
@@ -767,6 +882,12 @@ Active skills share `[Starfall.PassiveTypes]` registration and passive ownership
 | --- | --- | --- |
 | `Active.Name` | Skill ID | Display label. |
 | `Active.Icon` | built-in fallback | PNG/PCX resource path. |
+| `Active.Indicator.Texture` | built-in ring/reticle | Transparent PNG for the ground target preview. Area uses a ring; Unit/Point/Direction use a reticle. |
+| `Active.Indicator.Opacity` | `90` | Integer `0..100`, applied to the texture alpha. Zero hides textured previews. |
+| `Active.Indicator.Arrow.Texture` | built-in arrow | Transparent PNG pointing upward, used by Direction skills. |
+| `Active.Indicator.Arrow.Width` | `0.75` | Arrow width in world cells, decimal `0.1..8`. |
+| `Active.Indicator.Arrow.Head` | `25` | Top cap as an integer percentage of the arrow's trimmed image height; `1..98`. |
+| `Active.Indicator.Arrow.Tail` | `37` | Bottom cap percentage, `1..98`. Head plus Tail must be less than 100. |
 | `Active.CastMode` | `Single` | `Single` or `All`. Single picks the closest eligible selected caster, with unit ID as tie-breaker. |
 | `Active.InterruptOrders` | `yes` | `yes` / `no`. Accepted casts may stop current movement/attack orders. |
 | `Active.Target` | `None` | `None,Unit,Point,Area,Direction`. |
@@ -777,9 +898,17 @@ Active skills share `[Starfall.PassiveTypes]` registration and passive ownership
 | `Active.Distance` | `0` | Required positive `1..128` for Direction; otherwise must be zero. |
 | `Cooldown` | `0` | Nonnegative frames, independently tracked per holder. |
 
+Cooling skill buttons show remaining game seconds rounded upward (`ceil(remainingFrames / 15)`), and the hover tooltip shows the same value. Positive fractions display at least `1`; the countdown disappears at zero. For a shared button, hide the countdown whenever any selected holder is ready; otherwise display the shortest positive remaining cooldown among selected holders. The countdown follows simulation frames, including game speed and pauses, and preserves PNG transparency.
+
 Casters must belong to the issuing player, hold the skill, be alive/on-map/outside transports, and be free of incompatible EMP, forced movement, sinking, or removal states. Invalid/duplicate/foreign commands are rejected. Unit targets obey relevant cloak/disguise visibility rules. Direction clicks cannot equal the caster's cell; the endpoint is shortened at the map edge.
 
+Indicator PNGs are top-down source artwork, not pre-flattened isometric images. Drawing rotates them in world space and then applies the game's 45-degree orthographic map projection, including bridge/ground height. They are local overlays clipped to the tactical viewport, not terrain decals with per-pixel terrain occlusion. Transparent borders are trimmed using an alpha threshold of 16/255; keep any intentional padding inside the visible artwork. The default images are embedded in the DLL and can be overridden by `sfindicator_ring.png`, `sfindicator_target.png`, and `sfindicator_arrow.png` in the game directory, or by the per-skill paths above. Missing/empty custom images fall back to the embedded defaults; drawing failure falls back to lines. Invalid targets are tinted red. Images use the existing bounded presentation cache and are refreshed with that cache on reload.
+
+The upward arrow is split vertically into head, middle, and tail after trimming. Width determines the uniform scale of both caps; only the middle stretches to cover the remaining distance. Short arrows omit the middle and crop the overlapping tail, then the bottom of the head if necessary, preserving cap proportions and the endpoint. Supply straight parallel rails in the middle band so extension does not elongate decorative chevrons. These settings do not change skill range, hit geometry, commands, or network state.
+
 Same-ID skills share a UI button in mixed selection. All mode issues separate casts for eligible selected holders. Left click confirms a target; right click cancels. A successful native action, persistent-state change, or task scheduling can count as callback success; returning `true` from Lua alone does not. Cooldown starts on reported success. `Active.InterruptOrders=yes` interrupts after caster/aim validation and before running the script, so a script that ultimately makes no change can still have interrupted orders.
+
+Range/caster rings rotate once every 6 seconds in the world plane before projection, keeping the ground footprint and radius fixed. Target reticles loop a 1.5-second elastic scale sequence (90% contraction, 112% overshoot, then settling at 100%) around their existing center. A local monotonic clock drives both animations independently of game speed; they do not alter targeting, simulation state, random numbers, or network commands. Valid indicator textures, including custom PNGs and arrows, are tinted bright blue (`#40A8FF`) while retaining alpha and brightness detail. Invalid targets remain red. Arrow head/tail geometry is not animated.
 
 **Complete active example**, assuming `MTNK` exists:
 
@@ -883,7 +1012,7 @@ All unit methods use `:`. `unit:id()` returns its stable ID; `unit:alive()` chec
 
 Nearby filters use exact Lua keys `houses`, `types`, `includeSelf`. Houses defaults to `All`; types defaults to `*`; both accept a comma-separated string or array of strings. Types accepts research-style `@Category` selectors. A unit center is excluded unless `includeSelf=true`; for a point center there is no center unit to exclude. Relationships are relative to the executing owner. This query is a simulation query, not a general local visibility filter.
 
-Action argument keys are case-insensitive. Prefer `Amount`, `Target`, `Passive`, etc. without the `Action.` prefix. Lua boolean fields map to yes/no. `Target` can be a unit handle, a valid symbolic name for the context, or a point for positional actions. `Destination` can be an integer point for ChronoTeleport. ForceMove accepts shorthand `Offset,Mode,Center,Distance,Height,Duration,Tilt,Easing,IgnoreCollision,BlowWeight,AffectsIronCurtain`.
+Action argument keys are case-insensitive. Prefer `Amount`, `Target`, `Passive`, etc. without the `Action.` prefix. Lua boolean fields map to yes/no. `Target` can be a unit handle, a valid symbolic name for the context, or a point for positional actions. `Destination` can be an integer point for ChronoTeleport. ForceMove accepts shorthand `Offset,Mode,Center,Distance,Height,AirborneHeight,Duration,Tilt,Easing,IgnoreCollision,BlowWeight,AffectsIronCurtain`.
 
 Do not supply aliases for the same field twice, including capitalization variants or `Duration` together with `ForceMove.Duration`. Such conflicts are rejected to prevent Lua table iteration order from deciding the result. Unknown action keys are errors. `runAction` cannot override arbitrary amounts or switch the action type.
 
@@ -981,7 +1110,7 @@ Syntax/runtime errors include script location in `Starfall.log`. An error ends t
 | `Starfall.Target` | `Point` only; default point behavior. |
 | `RechargeTime` | Native game minutes, not Starfall frames. |
 
-Direct INI steps support positional actions targeting `Point` (or omitted target), money/research-point actions targeting `Owner` (or omitted target), and `RunScript` with no explicit target. SpawnUnit owner may use `Owner`/`Self`, `Neutral`, or player-slot aliases. To heal, damage, or move particular units from Lua, first obtain live handles and pass them explicitly.
+Direct INI steps support positional actions targeting `Point` (or omitted target), money/research-point actions targeting `Owner` (or omitted target), and `RunScript` with no explicit target. SpawnUnit and SpawnBuilding owner may use `Owner`/`Self`, `Neutral`, or player-slot aliases. To heal, damage, or move particular units from Lua, first obtain live handles and pass them explicitly.
 
 **Native rules fragment**, assuming the referenced native names exist:
 
@@ -1035,6 +1164,10 @@ Attached animations hide while cloaked/off-map and disappear when ownership is l
 
 Research and active icons accept PNG and engine-loadable PCX. PNG transparency is supported; invalid/missing resources use the appropriate built-in fallback. Research rarity colors: Common preserves original colors, Rare uses blue/purple, Epic gold, Insane red. Keep UI resource names separate from animation IDs.
 
+Active buttons retain a 64x64 hit area and use a 64-pixel horizontal stride. Ready/total count badges are hidden; cooldown countdowns remain visible. Icon artwork is scaled to 54x54 at offset (5,4), then clipped to the 44x44 opening at offset (10,9), underneath the solid rim of `sfframe.png`. Clipping preserves the larger subject scale while keeping opaque corners out of the frame's transparent outer margins. Place essential artwork centrally; the outer image edges are cropped. The name and countdown also fit inside the frame. Replacement frames should retain a compatible inner opening.
+
+PNG alpha is preserved by active button artwork (including cooldown dimming) and the cached `sfrcard.png` card skin. Card scale/fade animations composite the UI layer over its destination background without copying terrain from the original rectangle. Active button artwork has no implicit opaque backing plate; names and tooltips retain their own readability backgrounds. Opaque dark pixels in a source PNG remain opaque: the built-in default active icon, tornado icon, and card panel include dark artwork. To create holes or translucent panels, author an alpha channel; black is not treated as a transparency key.
+
 For generated single-passive research details, supported placeholders include `{amount}`, `{percent}`, `{count}`, `{chance}`, `{cooldown}`. A multi-action passive's custom amount/percent placeholders refer to its first action. GiveCredits supports `{credits}`. Add a literal percent sign yourself, such as `{percent}%`. Custom WhileState details and a combined research project's custom Detail are displayed literally rather than expanded per child effect.
 
 Fields in `[Starfall.ResearchSounds]`: `Button`, `Cards`, `Refresh`, `Select`, `Available`. Each defaults to empty. Accepted built-ins are `builtin:cards`, `builtin:select`, and `builtin:available`, or an external WAV path. Empty Button uses native click audio; other empty fields are silent. Failed Button audio falls back to native click audio.
@@ -1079,9 +1212,9 @@ The repository includes real two-client tests with frame-by-frame state comparis
 
 ### Unit conversion and extension scope
 
-Without Phobos, Starfall uses its native conversion path. With Phobos loaded, it requires the exported `ConvertToType_Phobos` interface; absence disables conversion. It does not require Ares merely to transform units.
+For mobile units, Starfall uses its native conversion path without Phobos. With Phobos loaded, mobile conversion requires the exported `ConvertToType_Phobos` interface; absence disables that path. Building conversion uses the separate same-foundation path described above. Neither path requires Ares merely to perform conversion.
 
-Conversion requires different source/destination types of the same supported object class and matching Locomotor. It preserves identity, ownership, rank, passive state, proportional health, and extra maximum-health contribution where supported. A research conversion affects only current eligible units, never future production. At least one successful conversion is required for a conversion-only purchase.
+Mobile conversion requires different source/destination types of the same supported object class and matching Locomotor. It preserves identity, ownership, rank, passive state, proportional health, and extra maximum-health contribution where supported. A research conversion affects only current eligible infantry/vehicles, never buildings or future production. At least one successful conversion is required for a conversion-only purchase.
 
 The native fallback rejects unsupported spawner/slave/manager combinations and incompatible mind-control/parasite/chrono states. Cargo must fit the destination's passenger capacity and size constraints; occupied transports require compatible open-topped/gunner behavior. Units must be alive, on-map, and valid for their destination terrain/state. Third-party type-attached data is not automatically compatible with every native conversion.
 
@@ -1094,7 +1227,7 @@ Start with game-root `Starfall.log`. Research diagnostics include section, field
 | Symptom | Check first |
 | --- | --- |
 | Passive never executes | Registry, exact ID, definition validity, unit binding/grant, counterpart filters, state condition, count/cooldown, and target viability. |
-| WhileState is rejected | Missing condition; event Action/Filter/Chance fields mixed in; unknown Modifier; missing visual/modifier result. |
+| WhileState is rejected | Event Action/Filter/Chance fields mixed in; unknown Modifier; missing visual/modifier result. |
 | Formula fails | Supported destination field, `$()` wrapper, variable context, absent target, division by zero, and result range. |
 | No research cards | Enabled, registration, valid effect, rarity weights, country, prerequisites, ownership, and referenced passives. |
 | A card cannot be purchased | Balance at least 100, current offered ID, unmet immediate conversion/technology applicability, duplicate command/ownership. |
@@ -1173,6 +1306,8 @@ Implementation index:
 | [LuaNearby.inc](../src/LuaNearby.inc), [LuaAnim.inc](../src/LuaAnim.inc) | Query support and managed Lua animations. |
 | [ActionSequence.inc](../src/ActionSequence.inc) | Superweapon/map scripts, casts, map overlay, sequence persistence. |
 | [ForceMove.inc](../src/ForceMove.inc) | Forced displacement, eligibility, collision, and landing. |
+| [BuildingSpawn.h](../src/BuildingSpawn.h), [BuildingSpawn.cpp](../src/BuildingSpawn.cpp) | Complete building-foundation checks and deterministic nearby placement for SpawnBuilding. |
+| [BuildingTransform.h](../src/BuildingTransform.h), [BuildingTransform.cpp](../src/BuildingTransform.cpp) | Same-foundation validation, guarded native replacement and identity handoff for building Transform. |
 | [VisualScale.cpp](../src/VisualScale.cpp) | Native SHP, voxel, projectile, and attached-animation scaling. |
 | [ResourceCache.h](../src/ResourceCache.h), [ResearchAudio.h](../src/ResearchAudio.h), [ResearchText.h](../src/ResearchText.h) | Bounded presentation caches and audio/text helpers. |
 | [module-sources.cmd](../tools/module-sources.cmd) | Shared separately compiled module list. |

@@ -1,5 +1,5 @@
-// Horizontal positions stay in the ground layer. Lift is a draw offset, so
-// in-transit units remain targetable even when they do not reserve a ground slot.
+// Keep locomotion and cell occupation on the ground; targeting uses the lift
+// and a temporary registration in the engine's aerial search grid.
 namespace ForceMove {
 enum class Easing { Linear, EaseOut, EaseIn, EaseInOut };
 enum class Mode { Offset, Push, Pull, Launch };
@@ -7,6 +7,7 @@ struct Spec {
     Mode mode=Mode::Offset;
     Easing easing=Easing::Linear;
     int dx=0,dy=0,distance=0,height=0,duration=0;
+    int airborneHeight=256;
     std::optional<double> blowWeight;
     bool impact=false,tilt=true,ignoreCollision=true,affectsIronCurtain=false;
 };
@@ -24,6 +25,7 @@ bool parse(Spec& spec,Field field) {
     auto mode=field("Action.ForceMove.Mode"),center=field("Action.ForceMove.Center");
     auto offset=field("Action.ForceMove.Offset"),distance=field("Action.ForceMove.Distance");
     auto height=field("Action.ForceMove.Height");
+    if(!leptons(field("Action.ForceMove.AirborneHeight","1"),spec.airborneHeight)) return false;
     auto tilt=field("Action.ForceMove.Tilt","yes");
     if(tilt!="yes" && tilt!="no") return false;
     spec.tilt=tilt=="yes";
@@ -67,6 +69,8 @@ bool parse(Spec& spec,Field field) {
 struct Motion {
     FootClass* foot=nullptr; // Rebound by UniqueID after load.
     int x=0,y=0,dx=0,dy=0,height=0,startHeight=0,duration=0,elapsed=0;
+    int airborneHeight=256,trackerIndex=-1;
+    bool nativeTracked=false;
     unsigned lastFrame=0;
     bool blocked=false,tilt=true,ignoreCollision=true;
     Easing easing=Easing::Linear;
@@ -81,8 +85,94 @@ struct Motion {
         double t=static_cast<double>(elapsed)/duration;
         return static_cast<int>(std::lround((1-t)*startHeight+4*t*(1-t)*height));
     }
+    bool airborne() const {return airborneHeight>0 && lift()>=airborneHeight;}
 };
 std::map<DWORD,Motion> motions;
+const Motion* find(const AbstractClass* unit) {
+    if(!unit || motions.empty()) return nullptr;
+    auto it=motions.find(unit->UniqueID);
+    return it==motions.end()?nullptr:&it->second;
+}
+bool airborne(const AbstractClass* unit) {
+    auto motion=find(unit);
+    return motion && motion->airborne();
+}
+using AirGetter=bool(__thiscall*)(const AbstractClass*);
+using CoordsGetter=CoordStruct*(__thiscall*)(const AbstractClass*,CoordStruct*);
+template<class T> AirGetter originalAirGetter=nullptr;
+template<class T,int Slot> CoordsGetter originalCoordsGetter=nullptr;
+template<class T> bool __fastcall queryAir(const AbstractClass* unit,void*) {
+    if(auto motion=find(unit)) return motion->airborne();
+    return originalAirGetter<T>(unit);
+}
+const AbstractClass* coordinateQuery=nullptr;
+template<class T,int Slot> CoordStruct* __fastcall queryCoords(const AbstractClass* unit,void*,CoordStruct* out) {
+    // An extension may implement GetTargetCoords through GetCenterCoords.
+    // Apply the offset once while preserving its existing coordinate offsets.
+    const auto previous=coordinateQuery;coordinateQuery=unit;
+    auto result=originalCoordsGetter<T,Slot>(unit,out);
+    coordinateQuery=previous;
+    if(previous!=unit) if(auto motion=find(unit)) result->Z+=motion->lift();
+    return result;
+}
+template<class T,int Slot,class Getter> void installGetter(Getter& original,Getter replacement) {
+    if(original) return;
+    auto slot=reinterpret_cast<Getter*>(T::AbsVTable+Slot);
+    DWORD protection;
+    if(!VirtualProtect(slot,sizeof(*slot),PAGE_READWRITE,&protection)) {
+        OutputDebugStringA("Starfall: could not install forced-move targeting query\n");return;
+    }
+    original=*slot;*slot=replacement;
+    VirtualProtect(slot,sizeof(*slot),protection,&protection);
+}
+template<class T> void installTargeting() {
+    installGetter<T,0x54>(originalAirGetter<T>,reinterpret_cast<AirGetter>(&queryAir<T>));
+    installGetter<T,0x58>(originalCoordsGetter<T,0x58>,reinterpret_cast<CoordsGetter>(&queryCoords<T,0x58>));
+    installGetter<T,0xA4>(originalCoordsGetter<T,0xA4>,reinterpret_cast<CoordsGetter>(&queryCoords<T,0xA4>));
+}
+bool nativeInAir(const TechnoClass* unit) {
+    auto getter=unit->WhatAmI()==AbstractType::Unit?originalAirGetter<UnitClass>:originalAirGetter<InfantryClass>;
+    return getter?getter(unit):unit->IsInAir();
+}
+auto& trackerVector(int index) {
+    return AircraftTrackerClass::Instance.TrackerVectors[index/20][index%20];
+}
+int locateTracker(TechnoClass* unit) {
+    for(int i=0;i<400;++i) if(trackerVector(i).FindItemIndex(unit)>=0) return i;
+    return -1;
+}
+void removeTracker(Motion& motion) {
+    if(motion.trackerIndex>=0 && motion.foot) {
+        while(trackerVector(motion.trackerIndex).Remove(motion.foot)) {}
+        while(AircraftTrackerClass::Instance.CurrentVector.Remove(motion.foot)) {}
+    }
+    motion.trackerIndex=-1;
+}
+void syncAirTracker(Motion& motion) {
+    auto foot=motion.foot;
+    if(!foot) return;
+    const bool tracked=motion.airborne() || motion.nativeTracked;
+    int index=tracked?AircraftTrackerClass::Instance.GetVectorIndex(foot->GetMapCoords()):-1;
+    // Phobos also uses this native sentinel to exclude tracker entries from
+    // the ground damage pass. Clear it when a borrowed registration ends.
+    if(index<0 && motion.trackerIndex>=0) foot->SetLastFlightMapCoords(CellStruct::Empty);
+    if(index!=motion.trackerIndex) removeTracker(motion);
+    if(index>=0) {
+        trackerVector(index).AddUnique(foot);
+        foot->SetLastFlightMapCoords(foot->GetMapCoords());
+        motion.trackerIndex=index;
+    }
+}
+void forget(DWORD id) {
+    if(auto it=motions.find(id);it!=motions.end()) {
+        removeTracker(it->second);
+        motions.erase(it);
+    }
+}
+void clearMotions() {
+    for(auto& [id,motion]:motions) if(!motion.nativeTracked) removeTracker(motion);
+    motions.clear();
+}
 constexpr unsigned settleFrames=12;
 constexpr double maxTilt=Math::Pi/4;
 struct SettlingTilt {
@@ -130,9 +220,10 @@ bool unreserved(const AbstractClass* unit) {
 }
 bool eligible(TechnoClass* unit) {
     if(!unit || !unit->IsAlive || unit->Health<=0 || !unit->IsOnMap || unit->InLimbo || unit->Transporter ||
-       unit->Absorbed || unit->IsInAir() || unit->IsImmobilized || unit->IsBeingWarpedOut() ||
+       unit->Absorbed || unit->IsImmobilized || unit->IsBeingWarpedOut() ||
        unit->IsSinking || unit->IsCrashing) return false;
     if(unit->WhatAmI()!=AbstractType::Unit && unit->WhatAmI()!=AbstractType::Infantry) return false;
+    if(nativeInAir(unit)) return false;
     auto foot=static_cast<FootClass*>(unit);
     return foot->Locomotor && foot->TubeIndex<0 && !foot->IsAttackedByLocomotor && !foot->IsDeploying;
 }
@@ -214,20 +305,55 @@ bool start(TechnoClass* unit,const Spec& spec,const CoordStruct& center) {
     }
     motion.lastFrame=Unsorted::CurrentFrame;
     motion.height=spec.height;motion.duration=spec.duration;motion.tilt=spec.tilt;motion.easing=spec.easing;
+    motion.airborneHeight=spec.airborneHeight;
     if(!motion.dx && !motion.dy && !motion.height) return false;
     motion.ignoreCollision=spec.ignoreCollision;
     auto previous=motions.find(unit->UniqueID);
     bool wasUnreserved=unreserved(foot);
     if(previous!=motions.end()) {
         motion.startHeight=previous->second.lift();
+        motion.trackerIndex=previous->second.trackerIndex;motion.nativeTracked=previous->second.nativeTracked;
         if(wasUnreserved && !spec.ignoreCollision && !clearForSolid(foot)) return false;
-    } else if(!interruptTravel(foot)) return false;
+    } else {
+        if(!interruptTravel(foot)) return false;
+        motion.trackerIndex=locateTracker(foot);motion.nativeTracked=motion.trackerIndex>=0;
+    }
     if(!wasUnreserved && spec.ignoreCollision) foot->UnmarkAllOccupationBits(foot->Location);
     if(tilts(motion)) settling.erase(unit->UniqueID);
     else if(auto old=motions.find(unit->UniqueID);old!=motions.end()) releaseTilt(foot,old->second);
     motions[unit->UniqueID]=motion;
+    syncAirTracker(motions.at(unit->UniqueID));
     if(wasUnreserved && !spec.ignoreCollision) foot->MarkAllOccupationBits(foot->Location);
     return true;
+}
+// SetLocation/Mark move the object and its cell chain, but FootClass normally
+// updates LastMapCoords, threat regions, sensors and neighbouring-cell counts
+// only at PCPType::End. Forced motion bypasses that locomotor path. Move these
+// registrations together without running cell-entry actions (crushing, mines,
+// building entry, etc.) while IgnoreCollision units are still in transit.
+void syncCellRegistration(FootClass* foot) {
+    const auto previous=foot->LastMapCoords,current=foot->GetMapCoords();
+    if(previous==current || previous==CellStruct{0,0} || !foot->Owner) return;
+    auto& map=MapClass::Instance;
+    auto oldCell=map.TryGetCellAt(previous),newCell=map.TryGetCellAt(current);
+    if(!oldCell || !newCell) return;
+    if(foot->GetTechnoType()->SensorsSight) {
+        foot->RemoveSensorsAt(previous);
+        foot->AddSensorsAt(current);
+    }
+    const auto house=foot->GetOwningHouseIndex();
+    oldCell->UpdateThreat(house,-static_cast<int>(foot->ThreatPosed));
+    foot->ThreatPosed=0;
+    foot->ThreatPosed=foot->GetThreatValue();
+    newCell->UpdateThreat(house,static_cast<int>(foot->ThreatPosed));
+    for(int y=-1;y<=1;++y) for(int x=-1;x<=1;++x) {
+        if(!x && !y) continue;
+        if(auto cell=map.TryGetCellAt(CellStruct{static_cast<short>(previous.X+x),static_cast<short>(previous.Y+y)}))
+            --cell->BlockedNeighbours;
+        if(auto cell=map.TryGetCellAt(CellStruct{static_cast<short>(current.X+x),static_cast<short>(current.Y+y)}))
+            ++cell->BlockedNeighbours;
+    }
+    foot->LastMapCoords=current;
 }
 // Sweep even one-frame moves in short steps to catch intervening cells.
 bool moveTo(FootClass* foot,int x,int y,bool ignoreCollision) {
@@ -263,6 +389,7 @@ bool moveTo(FootClass* foot,int x,int y,bool ignoreCollision) {
         foot->OnBridge=bridge;
         foot->SetLocation(pos);
         foot->Mark(MarkType::Down);
+        syncCellRegistration(foot);
     }
     return pos.X==x && pos.Y==y;
 }
@@ -313,7 +440,11 @@ void tick() {
     if(std::any_of(motions.begin(),motions.end(),[](const auto& e){return !e.second.foot;}))
         for(auto foot:FootClass::Array) if(foot) {
             auto found=motions.find(foot->UniqueID);
-            if(found!=motions.end()) found->second.foot=foot;
+            if(found!=motions.end() && !found->second.foot) {
+                found->second.foot=foot;
+                found->second.trackerIndex=locateTracker(foot);
+                syncAirTracker(found->second);
+            }
         }
     vector<DWORD> completed;
     for(auto it=motions.begin();it!=motions.end();) {
@@ -321,6 +452,10 @@ void tick() {
         auto foot=m.foot;
         if(!eligible(foot)) {
             bool ghost=m.ignoreCollision;
+            if(!m.nativeTracked) {
+                if(foot && m.trackerIndex>=0) foot->SetLastFlightMapCoords(CellStruct::Empty);
+                removeTracker(m);
+            }
             it=motions.erase(it);
             if(foot && foot->IsAlive && foot->Health>0 && foot->IsOnMap && !foot->InLimbo && !foot->Transporter) {
                 if(ghost) foot->MarkAllOccupationBits(foot->Location);
@@ -336,6 +471,7 @@ void tick() {
             auto pos=m.position();
             m.blocked=!moveTo(foot,pos.X,pos.Y,m.ignoreCollision);
         }
+        syncAirTracker(m);
         foot->MarkForRedraw();
         if(m.elapsed==m.duration || (!m.ignoreCollision && m.blocked && !m.height && !m.startHeight)) {
             completed.push_back(it->first);

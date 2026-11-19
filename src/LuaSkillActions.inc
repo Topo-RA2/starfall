@@ -166,7 +166,7 @@ void arguments(lua_State* L,int table,ScriptFields& fields,std::optional<DWORD>&
         string key=lower(lua_tostring(L,-2));
         if(key!="action" && !key.starts_with("action.")) key="action."+key;
         if(key=="action.offset" || key=="action.mode" || key=="action.center" || key=="action.distance" || key=="action.height" || key=="action.tilt" || key=="action.easing" || key=="action.ignorecollision" ||
-           key=="action.blowweight" || key=="action.affectsironcurtain")
+           key=="action.blowweight" || key=="action.affectsironcurtain" || key=="action.airborneheight")
             key="action.forcemove."+key.substr(7);
         const auto canonical=key=="action.duration"?string("action.forcemove.duration"):key;
         if(!supplied.insert(canonical).second)
@@ -473,11 +473,19 @@ int invoke(lua_State* L) {
     lua_call(L,f.taskData?2:1,0);return 0;
 }
 }
+const Skill* scriptSkill(const string& id) {
+    if(id.starts_with("@pickup:")) {
+        auto it=pickupTypes.find(id.substr(8));
+        return it==pickupTypes.end()?nullptr:&it->second.reward;
+    }
+    auto it=skills.find(id);
+    return it==skills.end()?nullptr:&it->second;
+}
 bool runScript(const PassiveAction& a,Event& event,const Objects& objects,int stacks,int* pendingDamage) {
     auto mod=scriptModules.find(a.script);
-    auto skill=skills.find(a.skillId);
+
     const Skill* definition=event.sequenceCast?ActionSequence::stepFor(ActionSequence::casts.at(event.sequenceCast),a.skillId):
-        skill==skills.end()?nullptr:&skill->second;
+        scriptSkill(a.skillId);
     if(mod==scriptModules.end() || !definition) return false;
     ScriptActions::Frame frame{*definition,event,objects,stacks,pendingDamage};
     ScriptRuntime::Call call{&mod->second,nullptr,&a.function,ScriptActions::invoke,&frame};
@@ -518,10 +526,10 @@ void tickScriptQueue(LuaTimers::Store& store,bool super) {
         auto holder=findLive(live,task.owner);
         if(!super && !holder) continue;
         auto mod=scriptModules.find(task.file);
-        auto skill=skills.find(task.skill);
+
         auto cast=ActionSequence::casts.find(task.owner);
         const Skill* definition=super?(cast==ActionSequence::casts.end()?nullptr:ActionSequence::stepFor(cast->second,task.skill)):
-            skill==skills.end()?nullptr:&skill->second;
+            scriptSkill(task.skill);
         if(mod==scriptModules.end() || !definition || !includes(mod->second.functions,task.callback)) {
             if(super) ActionSequence::retire(task.owner);
             configLog("Lua timer: missing ["+task.skill+"] "+task.file+"."+task.callback);continue;

@@ -15,6 +15,7 @@ std::array<int,rarityCount> rarityWeights=defaultRarityWeights;
 std::wstring title;
 bool enabled=true;
 bool allowCardRefresh=true;
+bool announceSelection=true;
 std::map<int,unsigned> refreshedSlots;
 Unlocks unlocked;
 std::map<int,std::vector<std::string>> unlockOrder;
@@ -41,6 +42,22 @@ bool owns(int house,const std::string& id) {
     auto it=unlocked.find(house);
     return it!=unlocked.end() && it->second.contains(id);
 }
+std::vector<int> completedProjects(int house) {
+    Research::ensureReady();
+    std::vector<int> result;
+    auto add=[&](const std::string& id) {
+        if(!Research::owns(house,id)) return;
+        for(int i=0;i<static_cast<int>(Research::options.size());++i)
+            if(Research::options[i].id==id && std::find(result.begin(),result.end(),i)==result.end()) {
+                result.push_back(i);break;
+            }
+    };
+    auto it=Research::unlockOrder.find(house);
+    if(it!=Research::unlockOrder.end()) for(const auto& id:it->second) add(id);
+    // Saves created before purchase order was recorded retain all their icons.
+    for(const auto& o:Research::options) add(o.id);
+    return result;
+}
 bool purchase(int house,int option,const char* country) {
     if(balance(house)<price || !available(option) || !meetsPrerequisites(house,option) || owns(house,options[option].id)) return false;
     const auto& eligible=offers(house,country);
@@ -54,7 +71,7 @@ bool purchase(int house,int option,const char* country) {
 }
 void reset() {
     clearPresentationCaches(true);
-    ++uiGeneration;soundFiles={};enabled=true;
+    ++uiGeneration;soundFiles={};enabled=true;announceSelection=true;
     globalIncome={};
     unlocked.clear(); unlockOrder.clear(); points.clear(); producers.clear(); buildingRewards.clear(); rewardPanel=0; savedOffers.clear(); clearOfferCache();
     seenOffers.clear(); refreshedSlots.clear(); options.clear(); expanded=false; pressed=pressedOption=-1; badgePageIndex=0;

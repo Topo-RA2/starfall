@@ -70,6 +70,7 @@ extern std::wstring title;
 extern bool enabled;
 bool isEnabled();
 extern bool allowCardRefresh;
+extern bool announceSelection;
 extern std::map<int,unsigned> refreshedSlots;
 bool slotUsed(int house,int slot);
 bool canRefresh(int house,const char* country,int slot);
@@ -77,6 +78,7 @@ bool refresh(int house,const char* country,int slot,int expected);
 constexpr int price=100;
 using Unlocks=std::map<int,std::set<std::string>>;
 extern Unlocks unlocked;
+std::vector<int> completedProjects(int house);
 extern std::map<int,std::vector<std::string>> unlockOrder;
 extern std::map<int,int> points;
 struct GlobalIncome {

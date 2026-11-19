@@ -137,7 +137,7 @@ void Research::readConfiguration(const char* configPath) {
         if(auto it=fields.find(sec);it!=fields.end()) for(const auto& entry:it->second) check(entry.first);
         for(const auto& entry:unknown) warn(sec,entry.second.c_str(),"科研配置不读取此字段，请核对拼写");
     };
-    warnUnknown("starfall.research",{"enabled","allowcardrefresh","title","initialpoints","periodicpoints","periodicintervalseconds",
+    warnUnknown("starfall.research",{"enabled","allowcardrefresh","announceselection","title","initialpoints","periodicpoints","periodicintervalseconds",
         "rarityweight.common","rarityweight.rare","rarityweight.epic","rarityweight.insane"});
     warnUnknown("starfall.researchsounds",{"button","cards","refresh","select","available"});
     auto enabled=lower(field("starfall.research","Enabled","yes"));
@@ -152,10 +152,12 @@ void Research::readConfiguration(const char* configPath) {
     for(size_t i=0;i<soundKeys.size();++i) Research::soundFiles[i]=field("starfall.researchsounds",soundKeys[i]);
     auto refresh=lower(trim(field("starfall.research","AllowCardRefresh","yes")));
     Research::allowCardRefresh=refresh=="yes" || refresh=="true" || refresh=="1";
-    for(const auto key:{"Enabled","AllowCardRefresh"}) {
+    auto announce=lower(trim(field("starfall.research","AnnounceSelection","yes")));
+    Research::announceSelection=!includes({"no","false","0"},announce);
+    for(const auto key:{"Enabled","AllowCardRefresh","AnnounceSelection"}) {
         auto value=lower(field("starfall.research",key,"yes"));
         if(!includes({"yes","true","1","no","false","0"},value))
-            warn("starfall.research",key,string("无效开关值，当前按 ")+(string(key)=="Enabled"?"yes":"no")+" 处理");
+            warn("starfall.research",key,string("无效开关值，当前按 ")+(string(key)=="AllowCardRefresh"?"no":"yes")+" 处理");
     }
     string heading=field("starfall.research","Title");
     Research::title=heading.empty()?L"请选择升级":displayText(heading);

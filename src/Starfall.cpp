@@ -7,6 +7,8 @@
 #include "VisualScale.h"
 #include "LuaTimers.h"
 #include "ActiveSkills.h"
+#include "BuildingSpawn.h"
+#include "BuildingTransform.h"
 #include <filesystem>
 #include <algorithm>
 #include <array>
@@ -49,6 +51,8 @@
 #include <TacticalClass.h>
 #include <LocomotionClass.h>
 #include <Powerups.h>
+#include <FileSystem.h>
+#include <OverlayTypeClass.h>
 #include <InfantryClass.h>
 #include <UnitClass.h>
 #include <TActionClass.h>
@@ -209,8 +213,13 @@ struct PassiveAction {
     bool signalIncludeSelf=false;
     int percentDelta=0;
     size_t percentIndex=percentActions.size();
+    string pickupType;
     Powerup crateType=randomCrate;
     TechnoTypeClass* unitType=nullptr;
+    vector<TechnoTypeClass*> randomUnitTypes;
+    vector<int> randomWeights;
+    int randomCount=1,randomWeightTotal=0;
+    BuildingTypeClass* buildingType=nullptr;
     string owner;
     string action, target, passive, weapon;
     WarheadTypeClass* warhead=nullptr;
@@ -257,6 +266,7 @@ struct Skill {
     bool animAlways=false;
     std::optional<ColorStruct> tint;
     string animTarget;
+    vector<string> linkedPassives;
     vector<string> spawnPassives;
     vector<string> transportPassives;
     bool transportStack=false;
@@ -266,6 +276,8 @@ struct Skill {
     string signal;
     vector<string> senderHouses,senderKinds;
     vector<PassiveAction> actions;
+    vector<int> randomActionWeights;
+    int randomActionCount=0,randomActionTotal=0;
     vector<string> houses, kinds;
     int count, chance, cooldown, minDamage, maxTriggers=0, stackMax=INT_MAX;
     int requiredMask=0,requiredBits=0;
@@ -273,6 +285,19 @@ struct Skill {
     int interval=0;
     WeaponRules slots{};
 };
+struct PickupType {
+    Skill reward{};
+    string image;
+    int lifetime=-1;
+};
+struct GroundPickup {
+    string type;
+    unsigned born;
+};
+using PickupCell=std::pair<short,short>;
+std::map<string,PickupType> pickupTypes;
+std::map<PickupCell,GroundPickup> groundPickups;
+std::map<string,std::unique_ptr<SHPReference>> pickupImages;
 std::map<string, Skill> skills;
 std::map<string, vector<string>> bindings;
 std::map<string,string> mapPassiveBindings;
@@ -292,6 +317,8 @@ std::map<DWORD,std::map<string,unsigned>> auraGrants;
 std::map<DWORD,std::set<string>> auraLosses;
 bool discoverAuras=true;
 bool anySpawnPassives=false;
+bool anyLinkedPassives=false;
+std::map<DWORD,std::set<string>> linkedGrants;
 bool anyTransportPassives=false;
 struct TransportGrant {
     unsigned sources=0, layers=0;
@@ -377,14 +404,16 @@ int scalePercent(const string& text,double minimum) {
 bool actionField(const string& key) {
     static const std::set<string> fields={"action","action.amount","action.maxhealthpercent","action.percentofdamage","action.target","action.weapon",
         "action.anim","action.sound","action.shakex","action.shakey","action.shakelocal","action.particlesystem",
-        "action.warhead","action.passive","action.duration","action.stackonreapply","action.cratetype","action.owner","action.unittype","action.percent",
-        "action.forcemove.mode","action.forcemove.center","action.forcemove.offset","action.forcemove.distance","action.forcemove.height","action.forcemove.duration","action.forcemove.tilt","action.forcemove.easing","action.forcemove.ignorecollision","action.forcemove.blowweight","action.forcemove.affectsironcurtain",
+        "action.warhead","action.passive","action.duration","action.stackonreapply","action.cratetype","action.pickuptype","action.owner","action.unittype","action.unittypes","action.weights","action.randomcount","action.buildingtype","action.percent",
+        "action.forcemove.mode","action.forcemove.center","action.forcemove.offset","action.forcemove.distance","action.forcemove.height","action.forcemove.airborneheight","action.forcemove.duration","action.forcemove.tilt","action.forcemove.easing","action.forcemove.ignorecollision","action.forcemove.blowweight","action.forcemove.affectsironcurtain",
         "action.destination","action.searchradius","action.script","action.function","action.levels","action.signal","action.signal.target","action.signal.range","action.signal.houses","action.signal.includeself","action.signal.value"};
     return fields.contains(key);
 }
 bool activeField(const string& key) {
     static const std::set<string> keys={"active.name","active.icon","active.castmode","active.interruptorders","active.target",
-        "active.range","active.radius","active.distance","active.shape","active.houses"};
+        "active.range","active.radius","active.distance","active.shape","active.houses",
+        "active.indicator.texture","active.indicator.opacity","active.indicator.arrow.texture",
+        "active.indicator.arrow.width","active.indicator.arrow.head","active.indicator.arrow.tail"};
     return keys.contains(key);
 }
 bool parseState(Skill& s,const std::set<string>& keys) {
@@ -435,6 +464,10 @@ bool parseState(Skill& s,const std::set<string>& keys) {
                 "modifier.aura.passives","modifier.aura.includeself"},key)) return invalidField(s.id,key);
             modifier=true;
             s.aura.range=1; // Read the grouped fields together after checking their names.
+        } else if(key=="modifier.linkedpassives") {
+            s.linkedPassives=split(read(s.id,key.c_str()));
+            if(!continuous || s.linkedPassives.empty()) return invalidField(s.id,key);
+            modifier=true;
         } else if(key=="modifier.spawnpassives") {
             s.spawnPassives=split(read(s.id,key.c_str()));
             if(!continuous || s.spawnPassives.empty()) return invalidField(s.id,key);
@@ -517,7 +550,7 @@ bool parseState(Skill& s,const std::set<string>& keys) {
                   key!="condition.selfmoving" && key!="condition.selfpowered" && key!="condition.selfcloak")
             return invalidField(s.id,key);
         else if(!continuous) {
-            static const std::set<string> eventKeys={"trigger","actions","interval","maxtriggers","chance","cooldown",
+            static const std::set<string> eventKeys={"trigger","actions","randomactions","randomactions.weights","randomactions.count","interval","maxtriggers","chance","cooldown",
                 "signal","filter.senderhouse","filter.senderkind","filter.targethouse","filter.targetkind","condition.mindamage","condition.count","condition.ownerpower",
                 "condition.selfmoving","condition.selfpowered","condition.selfcloak"};
             if(!eventKeys.contains(key) && !actionField(key))
@@ -568,11 +601,10 @@ bool parseState(Skill& s,const std::set<string>& keys) {
     if(keys.contains("modifier.transportpassives.stack") && s.transportPassives.empty()) return invalidField(s.id,"Modifier.TransportPassives.Stack requires Modifier.TransportPassives");
     if(!s.transportPassives.empty() && (query.range || s.conditionFormula.expression.usesDistance() || s.conditionFormula.expression.usesTargetValues()))
         return invalidField(s.id,"transport support cannot use spatial or target conditions");
-    if(continuous && !query.range && !s.requiredMask && s.deployPosture==DeployPosture::None && s.conditionFormula.expression.empty() && s.transportPassives.empty()) return invalidField(s.id,"state condition required");
     return true;
 }
 bool positionalAction(std::string_view name) {
-    return name=="spawnunit" || name=="spawncrate" || name=="fireweapon" || name=="detonatewarhead" ||
+    return name=="spawnunit" || name=="spawnbuilding" || name=="spawncrate" || name=="spawnpickup" || name=="fireweapon" || name=="detonatewarhead" ||
            name=="playanim" || name=="playsound" || name=="shakescreen" || name=="spawnparticlesystem";
 }
 bool readAction(Skill& skill,const string& section,const ScriptFields* fields=nullptr) {
@@ -586,13 +618,21 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields=nu
         return invalidField(skill.id,section==skill.id ? field : "Actions -> ["+section+"] "+field);
     };
     a.action=field("Action");
-    if(a.action!="chronoteleport" && (!field("Action.Destination").empty() || !field("Action.SearchRadius").empty()))
-        return invalid("Action.Destination and Action.SearchRadius require ChronoTeleport");
+    if(a.action!="chronoteleport" && !field("Action.Destination").empty())
+        return invalid("Action.Destination requires ChronoTeleport");
+    if(a.action=="chronoteleport" || a.action=="spawnbuilding") {
+        a.searchRadius=number(field("Action.SearchRadius","3"));
+        if(a.searchRadius<0 || a.searchRadius>32) return invalid("Action.SearchRadius (0..32)");
+    } else if(!field("Action.SearchRadius").empty()) return invalid("Action.SearchRadius requires ChronoTeleport or SpawnBuilding");
     if(a.action!="promote" && !field("Action.Levels").empty()) return invalid("Action.Levels requires Promote");
     if(a.action!="runscript" && (!field("Action.Script").empty() || !field("Action.Function").empty()))
         return invalid("Action.Script and Action.Function require RunScript");
     auto validKey=[&](const string& key) {
         if(key.starts_with("action.") && !actionField(key)) return invalid("unknown field "+key);
+        if(key=="action.pickuptype" && a.action!="spawnpickup") return invalid(key+" requires SpawnPickup");
+        if(key=="action.buildingtype" && a.action!="spawnbuilding") return invalid(key+" requires SpawnBuilding");
+        if(key=="action.unittype" && a.action=="spawnbuilding") return invalid("SpawnBuilding requires Action.BuildingType");
+        if((key=="action.unittypes" || key=="action.weights" || key=="action.randomcount") && a.action!="spawnunit") return invalid(key+" requires SpawnUnit");
         static const std::map<string,string> presentationFields={
             {"action.anim","playanim"},{"action.sound","playsound"},{"action.particlesystem","spawnparticlesystem"},
             {"action.shakex","shakescreen"},{"action.shakey","shakescreen"},{"action.shakelocal","shakescreen"}};
@@ -682,17 +722,43 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields=nu
             }
         } else if(static_cast<int>(a.amount>0)+static_cast<int>(a.damagePercent>0)+static_cast<int>(formulaAmount)!=1)
             return invalid("Action.Amount / Action.PercentOfDamage");
-    } else if(a.action=="spawnunit" || a.action=="changeowner" || a.action=="transform") {
+    } else if(a.action=="spawnunit" || a.action=="spawnbuilding" || a.action=="changeowner" || a.action=="transform") {
         if(a.action!="transform") {
             a.owner=field("Action.Owner","Self");
             bool playerSlot=a.owner.size()==7 && a.owner.starts_with("player") && a.owner[6]>='1' && a.owner[6]<='8';
             if(!playerSlot && !includes({"self","attacker","victim","neutral"},a.owner))
                 return invalid("Action.Owner="+a.owner);
         }
-        if(a.action!="changeowner") {
+        if(a.action=="spawnbuilding") {
+            auto id=field("Action.BuildingType");
+            a.buildingType=id.empty()?nullptr:BuildingTypeClass::Find(id.c_str());
+            if(!BuildingSpawn::supported(a.buildingType)) return invalid("Action.BuildingType="+id+" (requires a standalone building, not an upgrade, wall or pavement)");
+        } else if(a.action=="spawnunit" && !field("Action.UnitTypes").empty()) {
+            if(!field("Action.UnitType").empty()) return invalid("Action.UnitType and Action.UnitTypes are mutually exclusive");
+            auto names=split(field("Action.UnitTypes"));
+            if(names.empty()) return invalid("Action.UnitTypes");
+            for(const auto& name:names) {
+                auto type=TechnoTypeClass::Find(name.c_str());
+                if(!type || type->WhatAmI()==AbstractType::BuildingType) return invalid("Action.UnitTypes="+name);
+                a.randomUnitTypes.push_back(type);
+            }
+            auto weights=field("Action.Weights");
+            auto values=weights.empty()?vector<string>(names.size(),"1"):split(weights);
+            if(values.size()!=names.size() || (!weights.empty() && std::count(weights.begin(),weights.end(),',')+1!=values.size())) return invalid("Action.Weights count");
+            for(const auto& value:values) {
+                int weight=0;auto parsed=std::from_chars(value.data(),value.data()+value.size(),weight);
+                if(parsed.ec!=std::errc{} || parsed.ptr!=value.data()+value.size() || weight<0 || weight>INT_MAX-a.randomWeightTotal) return invalid("Action.Weights="+weights);
+                a.randomWeightTotal+=weight;a.randomWeights.push_back(weight);
+            }
+            if(!a.randomWeightTotal) return invalid("Action.Weights all zero");
+            auto count=field("Action.RandomCount","1");auto parsed=std::from_chars(count.data(),count.data()+count.size(),a.randomCount);
+            if(parsed.ec!=std::errc{} || parsed.ptr!=count.data()+count.size() || a.randomCount<1 || a.randomCount>256) return invalid("Action.RandomCount (1..256)");
+        } else if(a.action!="changeowner") {
+            if(!field("Action.Weights").empty() || !field("Action.RandomCount").empty()) return invalid("Action.Weights and Action.RandomCount require Action.UnitTypes");
             auto id=field("Action.UnitType");
             a.unitType=id.empty()?nullptr:TechnoTypeClass::Find(id.c_str());
-            if(!a.unitType || a.unitType->WhatAmI()==AbstractType::BuildingType) return invalid("Action.UnitType="+id);
+            if(!a.unitType || (a.unitType->WhatAmI()==AbstractType::BuildingType &&
+                (a.action!="transform" || !BuildingSpawn::supported(static_cast<BuildingTypeClass*>(a.unitType))))) return invalid("Action.UnitType="+id);
         }
     } else if(auto stat=std::find(percentActions.begin(),percentActions.end(),a.action);stat!=percentActions.end()) {
         a.percentIndex=static_cast<size_t>(stat-percentActions.begin());
@@ -710,7 +776,7 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields=nu
                 return invalid("Action.Percent");
         }
     } else if(a.action=="forcemove") {
-        if(!ForceMove::parse(a.forceMove,field)) return invalid("Action.ForceMove mode/offset, center, distance, height, duration, BlowWeight (finite number), Tilt/IgnoreCollision/AffectsIronCurtain (yes/no) or Easing (Linear/EaseIn/EaseOut/EaseInOut)");
+        if(!ForceMove::parse(a.forceMove,field)) return invalid("Action.ForceMove mode/offset, center, distance, height, AirborneHeight (0..512 cells), duration, BlowWeight (finite number), Tilt/IgnoreCollision/AffectsIronCurtain (yes/no) or Easing (Linear/EaseIn/EaseOut/EaseInOut)");
     } else if(a.action=="chronoteleport") {
         auto dest=field("Action.Destination");
         auto comma=dest.find(',');
@@ -718,8 +784,9 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields=nu
         int x=number(trim(dest.substr(0,comma))),y=number(trim(dest.substr(comma+1)));
         if(x<0 || x>=512 || y<0 || y>=512) return invalid("Action.Destination="+dest+" (expected X,Y in 0..511)");
         a.teleportCell={static_cast<short>(x),static_cast<short>(y)};
-        a.searchRadius=number(field("Action.SearchRadius","3"));
-        if(a.searchRadius<0 || a.searchRadius>32) return invalid("Action.SearchRadius (0..32)");
+    } else if(a.action=="spawnpickup") {
+        a.pickupType=field("Action.PickupType");
+        if(!pickupTypes.contains(a.pickupType)) return invalid("Action.PickupType="+a.pickupType);
     } else if(a.action=="spawncrate") {
         auto name=field("Action.CrateType","Random");
         if(name!="random") {
@@ -809,10 +876,13 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields=nu
 }
 #include "ActionSequence.inc"
 bool readActions(Skill& skill,const std::set<string>& keys) {
-    if(!keys.contains("actions")) return readAction(skill,skill.id);
+    bool random=keys.contains("randomactions");
+    if(!random && (keys.contains("randomactions.weights") || keys.contains("randomactions.count"))) return invalidField(skill.id,"RandomActions parameters require RandomActions");
+    if(random && (keys.contains("actions") || skill.trigger=="onbeforefire" || beforeHealthLoss(skill.trigger) || skill.trigger=="oncast")) return invalidField(skill.id,"RandomActions incompatible with this action or trigger");
+    if(!random && !keys.contains("actions")) return readAction(skill,skill.id);
     for(const auto& key:keys)
         if(key=="action" || key.starts_with("action.")) return invalidField(skill.id,"Actions + "+key);
-    const string list=read(skill.id,"Actions");
+    const string list=read(skill.id,random?"RandomActions":"Actions");
     if(list.size()>=2047) return invalidField(skill.id,"Actions (list too long)");
     size_t start=0;
     for(;;) {
@@ -826,9 +896,23 @@ bool readActions(Skill& skill,const std::set<string>& keys) {
                 return invalidField(skill.id,"Actions -> ["+section+"] "+field);
         }
         if(!readAction(skill,section)) return false;
-        if(end==string::npos) return true;
+        if(end==string::npos) break;
         start=end+1;
     }
+    if(random) {
+        auto raw=read(skill.id,"RandomActions.Weights");
+        auto weights=raw.empty()?vector<string>(skill.actions.size(),"1"):split(raw);
+        if(weights.size()!=skill.actions.size() || (!raw.empty() && std::count(raw.begin(),raw.end(),',')+1!=weights.size())) return invalidField(skill.id,"RandomActions.Weights count");
+        for(const auto& text:weights) {
+            int weight=0;auto result=std::from_chars(text.data(),text.data()+text.size(),weight);
+            if(result.ec!=std::errc{} || result.ptr!=text.data()+text.size() || weight<0 || weight>INT_MAX-skill.randomActionTotal) return invalidField(skill.id,"RandomActions.Weights="+raw);
+            skill.randomActionTotal+=weight;skill.randomActionWeights.push_back(weight);
+        }
+        if(!skill.randomActionTotal) return invalidField(skill.id,"RandomActions.Weights all zero");
+        auto count=read(skill.id,"RandomActions.Count","1");auto result=std::from_chars(count.data(),count.data()+count.size(),skill.randomActionCount);
+        if(result.ec!=std::errc{} || result.ptr!=count.data()+count.size() || skill.randomActionCount<1 || skill.randomActionCount>256) return invalidField(skill.id,"RandomActions.Count (1..256)");
+    }
+    return true;
 }
 bool anyPassiveVisuals=false;
 bool readAnimations(Skill& s,const std::set<string>& keys) {
@@ -953,6 +1037,19 @@ bool readActive(const string& id,ActiveSkills::Spec& spec) {
     spec.interruptOrders=interrupt=="yes";
     spec.id=id;spec.all=mode=="all";
     spec.name=displayText(readRaw(id,"Active.Name",id.c_str()));spec.icon=readRaw(id,"Active.Icon");
+    spec.indicatorTexture=readRaw(id,"Active.Indicator.Texture");
+    spec.arrowTexture=readRaw(id,"Active.Indicator.Arrow.Texture");
+    auto width=read(id,"Active.Indicator.Arrow.Width","0.75");
+    auto parsedWidth=std::from_chars(width.data(),width.data()+width.size(),spec.arrowWidth);
+    if(parsedWidth.ec!=std::errc{} || parsedWidth.ptr!=width.data()+width.size() ||
+       !std::isfinite(spec.arrowWidth) || spec.arrowWidth<0.1 || spec.arrowWidth>8)
+        return invalidField(id,"Active.Indicator.Arrow.Width");
+    spec.arrowHead=number(read(id,"Active.Indicator.Arrow.Head","25"));
+    spec.arrowTail=number(read(id,"Active.Indicator.Arrow.Tail","37"));
+    spec.indicatorOpacity=number(read(id,"Active.Indicator.Opacity","90"));
+    if(spec.arrowHead<1 || spec.arrowHead>98 || spec.arrowTail<1 || spec.arrowTail>98 || spec.arrowHead+spec.arrowTail>=100)
+        return invalidField(id,"Active.Indicator.Arrow.Head/Tail");
+    if(spec.indicatorOpacity<0 || spec.indicatorOpacity>100) return invalidField(id,"Active.Indicator.Opacity");
     spec.kind=kind=="unit"?K::Unit:kind=="area"?K::Area:kind=="direction"?K::Direction:kind=="point"?K::Point:K::None;
     spec.range=number(read(id,"Active.Range","0"));spec.radius=number(read(id,"Active.Radius","0"));
     spec.distance=number(read(id,"Active.Distance","0"));
@@ -1014,9 +1111,31 @@ void discoverScripts(std::set<string>& ids) {
         scriptModules.emplace(file,std::move(m));
     }
 }
+void rejectLinkedCycles() {
+    vector<string> path;
+    std::set<string> checked,invalid;
+    std::map<string,size_t> visiting;
+    std::function<void(const string&)> visit=[&](const string& id) {
+        if(auto it=visiting.find(id);it!=visiting.end()) {
+            string chain;
+            for(size_t i=it->second;i<path.size();++i) {
+                invalid.insert(path[i]);chain+=path[i]+" -> ";
+            }
+            invalidField(id,"Modifier.LinkedPassives cycle: "+chain+id);
+            return;
+        }
+        if(!checked.insert(id).second) return;
+        visiting.emplace(id,path.size());path.push_back(id);
+        for(const auto& child:skills.at(id).linkedPassives) if(skills.contains(child)) visit(child);
+        path.pop_back();visiting.erase(id);
+    };
+    for(const auto& [id,skill]:skills) if(!skill.linkedPassives.empty()) visit(id);
+    for(const auto& id:invalid) skills.erase(id);
+}
 void readSkills() {
     GetFullPathNameA("Starfall.ini", MAX_PATH, configPath, nullptr);
     installRangeGetter<UnitClass>();installRangeGetter<InfantryClass>();
+    ForceMove::installTargeting<UnitClass>();ForceMove::installTargeting<InfantryClass>();
     installRangeGetter<AircraftClass>();installRangeGetter<BuildingClass>();
     readPercentLimits();
     std::set<string> ids;
@@ -1034,6 +1153,16 @@ void readSkills() {
     if(auto ini=CCINIClass::INI_Rules)
         for(auto node=ini->Sections.First();node && node->IsValid();node=node->Next())
             if(node->Name && ids.contains(lower(node->Name))) rulesSkillNames.emplace(lower(node->Name),node->Name);
+    const string pickupRegistry="Starfall.PickupTypes";
+    for(const auto& key:sectionKeys(pickupRegistry)) {
+        auto id=read(pickupRegistry,key.c_str());
+        if(!id.empty()) pickupTypes.try_emplace(id);
+    }
+    if(!pickupTypes.empty()) if(auto ini=CCINIClass::INI_Rules) {
+        // Reward lists may reference arbitrary mixed-case rules sections.
+        for(auto node=ini->Sections.First();node && node->IsValid();node=node->Next())
+            if(node->Name) rulesSkillNames.try_emplace(lower(node->Name),node->Name);
+    }
     discoverScripts(ids);
     ActiveSkills::specs.clear();
     for (auto& id : ids) {
@@ -1093,7 +1222,7 @@ void readSkills() {
         if(s.trigger!="onsignal" && (fields.contains("filter.senderhouse") || fields.contains("filter.senderkind"))) {invalidField(id,"Filter.Sender* requires OnSignal");continue;}
         if(std::any_of(s.senderHouses.begin(),s.senderHouses.end(),[](const auto& x){return !includes({"all","self","allies","enemies","neutral","none"},x);}) ||
            std::any_of(s.senderKinds.begin(),s.senderKinds.end(),[](const auto& x){return !includes({"all","infantry","vehicle","aircraft","building","other","none"},x);})) {invalidField(id,"Filter.Sender*");continue;}
-        bool hasAction=fields.contains("action") || fields.contains("actions") ||
+        bool hasAction=fields.contains("action") || fields.contains("actions") || fields.contains("randomactions") || fields.contains("randomactions.weights") || fields.contains("randomactions.count") ||
             std::any_of(fields.begin(),fields.end(),[](const string& key){return key.starts_with("action.");});
         if(s.trigger=="onbeforefire" && (fields.contains("actions") || s.count!=1 || s.chance!=100 || s.cooldown || s.maxTriggers || s.minDamage || s.triggerAnim)) {
             invalidField(id,"OnBeforeFire requires one deterministic ReplaceWeapon action");continue;
@@ -1125,7 +1254,45 @@ void readSkills() {
         observeDeployments|=s.trigger=="ondeploy";
     }
     // Resolve forward references after all skills are parsed, including dependencies of rejected grants.
-    while(std::erase_if(skills,[](const auto& entry) {
+    for(auto it=pickupTypes.begin();it!=pickupTypes.end();) {
+        auto& type=it->second;
+        const string& id=it->first;
+        type.reward.id=id;type.reward.trigger="onpickup";
+        auto keys=sectionKeys(id);
+        auto life=read(id,"Lifetime","-1");
+        auto end=life.data()+life.size();
+        auto parsed=std::from_chars(life.data(),end,type.lifetime);
+        bool valid=parsed.ec==std::errc{} && parsed.ptr==end && (type.lifetime==-1 || type.lifetime>0);
+        if(!valid) invalidField(id,"Lifetime requires -1 or a positive frame count");
+        type.image=read(id,"Image");
+        for(const auto& key:keys) {
+            if(key.starts_with("script.param.")) type.reward.scriptParams[key.substr(13)]=readRaw(id,key.c_str());
+            else if(!actionField(key) && !includes({"image","lifetime","actions","randomactions","randomactions.count","randomactions.weights"},key))
+                valid=invalidField(id,key);
+        }
+        if(valid && readActions(type.reward,keys)) {
+            type.reward.id="@pickup:"+id;
+            for(auto& action:type.reward.actions) if(action.action=="runscript") action.skillId=type.reward.id;
+            ++it;
+        }
+        else it=pickupTypes.erase(it);
+    }
+    auto validActionReferences=[](const Skill& s) {
+        for(const auto& a:s.actions) {
+            if(a.action=="spawnpickup" && !pickupTypes.contains(a.pickupType)) return invalidField(s.id,"Action.PickupType="+a.pickupType);
+            if((a.action=="grantpassive" || a.action=="changepassivestack" || a.action=="resetstatetimer") && !skills.contains(a.passive))
+                return invalidField(s.id,"Action.Passive="+a.passive);
+            if(a.action=="stealpassive") for(const auto& id:a.passiveList)
+                if(!skills.contains(id)) return invalidField(s.id,"Action.Passive="+id);
+        }
+        return true;
+    };
+    rejectLinkedCycles();
+    auto invalidSkill=[&](const auto& entry) {
+        if(!validActionReferences(entry.second)) return true;
+        for(const auto& id:entry.second.linkedPassives) if(!skills.contains(id)) {
+            invalidField(entry.first,"Modifier.LinkedPassives="+id);return true;
+        }
         for(const auto& id:entry.second.aura.passives) {
             auto child=skills.find(id);
             if(child==skills.end() || child->second.aura.range) {
@@ -1141,18 +1308,14 @@ void readSkills() {
                 invalidField(entry.first,"Modifier.TransportPassives="+id+" (requires a registered non-transport-support passive)");return true;
             }
         }
-        for(const auto& a:entry.second.actions) if((a.action=="grantpassive" || a.action=="changepassivestack" || a.action=="resetstatetimer") && !skills.contains(a.passive)) {
-            invalidField(entry.first,"Action.Passive="+a.passive);
-            return true;
-        }
-        for(const auto& a:entry.second.actions) if(a.action=="stealpassive") {
-            for(const auto& id:a.passiveList) if(!skills.contains(id)) {
-                invalidField(entry.first,"Action.Passive="+id);
-                return true;
-            }
-        }
         return false;
-    })) {}
+    };
+    size_t removed;
+    do {
+        removed=std::erase_if(skills,invalidSkill);
+        removed+=std::erase_if(pickupTypes,[&](const auto& entry){return !validActionReferences(entry.second.reward);});
+    } while(removed);
+    anyLinkedPassives=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return !entry.second.linkedPassives.empty();});
     anyAuras=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return entry.second.aura.range!=0;});
     anySpawnPassives=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return !entry.second.spawnPassives.empty();});
     anyTransportPassives=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return !entry.second.transportPassives.empty();});
@@ -1330,13 +1493,20 @@ std::map<DWORD,GrantImpact> bulletGrantImpacts;
 std::map<DWORD,int> passiveBulletOwners;
 std::set<DWORD> passiveBullets;
 std::set<DWORD> passiveDetonations;
-bool suppressed(DWORD id,const string& skill) {
+bool directSuppressed(DWORD id,const string& skill) {
     auto it=removedPassives.find(id);
     if(it==removedPassives.end() || !it->second.contains(skill)) return false;
     auto grants=warheadGrants.find(id);
     if(grants==warheadGrants.end()) return true;
     auto entry=grants->second.skills.find(skill);
     return entry==grants->second.skills.end() || !entry->second.remaining(Unsorted::CurrentFrame);
+}
+bool linkedPassive(DWORD unit,const string& id) {
+    auto it=linkedGrants.find(unit);
+    return it!=linkedGrants.end() && it->second.contains(id);
+}
+bool suppressed(DWORD unit,const string& id) {
+    return directSuppressed(unit,id) && !linkedPassive(unit,id);
 }
 bool alive(TechnoClass* t) { return t && t->IsAlive && t->Health>0; }
 const char* kind(TechnoClass* t) {
@@ -1381,7 +1551,7 @@ bool researchSkills(TechnoClass* unit,vector<string>* active=nullptr) {
     }
     return found;
 }
-bool extraSkills(TechnoClass* unit,vector<string>* active=nullptr) {
+bool directExtraSkills(TechnoClass* unit,vector<string>* active) {
     bool found=researchSkills(unit,active);
     if(auto grants=transportGrants.find(unit->UniqueID);grants!=transportGrants.end()) {
         found=true;
@@ -1408,6 +1578,19 @@ bool extraSkills(TechnoClass* unit,vector<string>* active=nullptr) {
         if(!includes(*active,id)) active->push_back(id);
     }
     return found;
+}
+bool extraSkills(TechnoClass* unit,vector<string>* active=nullptr) {
+    bool direct=directExtraSkills(unit,active);
+    auto links=linkedGrants.find(unit->UniqueID);
+    if(links==linkedGrants.end()) return direct;
+    if(active) for(const auto& id:links->second) if(!includes(*active,id)) active->push_back(id);
+    return true;
+}
+bool ownsDirectPassive(TechnoClass* unit,const string& id) {
+    if(!skills.contains(id) || directSuppressed(unit->UniqueID,id)) return false;
+    auto ids=boundSkills(unit->GetTechnoType()->ID);
+    directExtraSkills(unit,&ids);
+    return includes(ids,id);
 }
 void reconcileUnitStacks(TechnoClass* unit) {
     if(!unit) return;
@@ -1841,7 +2024,7 @@ void tickStates() {
         if(emp && (unit->WhatAmI()==AbstractType::Unit || unit->WhatAmI()==AbstractType::Aircraft)) {
             nextEmp.insert(unit->UniqueID);
             if(!empUnits.contains(unit->UniqueID)) {
-                if(unit->IsInAir()) empCrashes.emplace_back(unit);
+                if(unit->IsInAir() && !ForceMove::locked(unit)) empCrashes.emplace_back(unit);
                 else {
                     auto foot=static_cast<FootClass*>(unit);
                     if(!ForceMove::interruptTravel(foot)) ForceMove::stopOrders(foot);
@@ -2059,6 +2242,40 @@ void clearGrantProgress(TechnoClass* unit,const string& id) {
     TimerKey key{unit->UniqueID,id};
     if(auto found=counts.find(key.first);found!=counts.end()) found->second.erase(id);
     periodic.erase(key);stateTimers.erase(key);nearbySamples.erase(key);activeAnimStates.erase(key);
+}
+// Compute reachability from independent sources. Multiple paths confer one ability.
+void refreshLinkedPassives(TechnoClass* unit) {
+    if(!alive(unit) || (!anyLinkedPassives && !linkedGrants.contains(unit->UniqueID))) return;
+    const auto uid=unit->UniqueID;
+    auto reachable=boundSkills(unit->GetTechnoType()->ID);
+    directExtraSkills(unit,&reachable);
+    std::erase_if(reachable,[&](const string& id){return directSuppressed(uid,id);});
+    std::set<string> linked;
+    for(size_t i=0;i<reachable.size();++i) {
+        auto it=skills.find(reachable[i]);
+        if(it==skills.end() || it->second.linkedPassives.empty()) continue;
+        const auto& parent=it->second;
+        if(unit->InLimbo || !unit->IsOnMap) {
+            if(parent.nearby.range || parent.conditionFormula.expression.usesDistance()) continue;
+            if(parent.stateDelayFrames) transportStateKeys.emplace(uid,parent.id);
+        }
+        if(!stateActive(unit,parent,stateOf(unit),UnitHealth::read(unit),Unsorted::CurrentFrame)) continue;
+        for(const auto& id:parent.linkedPassives)
+            if(linked.insert(id).second && !includes(reachable,id)) reachable.push_back(id);
+    }
+    auto old=linkedGrants.find(uid);
+    if(old==linkedGrants.end() ? linked.empty() : old->second==linked) return;
+    std::set<string> previous;
+    if(old!=linkedGrants.end()) previous.swap(old->second);
+    if(linked.empty()) linkedGrants.erase(uid);
+    else linkedGrants[uid]=std::move(linked);
+    gainInputs.erase(uid);
+    if(anyAuras) discoverAuras=true;
+    for(const auto& id:previous) if(!linkedPassive(uid,id)) clearGrantProgress(unit,id);
+}
+void refreshAllLinkedPassives() {
+    if(anyLinkedPassives || !linkedGrants.empty())
+        for(auto unit:TechnoClass::Array) refreshLinkedPassives(unit);
 }
 void refreshTransportGrants() {
     for(const auto& key:transportStateKeys) {
@@ -2301,6 +2518,7 @@ bool grantToUnit(TechnoClass* target,const PassiveGrant& rule,bool notifyGains=t
         changed=true;
         scheduleExpiry(frame,rule.duration);
     }
+    if(changed) refreshLinkedPassives(target);
     if(changed && notifyGains && anyGainSkills) observeGains(target);
     return changed;
 }
@@ -2651,7 +2869,10 @@ bool nativeConversionTypesSafe(const TechnoTypeClass* from,const TechnoTypeClass
     return true;
 }
 bool canTransformUnit(TechnoClass* target,TechnoTypeClass* to) {
-    if(!target || !to || !conversionAvailable()) return false;
+    if(!target || !to) return false;
+    if(target->WhatAmI()==AbstractType::Building)
+        return to->WhatAmI()==AbstractType::BuildingType && BuildingTransform::eligible(static_cast<BuildingClass*>(target),static_cast<BuildingTypeClass*>(to));
+    if(!conversionAvailable()) return false;
     auto from=target->GetTechnoType();
     if(!from || !target->IsOnMap || target->InLimbo || from==to || from->WhatAmI()!=to->WhatAmI()
         || !target->Owner || !alive(target) || from->Strength<=0 || to->Strength<=0 || !IsEqualGUID(from->Locomotor,to->Locomotor)) return false;
@@ -2679,6 +2900,22 @@ bool canTransformUnit(TechnoClass* target,TechnoTypeClass* to) {
 }
 bool transformUnit(TechnoClass* target,TechnoTypeClass* to) {
     if(!canTransformUnit(target,to)) return false;
+    if(target->WhatAmI()==AbstractType::Building) {
+        return BuildingTransform::convert(static_cast<BuildingClass*>(target),static_cast<BuildingTypeClass*>(to),
+            [](BuildingClass* previous,BuildingClass* current) {
+                const auto id=current->UniqueID;
+                if(activeObjects) {activeObjects->erase(previous->UniqueID);(*activeObjects)[id]=current;}
+                if(auto it=warheadGrants.find(id);it!=warheadGrants.end()) it->second.unit=current;
+                for(auto& [key,source]:auraSources) if(source.unit==previous) source.unit=current;
+                AnimFrame animations;
+                for(auto& [key,record]:attachedAnims) if(key.first==id)
+                    if(auto anim=animations.resolve(record)) anim->SetOwnerObject(current);
+                // Native type-specific weapon mounts are rebuilt on the next query.
+                weaponRules.erase(id);volleyWeapons.erase(id);mountCopies.erase({id,0});mountCopies.erase({id,1});
+                buildingLookups.clear();
+                LuaNearby::forget(previous->UniqueID);LuaNearby::moved(current);
+            })!=nullptr;
+    }
     if(auto fn=publicPhobosConverter()) return SUCCEEDED(fn(static_cast<FootClass*>(target),to));
     if(GetModuleHandleW(L"Phobos.dll")) return false;
 
@@ -2824,9 +3061,9 @@ bool consumePassenger(TechnoClass* carrier,Event& actionEvent) {
     actionEvent.consumedOwner=passenger->Owner?passenger->Owner->ArrayIndex:-1;
     actionEvent.consumedPosition=carrier->GetCenterCoords();
     auto held=boundSkills(passenger->GetTechnoType()->ID);
-    extraSkills(passenger,&held);
+    directExtraSkills(passenger,&held);
     auto remaining=std::make_shared<PassengerPassives>();
-    for(const auto& id:held) if(skills.contains(id) && !suppressed(passengerId,id))
+    for(const auto& id:held) if(skills.contains(id) && !directSuppressed(passengerId,id))
         remaining->emplace(id,stackCount(passengerId,id));
     vector<string> ids;
     std::optional<Event> consumed;
@@ -2868,15 +3105,19 @@ bool ownsPassive(TechnoClass* unit,const string& id) {
     extraSkills(unit,&ids);
     return includes(ids,id);
 }
-void removeHeldPassive(TechnoClass* unit,const string& id) {
+bool removeHeldPassive(TechnoClass* unit,const string& id) {
+    if(!ownsDirectPassive(unit,id)) return false;
     auto uid=unit->UniqueID;
     if(auto granted=warheadGrants.find(uid);granted!=warheadGrants.end()) {
         granted->second.skills.erase(id);
         if(granted->second.skills.empty()) warheadGrants.erase(granted);
     }
-    stopAuraSources(uid,&id);
     removedPassives[uid].insert(id);
+    eraseStacks(uid,id);
+    refreshLinkedPassives(unit);
+    if(!linkedPassive(uid,id)) stopAuraSources(uid,&id);
     clearGrantProgress(unit,id);
+    return true;
 }
 bool stealPassives(TechnoClass* holder,TechnoClass* donor,const PassiveAction& action,PassengerPassives* passenger=nullptr) {
     if(!alive(holder) || (!donor && !passenger) || holder==donor) return false;
@@ -2890,7 +3131,7 @@ bool stealPassives(TechnoClass* holder,TechnoClass* donor,const PassiveAction& a
             if(saved==passenger->end() || !skills.contains(id)) continue;
             available=saved->second;
         } else {
-            if(!ownsPassive(donor,id)) continue;
+            if(!ownsDirectPassive(donor,id)) continue;
             // Passenger support is a live contribution, not transferable inventory.
             // Removing it here would be undone by the next transport refresh.
             available=manualStackCount(donor->UniqueID,id);
@@ -2911,6 +3152,10 @@ bool stealPassives(TechnoClass* holder,TechnoClass* donor,const PassiveAction& a
         changed=true;
     }
     // Acquisition formulas see all transferred stacks, including on the first grant.
+    if(changed) {
+        refreshLinkedPassives(donor);
+        refreshLinkedPassives(holder);
+    }
     if(changed && anyGainSkills) observeGains(holder);
     return changed;
 }
@@ -2951,6 +3196,7 @@ bool shakeVisibleAt(const CoordStruct& pos) {
     const auto& view=DSurface::ViewBounds;
     return visible && pt.X>=view.X && pt.Y>=view.Y && pt.X<view.X+view.Width && pt.Y<view.Y+view.Height;
 }
+#include "GroundPickups.inc"
 bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects& objects,int stacks,std::optional<DWORD> selected=std::nullopt,std::optional<CellStruct> point=std::nullopt) {
     if(s.action=="runscript") return runScript(s,e,objects,stacks);
     DWORD targetId=s.targetIsEventTarget && e.consumedTarget ? e.consumedTarget :
@@ -3090,8 +3336,19 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
         }
         if(s.action=="spawnunit") {
             auto owner=actionOwner(s.owner,e,holder,objects);
-            return owner && !owner->Defeated && !owner->IsObserver() && spawnUnit(s.unitType,owner,destination);
+            if(!owner || owner->Defeated || owner->IsObserver()) return false;
+            if(s.randomUnitTypes.empty()) return spawnUnit(s.unitType,owner,destination);
+            bool success=false;
+            for(int n=0;n<s.randomCount;++n) {
+                int pick=ScenarioClass::Instance->Random.RandomRanged(1,s.randomWeightTotal);
+                size_t index=0;while(index<s.randomWeights.size() && (pick-=s.randomWeights[index])>0) ++index;
+                if(index<s.randomUnitTypes.size() && spawnUnit(s.randomUnitTypes[index],owner,destination)) success=true;
+            }
+            return success;
         }
+        if(s.action=="spawnbuilding")
+            return BuildingSpawn::create(s.buildingType,actionOwner(s.owner,e,holder,objects),destination,s.searchRadius);
+        if(s.action=="spawnpickup") return placePickup(s.pickupType,CellClass::Coord2Cell(destination));
         if(s.action=="spawncrate") {
             auto cell=CellClass::Coord2Cell(destination);
             return map.IsWithinUsableArea(cell,false) && map.PlacePowerupCrate(cell,s.crateType);
@@ -3238,10 +3495,7 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
     }
     if(s.action=="removepassive") {
         bool changed=false;
-        for(const auto& id:s.passiveList) if(ownsPassive(target,id)) {
-            removeHeldPassive(target,id);
-            changed=true;
-        }
+        for(const auto& id:s.passiveList) if(removeHeldPassive(target,id)) changed=true;
         return changed;
     }
     int amount=amountValue();
@@ -3296,6 +3550,28 @@ bool playEventAnim(const Skill& s,const Event& e,TechnoClass* holder,const Objec
         return playSkillAnim(s.triggerAnim,unit,unit->Location,owner)!=nullptr;
     return !attacker && e.hasImpact && playSkillAnim(s.triggerAnim,nullptr,e.impact,owner);
 }
+bool applyResults(const Skill& s,Event& e,TechnoClass*& holder,const Objects& objects) {
+    bool success=false;
+    Event actionEvent=e;
+    int draws=s.randomActionCount?s.randomActionCount:static_cast<int>(s.actions.size());
+    for(int draw=0;draw<draws;++draw) {
+        size_t index=static_cast<size_t>(draw);
+        if(s.randomActionCount) {
+            int pick=ScenarioClass::Instance->Random.RandomRanged(1,s.randomActionTotal);index=0;
+            while(index<s.randomActionWeights.size() && (pick-=s.randomActionWeights[index])>0) ++index;
+            if(index>=s.actions.size()) continue;
+        }
+        const auto& action=s.actions[index];
+        // Keep the last live position if this action destroys the holder.
+        if(holder && s.actions.size()>1) actionEvent.origin=holder->GetCenterCoords();
+        auto stack=e.stackSnapshot.find(s.id);
+        bool changed=apply(action,actionEvent,holder,objects,stack==e.stackSnapshot.end()?0:stack->second);
+        if(changed) success=true;
+        if(e.trigger!="ondeath") holder=findLive(objects,e.holder);
+        if(!s.randomActionCount && action.action=="consumepassenger" && !changed) break;
+    }
+    return success;
+}
 void dispatch() {
     if(pending.empty()) return;
     Objects objects;
@@ -3307,6 +3583,13 @@ void dispatch() {
         bool death=e.trigger=="ondeath";
         if(death) holder=nullptr;
         if(!holder && !death) continue;
+        if(e.trigger=="onpickup") {
+            if(e.snapshot.size()==1) {
+                auto type=pickupTypes.find(e.snapshot.front());
+                if(type!=pickupTypes.end()) applyResults(type->second.reward,e,holder,objects);
+            }
+            continue;
+        }
         auto active=e.snapshot;
         if(active.empty()) {
             if(!holder) continue;
@@ -3339,16 +3622,7 @@ void dispatch() {
             if(s.chance==0 || (s.chance<100 && ScenarioClass::Instance->Random.RandomRanged(1,100)>s.chance)) continue;
             bool played=s.triggerAnim && playEventAnim(s,e,holder,objects);
             bool success=s.actions.empty() && played;
-            Event actionEvent=e;
-            for(const auto& action:s.actions) {
-                // Keep the last live position if this action destroys the holder.
-                if(holder && s.actions.size()>1) actionEvent.origin=holder->GetCenterCoords();
-                auto stack=e.stackSnapshot.find(id);
-                bool changed=apply(action,actionEvent,holder,objects,stack==e.stackSnapshot.end()?0:stack->second);
-                if(changed) success=true;
-                if(!death) holder=findLive(objects,e.holder);
-                if(action.action=="consumepassenger" && !changed) break;
-            }
+            if(applyResults(s,e,holder,objects)) success=true;
             if(success && s.maxTriggers>0) ++triggerTotals[e.holder][id];
             if(death) continue;
             if(!holder) break;
@@ -3486,8 +3760,10 @@ void tickBuildings() {
     }
 }
 void reset() {
+    pickupTypes.clear();groundPickups.clear();pickupImages.clear();
+    linkedGrants.clear();anyLinkedPassives=false;
     passiveBulletOwners.clear();
-    LuaAnim::entries.clear();hitSequences.clear();observedHits.clear();soundIndices.clear();lastMissingSound.clear();LuaNearby::reset();ActionSequence::reset();ForceMove::settling.clear();ForceMove::motions.clear();impactCenters.clear();anyMultiShot=false;passiveTints.clear();rulesSkillNames.clear();++ActiveSkills::generation;ActiveSkills::specs.clear();mapPassiveBindings.clear();scriptTimers={};scriptModules.clear();scriptDefinitions.clear();scriptBindings.clear();transportGrants.clear();transportStateKeys.clear();anyTransportPassives=false;auraSources.clear();auraGrants.clear();auraLosses.clear();anyAuras=false;discoverAuras=true;buildingPower.clear();anyBeforeDealDamage=false;anyBeforeTakeDamage=false;incomingDamage.clear();passiveStacks.clear();triggerTotals.clear();spawnGrants.clear();anySpawnPassives=false;anyGainSkills=false;gainInputs.clear();gainSeen.clear();UnitHealth::pools.clear();fireRateBase.clear();fireRateState.clear();rangeBase.clear();rangeState.clear();projectileBase.clear();projectileState.clear();VisualScale::projectiles.clear();VisualScale::explosions.clear();VisualScale::attachedAnims.clear();explosionBatches.clear();spreadScopes.clear();grantPresets.clear();grantRules.clear();warheadHouses.clear();warheadGrants.clear();bulletGrantImpacts.clear();reapplyImpacts.clear();rebindGrants=false;expiryScheduled=false;cloakableUnits.clear();mirageUnits.clear();immuneUnits.clear();mindImmuneUnits.clear();empUnits.clear();VisualScale::base.clear();VisualScale::state.clear();VisualScale::clearSprites();attachedAnims.clear();activeAnimStates.clear();anyPassiveVisuals=false;needMotion=false;nearbySamples.clear();weaponRules.clear(); volleyWeapons.clear(); mountCopies.clear(); buildingLookups.clear(); anyIntervals=false; periodic.clear(); shots.clear();previousState.clear();reportedDeaths.clear();removedPassives.clear();passiveBullets.clear();passiveDetonations.clear();stateTimers.clear(); applied.clear(); anyStateSkills=false; observePromotions=false; observeDeployments=false; needUnitPower=false; incomeTypes.clear(); rewardTypes.clear(); Research::reset(); counts.clear(); pending.clear(); bindings.clear(); skills.clear(); ready=false; }
+    LuaAnim::entries.clear();hitSequences.clear();observedHits.clear();soundIndices.clear();lastMissingSound.clear();LuaNearby::reset();ActionSequence::reset();ForceMove::settling.clear();ForceMove::clearMotions();impactCenters.clear();anyMultiShot=false;passiveTints.clear();rulesSkillNames.clear();++ActiveSkills::generation;ActiveSkills::specs.clear();mapPassiveBindings.clear();scriptTimers={};scriptModules.clear();scriptDefinitions.clear();scriptBindings.clear();transportGrants.clear();transportStateKeys.clear();anyTransportPassives=false;auraSources.clear();auraGrants.clear();auraLosses.clear();anyAuras=false;discoverAuras=true;buildingPower.clear();anyBeforeDealDamage=false;anyBeforeTakeDamage=false;incomingDamage.clear();passiveStacks.clear();triggerTotals.clear();spawnGrants.clear();anySpawnPassives=false;anyGainSkills=false;gainInputs.clear();gainSeen.clear();UnitHealth::pools.clear();fireRateBase.clear();fireRateState.clear();rangeBase.clear();rangeState.clear();projectileBase.clear();projectileState.clear();VisualScale::projectiles.clear();VisualScale::explosions.clear();VisualScale::attachedAnims.clear();explosionBatches.clear();spreadScopes.clear();grantPresets.clear();grantRules.clear();warheadHouses.clear();warheadGrants.clear();bulletGrantImpacts.clear();reapplyImpacts.clear();rebindGrants=false;expiryScheduled=false;cloakableUnits.clear();mirageUnits.clear();immuneUnits.clear();mindImmuneUnits.clear();empUnits.clear();VisualScale::base.clear();VisualScale::state.clear();VisualScale::clearSprites();attachedAnims.clear();activeAnimStates.clear();anyPassiveVisuals=false;needMotion=false;nearbySamples.clear();weaponRules.clear(); volleyWeapons.clear(); mountCopies.clear(); buildingLookups.clear(); anyIntervals=false; periodic.clear(); shots.clear();previousState.clear();reportedDeaths.clear();removedPassives.clear();passiveBullets.clear();passiveDetonations.clear();stateTimers.clear(); applied.clear(); anyStateSkills=false; observePromotions=false; observeDeployments=false; needUnitPower=false; incomeTypes.clear(); rewardTypes.clear(); Research::reset(); counts.clear(); pending.clear(); bindings.clear(); skills.clear(); ready=false; }
 } // namespace
 
 #include "ActiveCast.inc"
@@ -3556,7 +3832,8 @@ static std::wstring describeAction(const PassiveAction& a,std::wstring text) {
             if(!a.formula.expression.empty()) return std::wstring(names[a.percentIndex])+L"按事件公式变化";
             return std::wstring(names[a.percentIndex])+L"变化 "+std::to_wstring(a.percentDelta)+L" 个百分点";
         }
-        if(a.action=="spawnunit") return L"生成单位："+displayText(a.unitType->ID);
+        if(a.action=="spawnunit") return a.unitType?L"生成单位："+displayText(a.unitType->ID):L"随机生成单位";
+        if(a.action=="spawnbuilding") return L"生成建筑："+displayText(a.buildingType->ID);
         if(a.action=="transform") return L"原地变形为："+(a.unitType->UIName && *a.unitType->UIName ?
             std::wstring(a.unitType->UIName) : displayText(a.unitType->ID));
         if(a.action=="changeowner") return L"修改目标所属方";
@@ -3571,6 +3848,7 @@ static std::wstring describeAction(const PassiveAction& a,std::wstring text) {
         if(a.action=="chronoteleport") return L"超时空传送至 ("+std::to_wstring(a.teleportCell.X)+L", "+std::to_wstring(a.teleportCell.Y)+L") 附近";
         if(a.action=="applyironcurtain") return L"施加铁幕 "+std::to_wstring(a.duration)+L" 帧";
         if(a.action=="changeammo") return L"弹药变化："+std::to_wstring(a.amount);
+        if(a.action=="spawnpickup") return L"生成拾取物："+displayText(a.pickupType);
         if(a.action=="spawncrate") {
             if(a.crateType==randomCrate) return L"生成一个随机升级箱";
             return L"生成升级箱："+displayText(Powerups::Effects[static_cast<unsigned>(a.crateType)]);
@@ -3646,6 +3924,7 @@ static std::wstring describeResearchEffect(const Research::Option& o,wchar_t (&c
             summary+=s.aura.range==-1?L"全图光环 ":L"光环 "+std::to_wstring(s.aura.range)+L" 格 ";
             for(const auto& id:s.aura.passives) summary+=displayText(id)+L" ";
         }
+        for(const auto& id:s.linkedPassives) summary+=L" 关联被动 "+displayText(id);
         for(const auto& id:s.spawnPassives) summary+=L" 子机获得 "+displayText(id);
         if(s.immune) summary=L"免疫常规伤害  "+summary;
         if(s.mindImmune) summary=L"免疫心灵控制  "+summary;
@@ -3825,6 +4104,7 @@ DEFINE_HOOK(0x6F4500, SF_UnitDestroyed, 5) {
         for(auto& entry:auraSources) entry.second.targets.erase(id);
     }
     auraLosses.erase(id);
+    linkedGrants.erase(id);
     transportGrants.erase(id);
     std::erase_if(transportStateKeys,[&](const auto& key){return key.first==id;});
     spawnGrants.erase(id);
@@ -3834,13 +4114,34 @@ DEFINE_HOOK(0x6F4500, SF_UnitDestroyed, 5) {
     passiveTints.erase(id);VisualScale::base.erase(id);VisualScale::state.erase(id);
     weaponRules.erase(id); volleyWeapons.erase(id); mountCopies.erase({id,0});mountCopies.erase({id,1});
     previousState.erase(id); reportedDeaths.erase(id); removedPassives.erase(id); counts.erase(id); triggerTotals.erase(id); applied.erase(id); Research::producers.erase(id);
-    ForceMove::motions.erase(id);ForceMove::settling.erase(id);
+    ForceMove::forget(id);ForceMove::settling.erase(id);
     LuaAnim::forget(id);scriptTimers.forget(id);
     if(activeObjects) activeObjects->erase(id);
     return 0;
 }
 // Keep in-transit objects in the cell list for targeting, without setting or
 // clearing the native occupation bits belonging to a stationary object below.
+// Aerial scans normally skip the ground rendering layer even for entries in
+// AircraftTracker. Forced lift retains that layer for locomotion and drawing.
+DEFINE_HOOK(0x6F925C,SF_ForceMoveAirScan,8) {
+    return ForceMove::airborne(R->EBP<AbstractClass*>())?0x6F926D:0;
+}
+
+// Native aerial splash reads Location directly, rather than GetTargetCoords.
+// Use a local coordinate copy for both distance checks; retain Phobos' height
+// and cylinder filters. The ground pass must not damage the same unit twice.
+DEFINE_HOOK(0x48941C,SF_ForceMoveAirDamageCoords,7) {
+    auto unit=R->EBX<TechnoClass*>();
+    if(ForceMove::airborne(unit)) {
+        R->Stack<CoordStruct>(0xB0,unit->GetTargetCoords());
+        R->ESI(R->ESP()+0xB0);
+    }
+    return 0;
+}
+DEFINE_HOOK(0x489702,SF_ForceMoveGroundDamage,6) {
+    return ForceMove::airborne(R->ESI<AbstractClass*>())?0x4899B3:0;
+}
+
 DEFINE_HOOK_AGAIN(0x5217C0,SF_ForceMoveOccupation,8)
 DEFINE_HOOK_AGAIN(0x521850,SF_ForceMoveOccupation,7)
 DEFINE_HOOK_AGAIN(0x744210,SF_ForceMoveOccupation,5)
@@ -4209,7 +4510,11 @@ DEFINE_HOOK(0x4409E9,SF_BuildingUpgradeInstalled,6) {
     auto host=R->EDI<BuildingClass*>();
     if(!upgrade || !upgrade->Type || !alive(host)) return 0;
     vector<string> ids;
-    for(const auto& id:boundSkills(upgrade->Type->ID)) {
+    auto held=boundSkills(upgrade->Type->ID);
+    refreshLinkedPassives(upgrade);
+    if(auto links=linkedGrants.find(upgrade->UniqueID);links!=linkedGrants.end())
+        for(const auto& id:links->second) if(!includes(held,id)) held.push_back(id);
+    for(const auto& id:held) {
         auto it=skills.find(id);
         if(it!=skills.end() && it->second.trigger=="onbuildingupgrade") ids.push_back(id);
     }
@@ -4401,7 +4706,26 @@ void clearCompletedVolleys() {
         if(it!=volleyWeapons.end() && (!alive(unit) || (unit->CurrentBurstIndex==0 && it->second.frame!=frame))) volleyWeapons.erase(it);
     }
 }
-DEFINE_HOOK(0x55B4E1, SF_Frame, 5) { LuaAnim::tick();LuaNearby::expire();ForceMove::tick();incomingDamage.clear();clearCompletedVolleys();UnitHealth::syncAll();tickBuildings(); refreshSpawnGrants(); expireWarheadGrants(); refreshAuras(); refreshTransportGrants(); reconcileAllStacks(); tickGains(); observeTransitions(); tickStates(); tickIntervals(); dispatch(); tickScriptTimers(); return 0; }
+// PlacePowerupCrate has chosen a cell but has not allocated a crate slot yet.
+DEFINE_HOOK(0x56BF6E,SF_RedirectCrateFromPickup,9) {
+    if(!groundPickups.empty() && !redirectCrateFromPickup(*R->EAX<CellStruct*>())) return 0x56C00A;
+    return 0;
+}
+// Both random refreshes and targeted crates pass this final overlay check.
+// Its normal failure path lets the native random generator try another cell.
+DEFINE_HOOK(0x4A192D,SF_CheckCrateCellForPickup,6) {
+    if(!groundPickups.empty()) {
+        auto at=R->EAX<CellClass*>()->MapCoords;
+        if(groundPickups.contains({at.X,at.Y})) return 0x4A1A8D;
+    }
+    return 0;
+}
+// The tactical draw surface has been selected; render before the native object layers.
+DEFINE_HOOK(0x6D465F,SF_DrawGroundPickups,5) {
+    drawGroundPickups();
+    return 0;
+}
+DEFINE_HOOK(0x55B4E1, SF_Frame, 5) { LuaAnim::tick();LuaNearby::expire();ForceMove::tick();incomingDamage.clear();clearCompletedVolleys();UnitHealth::syncAll();tickBuildings(); refreshSpawnGrants(); expireWarheadGrants(); refreshAuras(); refreshTransportGrants(); refreshAllLinkedPassives(); reconcileAllStacks(); tickGains(); observeTransitions(); tickStates(); tickIntervals(); collectPickups(); dispatch(); tickScriptTimers(); return 0; }
 DEFINE_HOOK(0x6DD8B0, SF_MapAction, 6) {
     auto action=R->ECX<TActionClass*>();
     auto kind=static_cast<int>(action->ActionKind);
@@ -4467,6 +4791,9 @@ constexpr DWORD unhitSaveTag=0x63504653;
 constexpr DWORD luaAnimSaveTag=0x64504653;
 constexpr DWORD bulletOwnerSaveTag=0x65504653;
 constexpr DWORD cloakableSaveTag=0x66504653;
+constexpr DWORD pickupSaveTag=0x69504653;
+constexpr DWORD linkedSaveTag=0x68504653;
+constexpr DWORD forceMoveAirSaveTag=0x67504653;
 constexpr DWORD luaTimerSaveTag=0x5C504653;
 constexpr DWORD buildingRewardSourceSaveTag=0x5B504653;
 constexpr DWORD auraSaveTag=0x58504653; // SFPX
@@ -4689,7 +5016,7 @@ bool saveState(IStream* stream) {
     for(const auto& [id,m]:ForceMove::motions) {
         w.word(id);
         w.word(m.lastFrame);
-        for(int v:{m.x,m.y,m.dx,m.dy,m.height,m.startHeight,m.duration,m.elapsed,int(m.blocked),int(m.tilt),int(m.easing),int(m.ignoreCollision)}) w.word(v);
+        for(int v:{m.x,m.y,m.dx,m.dy,m.height,m.startHeight,m.duration,m.elapsed,int(m.blocked),int(m.tilt),int(m.easing),int(m.ignoreCollision),m.airborneHeight,int(m.nativeTracked)}) w.word(v);
     }
     w.word(static_cast<DWORD>(ForceMove::settling.size()));
     for(const auto& [id,lean]:ForceMove::settling) {
@@ -4717,7 +5044,22 @@ bool saveState(IStream* stream) {
     w.word(static_cast<DWORD>(cloakableUnits.size()));
     for(auto id:cloakableUnits) w.word(id);
     if(w.bytes.size()>64*1024*1024) return false;
-    DWORD header[]={cloakableSaveTag,static_cast<DWORD>(w.bytes.size())};
+    if(!linkedGrants.empty() || !groundPickups.empty()) {
+        w.word(static_cast<DWORD>(linkedGrants.size()));
+        for(const auto& [unit,ids]:linkedGrants) {
+            w.word(unit);w.word(static_cast<DWORD>(ids.size()));
+            for(const auto& id:ids) w.str(id);
+        }
+        if(w.bytes.size()>64*1024*1024) return false;
+    }
+    if(!groundPickups.empty()) {
+        w.word(static_cast<DWORD>(groundPickups.size()));
+        for(const auto& [cell,pickup]:groundPickups) {
+            w.word(cell.first);w.word(cell.second);w.str(pickup.type);w.word(pickup.born);
+        }
+        if(w.bytes.size()>64*1024*1024) return false;
+    }
+    DWORD header[]={!groundPickups.empty()?pickupSaveTag:linkedGrants.empty()?forceMoveAirSaveTag:linkedSaveTag,static_cast<DWORD>(w.bytes.size())};
     ULONG written=0;
     return SUCCEEDED(stream->Write(header,sizeof(header),&written)) && written==sizeof(header)
         && SUCCEEDED(stream->Write(w.bytes.data(),header[1],&written)) && written==header[1];
@@ -4731,7 +5073,7 @@ bool loadState(IStream* stream) {
     DWORD header[2]{};
     ULONG got=0;
     if(FAILED(stream->Read(header,sizeof(header),&got)) || got!=sizeof(header)) return fail("truncated header");
-    if((header[0]&0xFFFFFF)!=(saveTag&0xFFFFFF) || header[0]<saveTag || header[0]>cloakableSaveTag)
+    if((header[0]&0xFFFFFF)!=(saveTag&0xFFFFFF) || header[0]<saveTag || header[0]>pickupSaveTag)
         return fail("unsupported format version");
     if(header[1]>64*1024*1024) return fail("payload exceeds size limit");
     vector<BYTE> data(header[1]);
@@ -5112,10 +5454,15 @@ bool loadState(IStream* stream) {
         auto ignoreCollision=header[0]>=forceMoveCollisionSaveTag?r.word():0;
         if(ignoreCollision>1) r.ok=false;
         m.ignoreCollision=ignoreCollision!=0;
+        // Old saves retain visual-only lift until their current motion ends.
+        m.airborneHeight=header[0]>=forceMoveAirSaveTag?static_cast<int>(r.word()):0;
+        auto nativeTracked=header[0]>=forceMoveAirSaveTag?r.word():0;
+        if(nativeTracked>1) r.ok=false;
+        m.nativeTracked=nativeTracked!=0;
         constexpr int limit=ForceMove::mapExtent;
         if(m.x<0 || m.x>=limit || m.y<0 || m.y>=limit || m.dx< -limit || m.dx>limit ||
            m.dy< -limit || m.dy>limit || m.height<0 || m.height>limit || m.startHeight<0 || m.startHeight>4*limit ||
-           m.duration<=0 || m.elapsed<0 || m.elapsed>=m.duration || blocked>1 || !moves.emplace(id,m).second) r.ok=false;
+           m.airborneHeight<0 || m.airborneHeight>limit || m.duration<=0 || m.elapsed<0 || m.elapsed>=m.duration || blocked>1 || !moves.emplace(id,m).second) r.ok=false;
     }
     decltype(ForceMove::settling) settling;
     if(header[0]>=forceMoveTiltSaveTag && r.ok) for(auto n=r.word();r.ok && n--;) {
@@ -5162,11 +5509,25 @@ bool loadState(IStream* stream) {
         auto id=r.word();
         if(!id || !restoredCloakables.insert(id).second) r.ok=false;
     }
+    decltype(linkedGrants) restoredLinks;
+    if(header[0]>=linkedSaveTag && r.ok) for(auto n=r.word();n && r.ok;--n) {
+        auto unit=r.word(),count=r.word();
+        if(!unit || !count || count>100000 || restoredLinks.contains(unit)) {r.ok=false;break;}
+        auto& ids=restoredLinks[unit];
+        while(count-- && r.ok) {auto id=r.str();if(id.empty() || !ids.insert(id).second) r.ok=false;}
+    }
+    decltype(groundPickups) restoredPickups;
+    if(header[0]>=pickupSaveTag && r.ok) for(auto n=r.word();n && r.ok;--n) {
+        auto x=r.word(),y=r.word();auto type=r.str();auto born=r.word();
+        if(x>=512 || y>=512 || type.empty() || !restoredPickups.emplace(PickupCell{short(x),short(y)},GroundPickup{type,born}).second) r.ok=false;
+    }
     if(!r.ok || r.pos!=data.size()) return fail("invalid or trailing payload fields");
     // Parsing above must not mutate live state, including sequence and signal IDs.
     reset();
     passiveBulletOwners.swap(restoredBulletOwners);
     cloakableUnits.swap(restoredCloakables);
+    groundPickups.swap(restoredPickups);
+    linkedGrants.swap(restoredLinks);
     nextSignalChain=restoredNextSignalChain;
     sequenceState.commit();
     LuaAnim::entries.swap(restoredLuaAnimations);
@@ -5242,7 +5603,7 @@ SYRINGE_HANDSHAKE(info) {
     if(!info || info->cbSize<sizeof(SyringeHandshakeInfo)) return E_INVALIDARG;
     if(info->exeCRC!=0x54CC0A13) return E_FAIL;
     if(info->Message && info->cchMessage>0)
-        _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"Starfall Lab 0.36");
+        _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"Starfall Lab 0.37");
     return S_OK;
 }
 

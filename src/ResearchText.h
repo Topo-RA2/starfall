@@ -70,10 +70,12 @@ inline const Mask& maskFor(const wchar_t* text,int size) {
     static Cache cache;
     return cache.get(text,size);
 }
-inline void draw(const wchar_t* text,int x,int y,int color,int size=15,int maxWidth=INT_MAX) {
+inline void draw(const wchar_t* text,int x,int y,int color,int size=15,int maxWidth=INT_MAX,Surface* surface=DSurface::Composite) {
     const Mask& mask=maskFor(text,size);
-    auto surface=DSurface::Composite;
-    if(mask.alpha.empty() || surface->GetBytesPerPixel()!=2) { surface->DrawText(text,x,y,color); return; }
+    if(mask.alpha.empty() || surface->GetBytesPerPixel()!=2) {
+        if(surface==DSurface::Composite) DSurface::Composite->DrawText(text,x,y,color);
+        return;
+    }
     int width=std::min({mask.w,surface->GetWidth()-x,maxWidth}),height=std::min(mask.h,surface->GetHeight()-y);
     if(x<0 || y<0 || width<=0 || height<=0) return;
     int pitch=surface->GetPitch();

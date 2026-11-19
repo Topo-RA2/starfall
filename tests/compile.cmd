@@ -13,7 +13,8 @@ if /i "%~1"=="resources" (
     exit /b
 )
 if /i "%~1"=="modules" (
-    cl /nologo /c /std:c++20 /EHsc /O2 /MT /MP /utf-8 /DSYR_VER=2 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /Ireferences\Phobos\YRpp /Fo%shared%\modules\ %starfallModules% || exit /b 1
+    cl /nologo /c /std:c++20 /EHsc /O2 /MT /MP /utf-8 /DSYR_VER=2 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /Ireferences\Phobos\YRpp /Fo%shared%\modules\ %starfallModules%
+    if errorlevel 1 exit /b 1
     set "moduleObjects="
     for %%s in (%starfallModules%) do set moduleObjects=!moduleObjects! "%shared%\modules\%%~ns.obj"
     lib /nologo /out:"%shared%\modules.lib" !moduleObjects!

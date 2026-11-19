@@ -55,6 +55,7 @@ if (!$loaderText.Contains('-i=') -or !$loaderText.Contains('--nodetach') -or !$l
 if ($Case -eq 'hex-icons') {
     Copy-Item -LiteralPath (Join-Path $root 'examples/Starfall.HexBrawl.ini') -Destination (Join-Path $run 'Starfall.ini')
     Copy-Item -LiteralPath (Join-Path $root 'examples/HexBrawlIcons') -Destination $run -Recurse
+    Get-ChildItem -LiteralPath (Join-Path $root 'examples/HexBrawlIconsPCX') -Filter '*.pcx' | Copy-Item -Destination $run
     Copy-Item -LiteralPath (Join-Path $fixture 'hx-test.pcx') -Destination (Join-Path $run 'hx-test.pcx')
 } elseif ($Case -eq 'action-sequence') {
     $example=Join-Path $root 'examples/ActionSequence'
@@ -103,7 +104,7 @@ if ($Case -eq 'hex-icons') {
 } else {
     Copy-Item -LiteralPath (Join-Path $fixture 'Starfall.ini') -Destination $run
 }
-if ($Case -in 'chrono-teleport','force-move','building-upgrade','map-lua') {
+if ($Case -in 'chrono-teleport','force-move','building-upgrade','spawn-building','building-transform','map-lua') {
     $scripts=Get-Item -LiteralPath $run
     Get-ChildItem -LiteralPath $fixture -Filter '*.lua' | Copy-Item -Destination $scripts.FullName
 }

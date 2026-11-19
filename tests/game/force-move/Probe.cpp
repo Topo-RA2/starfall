@@ -32,6 +32,134 @@ FootClass* place(TechnoTypeClass* type,CellStruct pos) {
     check(foot && foot->Unlimbo(MapClass::Instance.GetCellAt(pos)->GetCoordsWithBridge(),DirType::North),"place");
     return foot;
 }
+void targetingProbe() {
+    auto owner=HouseClass::CurrentPlayer,foe=HouseClass::FindByPlayerAt(HouseClass::PlayerAtB);
+    auto type=UnitTypeClass::Find("MTNK");const int sensors=type->SensorsSight;type->SensorsSight=2;
+    auto target=place(type,{72,68});
+    auto shooter=static_cast<UnitClass*>(type->CreateObject(foe));
+    check(shooter && shooter->Unlimbo(MapClass::Instance.GetCellAt(CellStruct{83,68})->GetCoords(),DirType::North),"targeting shooter fixture");
+    target->DiscoveredBy(foe);shooter->DiscoveredBy(owner);
+    const auto origin=target->Location;auto destination=origin;destination.X+=8*256;
+    const auto oldCell=target->GetMapCoords(),newCell=CellClass::Coord2Cell(destination);
+    const int oldThreat=MapClass::Instance.GetThreatPosed(oldCell,foe),newThreat=MapClass::Instance.GetThreatPosed(newCell,foe);
+    auto sourceCell=MapClass::Instance.GetCellAt(oldCell),destinationCell=MapClass::Instance.GetCellAt(newCell);
+    const auto sourceSensors=sourceCell->Sensors_InclHouse(owner->ArrayIndex),destinationSensors=destinationCell->Sensors_InclHouse(owner->ArrayIndex);
+    check(sourceSensors>0 && !destinationSensors,"sensor fixture at original position");
+    vector<std::pair<CellClass*,BYTE>> neighbours;
+    for(short y=67;y<=69;++y) for(short x=71;x<=81;++x) {
+        auto cell=MapClass::Instance.GetCellAt(CellStruct{x,y});neighbours.emplace_back(cell,cell->BlockedNeighbours);
+    }
+    auto position=shooter->Location;
+    auto scan=[&]{return shooter->GreatestThreat(ThreatType::Range|ThreatType::Vehicles,&position,false);};
+    check(!shooter->IsCloseEnough(target,0) && scan()!=target,"target initially outside enemy range");
+    ForceMove::Spec spec;spec.dx=8*256;spec.duration=20;spec.height=256;
+    check(ForceMove::start(target,spec,origin) && ForceMove::moveTo(target,destination.X,destination.Y,true),"target pushed into enemy range");
+    std::ofstream("force-move.log",std::ios::app)<<"THREAT old="<<oldThreat<<" -> "<<MapClass::Instance.GetThreatPosed(oldCell,foe)
+        <<" new="<<newThreat<<" -> "<<MapClass::Instance.GetThreatPosed(newCell,foe)<<" last="<<target->LastMapCoords.X<<","<<target->LastMapCoords.Y
+        <<" scan="<<(scan()==target)<<" close="<<shooter->IsCloseEnough(target,0)<<" posed="<<target->ThreatPosed<<'\n';
+    check(target->GetTargetCoords()==destination && LuaNearby::inCenterCell(target),"horizontal aim and cell chain follow displacement");
+    check(target->LastMapCoords==newCell,"native threat position follows displacement");
+    check(MapClass::Instance.GetThreatPosed(oldCell,foe)==oldThreat-static_cast<int>(target->ThreatPosed) &&
+          MapClass::Instance.GetThreatPosed(newCell,foe)==newThreat+static_cast<int>(target->ThreatPosed),"threat removed from old region and added to new region");
+    check(shooter->IsCloseEnough(target,0) && scan()==target,"enemy acquires displaced target at new position");
+    check(!sourceCell->Sensors_InclHouse(owner->ArrayIndex) && destinationCell->Sensors_InclHouse(owner->ArrayIndex)==sourceSensors,
+          "sensors follow displaced position");
+    const auto facing=shooter->GetTargetDirection(target);
+    shooter->PrimaryFacing.SetCurrent(facing);shooter->SecondaryFacing.SetCurrent(facing);
+    shooter->SetTarget(target);shooter->RearmTimer.Stop();
+    auto bullet=shooter->Fire(target,0);
+    for(auto shot:BulletClass::Array) if(shot->Owner==shooter && shot->Target==target) bullet=shot;
+    check(bullet && bullet->TargetCoords.X==destination.X && bullet->TargetCoords.Y==destination.Y,"native shot aims at displaced coordinates");
+    bullet->UnInit();
+    check(ForceMove::moveTo(target,origin.X,origin.Y,true) && !shooter->IsCloseEnough(target,0) && scan()!=target &&
+          MapClass::Instance.GetThreatPosed(oldCell,foe)==oldThreat && MapClass::Instance.GetThreatPosed(newCell,foe)==newThreat,
+          "leaving range restores threat totals and removes old target candidate");
+    check(sourceCell->Sensors_InclHouse(owner->ArrayIndex)==sourceSensors && !destinationCell->Sensors_InclHouse(owner->ArrayIndex) &&
+          std::all_of(neighbours.begin(),neighbours.end(),[](const auto& item){return item.first->BlockedNeighbours==item.second;}),
+          "round trip preserves sensors and neighbour counts");
+    target->UnInit();shooter->UnInit();
+    check(!sourceCell->Sensors_InclHouse(owner->ArrayIndex) && !destinationCell->Sensors_InclHouse(owner->ArrayIndex),"sensor registration cleaned on removal");
+    type->SensorsSight=sensors;
+}
+int airEntries(TechnoClass* unit) {
+    int count=0;
+    for(auto& row:AircraftTrackerClass::Instance.TrackerVectors)
+        for(auto& list:row) for(auto item:list) if(item==unit) ++count;
+    return count;
+}
+void airTargetingProbe() {
+    auto foe=HouseClass::FindByPlayerAt(HouseClass::PlayerAtB);
+    auto shooter=static_cast<FootClass*>(UnitTypeClass::Find("FV")->CreateObject(foe));
+    auto ground=static_cast<FootClass*>(UnitTypeClass::Find("MTNK")->CreateObject(foe));
+    check(shooter && shooter->Unlimbo(MapClass::Instance.GetCellAt(CellStruct{75,68})->GetCoords(),DirType::North) &&
+          ground && ground->Unlimbo(MapClass::Instance.GetCellAt(CellStruct{75,69})->GetCoords(),DirType::North),"air targeting shooters");
+    auto target=place(UnitTypeClass::Find("MTNK"),{72,68});target->DiscoveredBy(foe);
+    auto projectile=shooter->GetWeapon(0)->WeaponType->Projectile;
+    check(projectile->AA && !ground->GetWeapon(0)->WeaponType->Projectile->AA,"AA and ground-only fixtures");
+    bool ag=projectile->AG;projectile->AG=false;
+    auto position=shooter->Location,groundPosition=ground->Location;
+    auto scan=[&]{return shooter->GreatestThreat(ThreatType::Range|ThreatType::Air,&position,false);};
+    auto groundScan=[&]{return ground->GreatestThreat(ThreatType::Range|ThreatType::Vehicles,&groundPosition,false);};
+    ForceMove::Spec spec;spec.height=512;spec.duration=120;
+    check(ForceMove::start(target,spec,target->Location),"default airborne threshold starts");
+    auto& motion=ForceMove::motions.at(target->UniqueID);
+    auto setLift=[&](int lift){motion.elapsed=0;motion.startHeight=lift;ForceMove::syncAirTracker(motion);};
+    setLift(255);
+    check(!target->IsInAir() && !airEntries(target) && scan()!=target && groundScan()==target,"below threshold remains ground target");
+    setLift(256);
+    std::ofstream("force-move.log",std::ios::app)<<"AIR state="<<target->IsInAir()<<" entries="<<airEntries(target)
+        <<" aa="<<(scan()==target)<<" ag="<<(groundScan()==target)<<" height="<<target->GetHeight()
+        <<" aim="<<target->GetTargetCoords().Z<<" error="<<int(shooter->GetFireError(target,0,true))
+        <<" index="<<motion.trackerIndex<<'\n';
+    check(target->IsInAir() && airEntries(target)==1 && scan()==target && groundScan()!=target,"threshold admits AA and excludes ground-only acquisition");
+    check(target->GetCenterCoords().Z==target->Location.Z+256 && target->GetTargetCoords().Z==target->Location.Z+256,
+          "target coordinates include lift once");
+    for(int i=0;i<3;++i) ForceMove::syncAirTracker(motion);
+    check(airEntries(target)==1,"air registration has no duplicates");
+    auto oldIndex=motion.trackerIndex;auto original=target->Location;
+    check(ForceMove::moveTo(target,original.X-8*256,original.Y,true),"air target crosses tracker region");
+    ForceMove::syncAirTracker(motion);
+    check(motion.trackerIndex!=oldIndex && airEntries(target)==1 && scan()!=target,"aerial scan follows horizontal displacement");
+    check(ForceMove::moveTo(target,original.X,original.Y,true),"air target returns");ForceMove::syncAirTracker(motion);
+    spec.airborneHeight=512;
+    check(ForceMove::start(target,spec,target->Location) && !target->IsInAir() && !airEntries(target),"replacement applies custom threshold immediately");
+    spec.airborneHeight=0;
+    check(ForceMove::start(target,spec,target->Location) && !target->IsInAir(),"zero threshold disables air classification");
+    spec.airborneHeight=256;
+    check(ForceMove::start(target,spec,target->Location) && target->IsInAir(),"airborne replacement preserves height");
+    setLift(255);
+    check(!target->IsInAir() && !airEntries(target) && target->GetLastFlightMapCoords()==CellStruct::Empty &&
+          scan()!=target && groundScan()==target,"descent restores ground acquisition");
+    auto control=place(UnitTypeClass::Find("MTNK"),{80,71});
+    auto warhead=WarheadTypeClass::Find("AP");float spread=warhead->CellSpread;warhead->CellSpread=2;
+    const auto initialHP=target->Health;
+    MapClass::DamageArea(control->GetTargetCoords(),20,shooter,warhead,false,foe);
+    MapClass::DamageArea(target->GetTargetCoords(),20,shooter,warhead,false,foe);
+    std::ofstream("force-move.log",std::ios::app)<<"SPLASH low="<<target->Health<<" control="<<control->Health
+        <<" chain="<<LuaNearby::inCenterCell(target)<<" air="<<target->IsInAir()<<" entries="<<airEntries(target)<<'\n';
+    check(target->Health==control->Health && target->Health<initialHP,"below-threshold lifted target takes normal damage");
+    target->Health=target->EstimatedHealth=initialHP;
+    setLift(256);
+    MapClass::DamageArea(target->GetTargetCoords(),20,shooter,warhead,false,foe);
+    check(target->Health==control->Health,"air and ground chains do not duplicate splash damage");
+    target->Health=target->EstimatedHealth=initialHP;
+    warhead->CellSpread=spread;control->UnInit();
+    motion.startHeight=0;motion.elapsed=60;ForceMove::syncAirTracker(motion);
+    const auto facing=shooter->GetTargetDirection(target);
+    shooter->PrimaryFacing.SetCurrent(facing);shooter->SecondaryFacing.SetCurrent(facing);
+    shooter->SetTarget(target);shooter->RearmTimer.Stop();
+    auto shot=shooter->Fire(target,0);
+    for(auto bullet:BulletClass::Array) if(bullet->Owner==shooter && bullet->Target==target) shot=bullet;
+    check(shot && shot->TargetCoords==target->GetTargetCoords(),"AA missile aims at elevated target");
+    std::ofstream("air.ids")<<target->UniqueID<<' '<<shooter->UniqueID<<' '<<target->Health;
+    projectile->AG=ag;ground->UnInit();shooter->SetTarget(nullptr);shooter->ForceMission(Mission::Sleep);
+    auto infantry=place(InfantryTypeClass::Find("E1"),{72,70});
+    check(ForceMove::start(infantry,spec,infantry->Location),"infantry launch");
+    auto& infMotion=ForceMove::motions.at(infantry->UniqueID);infMotion.elapsed=60;ForceMove::syncAirTracker(infMotion);
+    check(infantry->IsInAir() && airEntries(infantry)==1 && infantry->GetTargetCoords().Z==infantry->Location.Z+512,"infantry supports airborne targeting");
+    auto removed=infantry;infantry->UnInit();
+    check(!airEntries(removed),"destroyed airborne unit leaves tracker");
+}
 }
 DEFINE_HOOK(0x55B4EB,SF_TestForceMove,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
@@ -40,6 +168,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestForceMove,5) {
     auto tank=UnitTypeClass::Find("MTNK");
     if(!loading && f==20) {
         Research::ensureReady();
+        targetingProbe();
+        airTargetingProbe();
         check(skills.contains("scriptpush") && skills.contains("pull") && !skills.contains("badoffset") && !skills.contains("badease"),"config");
         auto caster=place(tank,{45,73}),target=place(tank,{48,70});
         auto pulled=place(InfantryTypeClass::Find("E1"),{48,73});
@@ -47,6 +177,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestForceMove,5) {
         place(tank,{46,76});
         check(skills.contains("weightlift") && !skills.contains("badweight") && !skills.contains("badiron"),"weight and iron configuration");
         auto lift=skills.at("weightlift").actions.front().forceMove;
+        check(lift.airborneHeight==128,"INI custom airborne threshold");
         auto weight=tank->Weight;
         auto mission=target->CurrentMission;
         tank->Weight=4.5;
@@ -63,6 +194,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestForceMove,5) {
         capture("onfire",caster,target,caster,target,0);dispatch();
         tank->Weight=weight;
         check(ForceMove::motions.at(target->UniqueID).dx==768,"Lua overrides weight and iron");
+        check(ForceMove::motions.at(target->UniqueID).airborneHeight==384,"Lua custom airborne threshold");
         capture("ondealdamage",caster,pulled,caster,pulled,5);dispatch();
         check(ForceMove::locked(target) && ForceMove::locked(pulled),"Lua and INI start");
         ForceMove::Spec push;push.mode=ForceMove::Mode::Push;push.distance=3*256;push.duration=1;push.ignoreCollision=false;
@@ -145,11 +277,19 @@ DEFINE_HOOK(0x55B4EB,SF_TestForceMove,5) {
     }
     if(f==21) check(!ForceMove::locked(block) && block->GetMapCoords()==CellStruct{45,76},"wall stops ground push");
     if(f==25) {
-        check(ForceMove::motions.at(t).elapsed==5 && ForceMove::motions.at(t).lift()>0 && !target->IsInAir(),"ground target in flight");
-        if(!loading) check(ScenarioClass::SaveGame("Saved Games\\ForceMove.sav",L"ForceMove"),"saved in flight");
+        check(ForceMove::motions.at(t).elapsed==5 && ForceMove::motions.at(t).lift()>0 && target->IsInAir(),"air target in flight");
+        const char* save=GetModuleHandleA("CnCNet-Spawner.dll")?"ForceMove.sav":"Saved Games\\ForceMove.sav";
+        if(!loading) check(ScenarioClass::SaveGame(save,L"ForceMove"),"saved in flight");
     }
     if(f==26) {
+        DWORD air,shooter;int airHP;std::ifstream("air.ids")>>air>>shooter>>airHP;
+        auto raised=objects.at(air);
+        check(raised->IsInAir() && airEntries(raised)==1 && ForceMove::motions.at(air).airborneHeight==256 &&
+              raised->GetTargetCoords().Z==raised->Location.Z+ForceMove::motions.at(air).lift(),"air targeting restored after save load");
         check(ForceMove::motions.at(t).elapsed==6 && target->Location.X==x+384 && target->Location.Y==y-192,"resumed motion");
+        check(ForceMove::motions.at(t).airborneHeight==384,"custom airborne threshold survives save load");
+        check(static_cast<FootClass*>(target)->LastMapCoords==target->GetMapCoords() &&
+              static_cast<FootClass*>(pulled)->LastMapCoords==pulled->GetMapCoords(),"vehicle and infantry tracking follows motion after save load");
         ForceMove::Spec launch;launch.mode=ForceMove::Mode::Launch;launch.height=512;launch.duration=8;
         check(ForceMove::start(block,launch,block->Location),"vertical launch");
         int hp=target->Health,damage=5;
@@ -190,6 +330,14 @@ DEFINE_HOOK(0x55B4EB,SF_TestForceMove,5) {
         foot->SetDestination(MapClass::Instance.GetCellAt(CellStruct{56,69}),true);
     }
     static unsigned interrupted=0;
+    if(f==50) {
+        DWORD air,shooter;int hp;std::ifstream("air.ids")>>air>>shooter>>hp;
+        auto raised=objects.at(air);
+        std::ofstream("force-move.log",std::ios::app)<<"AA damage "<<hp<<" -> "<<raised->Health<<'\n';
+        check(raised->Health<hp,"native AA missile damages airborne ground unit");
+        raised->UnInit();objects.at(shooter)->UnInit();
+        check(!airEntries(raised),"saved airborne target cleans up");
+    }
     static CoordStruct movingStart{};
     if(f>=34 && !interrupted && target->Location.X!=x+768) {
         movingStart=target->Location;

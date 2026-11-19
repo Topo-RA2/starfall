@@ -4,6 +4,7 @@
 #include <VocClass.h>
 #include "ResearchAudio.h"
 #include <Drawing.h>
+#include <OwnerDraw.h>
 
 EXPORT_FUNC(SF_ResearchDraw);
 #include "../WindowMouse.h"
@@ -20,8 +21,103 @@ int pixel(int x,int y) {
     Point2D p{x,y};
     return DSurface::Composite->GetPixel(&p);
 }
-void captureHud(const char* name,int x0,int top,int width,int height) {
-    auto surface=DSurface::Composite;
+bool diplomacyChecked=false;
+void captureHud(const char* name,int x0,int top,int width,int height,Surface* surface=DSurface::Composite);
+bool paintedDiplomacyImage(HWND window) {
+    auto& control=OwnerDraw::WinData[window];
+    auto image=control.ControlImage;
+    auto surface=DSurface::Alternate;
+    RECT bounds{};
+    OwnerDraw::GetRectangle(window,&bounds);
+    if(!image || !surface || bounds.left<0 || bounds.top<0 ||
+        bounds.left+image->Width>surface->Width || bounds.top+image->Height>surface->Height) return false;
+    RedrawWindow(GetParent(window),nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_UPDATENOW);
+    int match=0,total=0;
+    std::set<int> colors;
+    for(int y=2;y<image->Height-2;y+=2) for(int x=2;x<std::min(46,image->Width-2);x+=2) {
+        Point2D src{x,y},dst{bounds.left+x,bounds.top+y};
+        const int expected=image->GetPixel(&src);
+        if(surface->GetPixel(&dst)==expected) {++match;colors.insert(expected);}
+        ++total;
+    }
+    return total && match==total && colors.size()>3;
+}
+void checkDiplomacy(HWND dialog) {
+    const HWND mine=GetDlgItem(dialog,0x5340);
+    verify(IsWindowVisible(mine),"diplomacy research is visible");
+    const HWND projects=GetDlgItem(dialog,0x5349);
+    const auto points=Research::points;
+    const auto owned=Research::unlocked;
+    auto select=[](HWND button) {
+        RECT r{};
+        GetClientRect(button,&r);
+        const auto center=MAKELPARAM(r.right/2,r.bottom/2);
+        SendMessageA(button,WM_LBUTTONDOWN,MK_LBUTTON,center);
+        SendMessageA(button,WM_LBUTTONUP,0,center);
+    };
+    RECT player{},button{},bounds{},list{};
+    GetWindowRect(GetDlgItem(dialog,1041),&player);
+    GetWindowRect(mine,&button);
+    GetWindowRect(dialog,&bounds);
+    GetWindowRect(projects,&list);
+    verify(button.left>=player.right && button.top<player.bottom && player.top<button.bottom &&
+        button.right<=bounds.right && list.bottom<=bounds.bottom,"diplomacy layout fits beside player rows");
+    select(mine);
+    auto image=OwnerDraw::WinData[projects].ControlImage;
+    verify(IsWindowVisible(projects) && image,"diplomacy shows local research icons");
+    verify(paintedDiplomacyImage(projects),"diplomacy icon pixels reach the dialog surface");
+    int size=std::min(48,image->Height),pitch=size+4;
+    auto sample=[&](int x) {
+        Point2D point{x,(image->Height-size)/2};
+        return image->GetPixel(&point);
+    };
+    verify(sample(0)==sample(pitch) && sample(pitch)==sample(pitch*2) &&
+        sample(0)!=sample(pitch*3),"three badges in one horizontal row");
+    SendMessageA(projects,WM_MOUSEMOVE,0,MAKELPARAM(size/2,image->Height/2));
+    const auto tip=GetDlgItem(dialog,0x534C);
+    verify(IsWindowVisible(tip) && OwnerDraw::WinData[tip].ControlImage,"hover displays project details");
+    verify(paintedDiplomacyImage(tip),"diplomacy tooltip pixels reach the dialog surface");
+    RECT menu{};
+    OwnerDraw::GetRectangle(dialog,&menu);
+    auto surface=DSurface::Alternate;
+    RECT viewport{0,0,surface->Width,surface->Height},visible{};
+    if(IntersectRect(&visible,&menu,&viewport))
+        captureHud("diplomacy-research.ppm",visible.left,visible.top,visible.right-visible.left,
+            visible.bottom-visible.top,surface);
+    SendMessageA(projects,WM_MOUSELEAVE,0,0);
+    verify(!IsWindowVisible(tip),"leaving an icon hides its details");
+    const auto other=GetDlgItem(dialog,0x5341);
+    verify(IsWindowVisible(other),"second player has a research button");
+    select(other);
+    verify(!IsWindowVisible(projects) && !IsWindowVisible(tip) &&
+        IsWindowVisible(GetDlgItem(dialog,0x5348)),"empty house clears icons and tooltip");
+    select(mine);
+    verify(IsWindowVisible(projects) && Research::points==points &&
+        Research::unlocked==owned,"switching players is read-only");
+    // Include a partial final page and projects from saves without purchase order.
+    const auto originalSize=Research::options.size();
+    const int capacity=(image->Width+4)/pitch;
+    int house=HouseClass::CurrentPlayer->ArrayIndex;
+    for(int i=3;i<=capacity;++i) {
+        auto option=Research::options.front();
+        option.id="diplomacy-test-"+std::to_string(i);
+        Research::unlocked[house].insert(option.id);
+        Research::options.push_back(std::move(option));
+    }
+    SendMessageA(dialog,WM_TIMER,0,0);
+    auto next=GetDlgItem(dialog,0x534B),previousPage=GetDlgItem(dialog,0x534A);
+    verify(IsWindowVisible(next) && IsWindowEnabled(next),"long research row enables next page");
+    select(next);
+    verify(!IsWindowEnabled(next) && IsWindowEnabled(previousPage) && sample(0)!=sample(pitch) &&
+        sample(pitch)==sample(2*pitch),"last page clears unused icon slots");
+    select(previousPage);
+    verify(!IsWindowEnabled(previousPage) && sample(0)==sample(pitch),"previous page restores icons");
+    Research::options.resize(originalSize);
+    Research::unlocked=owned;
+    diplomacyChecked=true;
+    select(GetDlgItem(dialog,1059));
+}
+void captureHud(const char* name,int x0,int top,int width,int height,Surface* surface) {
     const int pitch=surface->GetPitch();
     auto base=static_cast<BYTE*>(surface->Lock(x0,top));
     if(!base) return;
@@ -40,6 +136,12 @@ void captureHud(const char* name,int x0,int top,int width,int height) {
     }
     surface->Unlock();
 }
+}
+// Run after the native modal loop has initialized its close-result slot.
+DEFINE_HOOK(0x658718,SF_TestDiplomacyControls,5) {
+    if(!diplomacyChecked && GetFileAttributesA("Starfall.test")!=INVALID_FILE_ATTRIBUTES)
+        checkDiplomacy(R->ESI<HWND>());
+    return 0;
 }
 DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
     static const bool enabled=GetFileAttributesA("Starfall.test")!=INVALID_FILE_ATTRIBUTES;
@@ -276,6 +378,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         Research::award(house,50);
         verify(Research::offers(house,country).size()==3 && !Research::canRefresh(house,country,0) &&
             !Research::slotUsed(house,0),"no alternative preserves allowance");
+        reinterpret_cast<void(__cdecl*)()>(0x6586D0)();
+        verify(diplomacyChecked,"native diplomacy dialog opens and returns");
     }
     WWMouseClass::Instance->SetCoords(previous);
     return 0;

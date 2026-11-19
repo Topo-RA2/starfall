@@ -4,10 +4,12 @@
 #include <deque>
 #include <set>
 #include <EventClass.h>
+#include <MessageListClass.h>
 #include <HouseClass.h>
 #include <Drawing.h>
 #include <PCX.h>
 #include "ResearchText.h"
+#include "ResearchImages.h"
 #include "ResearchAudio.h"
 #include <WWMouseClass.h>
 #include <BuildingClass.h>
@@ -37,6 +39,14 @@ void playClick() {
     int sound=rules->GenericClick;
     if(sound>=0 && sound<VocClass::Array.Count) VocClass::PlayGlobal(sound,0x2000,1.0f);
 }
+void showResearchSelection(HouseClass* house,int option) {
+    if(!Research::announceSelection) return;
+    std::wstring player=house->UIName;
+    if(player.empty()) player=L"玩家 "+std::to_wstring(house->ArrayIndex+1);
+    // Keep the full message within the engine's 162-character message buffer.
+    const auto message=player+L" 已研究「"+Research::options[option].name.substr(0,120)+L"」。";
+    MessageListClass::Instance.PrintMessage(message.c_str(),RulesClass::Instance->MessageDelay,house->ColorSchemeIndex,true);
+}
 bool hasAvailableResearch() {
     auto house=HouseClass::CurrentPlayer;
     if(!house || !house->Type || Research::balance(house->ArrayIndex)<Research::price) return false;
@@ -55,23 +65,6 @@ bool visible() {
     auto player = HouseClass::CurrentPlayer;
     return DSurface::Composite && ScenarioClass::Instance && player && !player->IsObserver()
         && !player->Defeated && !ScenarioClass::Instance->UserInputLocked && Research::isEnabled();
-}
-std::vector<int> completedProjects() {
-    Research::ensureReady();
-    int house=HouseClass::CurrentPlayer->ArrayIndex;
-    std::vector<int> result;
-    auto add=[&](const std::string& id) {
-        if(!Research::owns(house,id)) return;
-        for(int i=0;i<static_cast<int>(Research::options.size());++i)
-            if(Research::options[i].id==id && std::find(result.begin(),result.end(),i)==result.end()) {
-                result.push_back(i);break;
-            }
-    };
-    auto it=Research::unlockOrder.find(house);
-    if(it!=Research::unlockOrder.end()) for(const auto& id:it->second) add(id);
-    // Saves created before purchase order was recorded retain all their icons.
-    for(const auto& o:Research::options) add(o.id);
-    return result;
 }
 constexpr int tabSize=48, badgeSize=40, badgePitch=44;
 constexpr int inertHit=5, nextPageHit=6;
@@ -161,7 +154,7 @@ std::vector<BuildingButton> buildingButtons() {
 int hitTest(const Layout& l, Point2D p) {
     if (inside(l.tab,p)) return Research::balance(HouseClass::CurrentPlayer->ArrayIndex)>=Research::price?0:inertHit;
     if (inside(infoRect(l.tab),p)) return inertHit;
-    auto page=badgePage(static_cast<int>(completedProjects().size()));
+    auto page=badgePage(static_cast<int>(Research::completedProjects(HouseClass::CurrentPlayer->ArrayIndex).size()));
     if(page.pages>1 && inside(completedRect(l.tab,iconColumns()-1),p)) return nextPageHit;
     for(int i=0;i<page.count;++i) if(inside(completedRect(l.tab,i),p)) return inertHit;
     if(Research::expanded && inside(l.panel,p)) {
@@ -180,7 +173,15 @@ int hitTest(const Layout& l, Point2D p) {
     return Research::expanded && inside(DSurface::ViewBounds,p)?inertHit:-1;
 }
 int color(int r,int g,int b) { return Drawing::RGB_To_Int(r,g,b); }
-struct PngImage { int width=0,height=0; std::vector<BYTE> pixels; };
+struct PngImage { int width=0,height=0; std::vector<BYTE> pixels; RectangleStruct content{}; };
+void measureImageContent(PngImage& image) {
+    int left=image.width,top=image.height,right=0,bottom=0;
+    for(int y=0;y<image.height;++y) for(int x=0;x<image.width;++x) {
+        if(image.pixels[(static_cast<size_t>(y)*image.width+x)*4+3]<16) continue;
+        left=std::min(left,x);top=std::min(top,y);right=std::max(right,x+1);bottom=std::max(bottom,y+1);
+    }
+    if(right>left && bottom>top) image.content={left,top,right-left,bottom-top};
+}
 using ImageKey=std::tuple<std::string,int,Research::Rarity>;
 auto& imageCache() {
     static Resources::Cache<ImageKey,PngImage> cache(256,64*1024*1024);
@@ -190,6 +191,7 @@ struct CardSkin {
     std::weak_ptr<const PngImage> source;
     int width=0,height=0;
     std::vector<WORD> pixels;
+    std::vector<BYTE> alpha;
 };
 CardSkin& cardSkinCache() {static CardSkin skin;return skin;}
 bool decodePng(Gdiplus::Bitmap* bitmap,PngImage& out) {
@@ -227,11 +229,14 @@ bool loadPng(const std::string& name,int resource,PngImage& out) {
     { Gdiplus::Bitmap image(stream,FALSE); ok=decodePng(&image,out); }
     stream->Release();return ok;
 }
-bool drawPng(const PngImage& image,RectangleStruct rect,int crop) {
-    auto surface=DSurface::Composite;
+bool drawPng(const PngImage& image,RectangleStruct rect,int crop,int opacity=255,const RectangleStruct* clip=nullptr,Surface* surface=DSurface::Composite) {
     if(!surface || surface->GetBytesPerPixel()!=2 || rect.Width<=0 || rect.Height<=0) return false;
     int x=std::max(0,rect.X),y=std::max(0,rect.Y);
     int right=std::min(surface->GetWidth(),rect.X+rect.Width),bottom=std::min(surface->GetHeight(),rect.Y+rect.Height);
+    if(clip) {
+        x=std::max(x,clip->X);y=std::max(y,clip->Y);
+        right=std::min(right,clip->X+clip->Width);bottom=std::min(bottom,clip->Y+clip->Height);
+    }
     if(x>=right || y>=bottom) return true;
     auto base=static_cast<BYTE*>(surface->Lock(x,y));if(!base) return false;
     int pitch=surface->GetPitch();
@@ -243,7 +248,8 @@ bool drawPng(const PngImage& image,RectangleStruct rect,int crop) {
         int sy=crop+static_cast<int>(static_cast<long long>(dy-rect.Y)*(image.height-2*crop)/rect.Height);
         for(int dx=x;dx<right;++dx) {
             int sx=crop+static_cast<int>(static_cast<long long>(dx-rect.X)*(image.width-2*crop)/rect.Width);
-            const BYTE* p=&image.pixels[(static_cast<size_t>(sy)*image.width+sx)*4];int alpha=p[3];
+            const BYTE* p=&image.pixels[(static_cast<size_t>(sy)*image.width+sx)*4];
+            int alpha=(p[3]*std::clamp(opacity,0,255)+127)/255;
             if(!alpha) continue;
             int pixel=0;
             for(int k=0;k<3;++k) {
@@ -309,12 +315,13 @@ std::shared_ptr<const PngImage> imageFor(const std::string& path,int resource,Re
             if(surface) readPcxPixels(*surface,image);
         }
         if(rarity!=Research::Rarity::Common) colorRarityIcon(image,rarity);
+        if(!image.pixels.empty()) measureImageContent(image);
         return image;
     },[](const ImageKey& key,const PngImage& image) {
         return image.pixels.capacity()+2*(std::get<0>(key).size()+1)+sizeof(PngImage);
     });
 }
-bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rarity=Research::Rarity::Common) {
+bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rarity=Research::Rarity::Common,int opacity=255,const RectangleStruct* clip=nullptr,Surface* surface=DSurface::Composite) {
     // Zero IDs preserve legacy .pcx aliases for externally supplied PNGs.
     struct Builtin { const char* stem;int id; };
     static const Builtin builtins[]={{"sfrlab",101},{"sfrpanel",0},{"sfrfocus",0},{"sfrdefault",104},{"sfrheal",0},{"sfrdrain",0},{"sfrripst",0},{"sfframe",109},{"sfactive_default",110}};
@@ -323,7 +330,7 @@ bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rar
         if(!_stricmp(name,(std::string(builtin.stem)+".pcx").c_str()) || !_stricmp(name,(std::string(builtin.stem)+".png").c_str())) {
             std::string pngName=std::string(builtin.stem)+".png";
             if(!builtin.id) {
-                if(_stricmp(name,pngName.c_str()) && blit(pngName.c_str(),rect,crop,rarity)) return true;
+                if(_stricmp(name,pngName.c_str()) && blit(pngName.c_str(),rect,crop,rarity,opacity,clip,surface)) return true;
                 break;
             }
             path=pngName;resource=builtin.id;break;
@@ -331,10 +338,11 @@ bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rar
     }
     bool png=resource || (path.size()>=4 && !_stricmp(path.c_str()+path.size()-4,".png"));
     auto image=imageFor(path,resource,rarity,png);
-    return !image->pixels.empty() && drawPng(*image,rect,crop);
+    return !image->pixels.empty() && drawPng(*image,rect,crop,opacity,clip,surface);
 }
-void drawProjectIcon(const Research::Option& project,RectangleStruct rect) {
-    if(project.icon.empty() || !blit(project.icon.c_str(),rect,0,project.rarity)) blit("sfrdefault.pcx",rect,0,project.rarity);
+void drawProjectIcon(const Research::Option& project,RectangleStruct rect,Surface* surface=DSurface::Composite) {
+    if(project.icon.empty() || !blit(project.icon.c_str(),rect,0,project.rarity,255,nullptr,surface))
+        blit("sfrdefault.pcx",rect,0,project.rarity,255,nullptr,surface);
 }
 std::wstring targetLabel(const Research::Option& option,bool compact) {
     if(option.effectList) {
@@ -385,10 +393,7 @@ const wchar_t* rarityName(Research::Rarity rarity) {
         default: return L"未知";
     }
 }
-void drawTooltip(const Layout& l,int slot,int option, const RectangleStruct* anchor=nullptr) {
-    const auto& view=DSurface::ViewBounds;
-    constexpr int width=328;
-    const auto& project=Research::options[option];
+std::vector<std::wstring> tooltipLines(int option,int width,int maxHeight) {
     wchar_t conditions[96]{};
     std::wistringstream detail(Research::describe(option,conditions));
     std::vector<std::wstring> detailLines;
@@ -405,14 +410,32 @@ void drawTooltip(const Layout& l,int slot,int option, const RectangleStruct* anc
         }
     }
     const int baseHeight=60;
-    const int maxLines=std::max(1,1+(view.Height-baseHeight-8)/20);
+    const int maxLines=std::max(1,1+(maxHeight-baseHeight-8)/20);
     if(detailLines.size()>static_cast<size_t>(maxLines)) {
         detailLines.resize(maxLines);
         if(!detailLines.back().empty()) detailLines.back().pop_back();
         detailLines.back()+=L"…";
     }
-    const int extraHeight=20*std::max(0,static_cast<int>(detailLines.size())-1);
-    const int height=baseHeight+extraHeight;
+    return detailLines;
+}
+int tooltipHeight(const std::vector<std::wstring>& lines) {
+    return 60+20*std::max(0,static_cast<int>(lines.size())-1);
+}
+void paintTooltip(Surface* surface,int option,RectangleStruct rect,const std::vector<std::wstring>& detailLines) {
+    const auto& project=Research::options[option];
+    surface->FillRect(&rect,color(15,19,35));
+    surface->DrawRect(&rect,color(117,125,178));
+    auto title=std::wstring(L"[")+rarityName(Research::options[option].rarity)+L"] "+Research::options[option].name;
+    int titleColor=project.rarity==Research::Rarity::Insane?color(255,111,117):project.rarity==Research::Rarity::Epic?color(255,213,112):color(211,201,255);
+    ResearchText::draw(title.c_str(),rect.X+14,rect.Y+8,titleColor,17,rect.Width-28,surface);
+    for(size_t i=0;i<detailLines.size();++i)
+        ResearchText::draw(detailLines[i].c_str(),rect.X+14,rect.Y+39+20*static_cast<int>(i),color(233,237,250),15,rect.Width-28,surface);
+}
+void drawTooltip(const Layout& l,int slot,int option, const RectangleStruct* anchor=nullptr) {
+    const auto& view=DSurface::ViewBounds;
+    constexpr int width=328;
+    const auto detailLines=tooltipLines(option,width,view.Height);
+    const int height=tooltipHeight(detailLines);
     auto card=l.card(slot);
     int x=anchor?anchor->X-width/2:card.X+(card.Width-width)/2;
     int y=anchor?anchor->Y+anchor->Height+4:l.panel.Y+l.panel.Height+4;
@@ -423,15 +446,7 @@ void drawTooltip(const Layout& l,int slot,int option, const RectangleStruct* anc
     }
     x=std::clamp(x,view.X,std::max(view.X,view.X+view.Width-width));
     y=std::clamp(y,view.Y,std::max(view.Y,view.Y+view.Height-height));
-    RectangleStruct rect{x,y,width,height};
-    auto surface=DSurface::Composite;
-    surface->FillRect(&rect,color(15,19,35));
-    surface->DrawRect(&rect,color(117,125,178));
-    auto title=std::wstring(L"[")+rarityName(Research::options[option].rarity)+L"] "+Research::options[option].name;
-    int titleColor=project.rarity==Research::Rarity::Insane?color(255,111,117):project.rarity==Research::Rarity::Epic?color(255,213,112):color(211,201,255);
-    ResearchText::draw(title.c_str(),x+14,y+8,titleColor,17,width-28);
-    for(size_t i=0;i<detailLines.size();++i)
-        ResearchText::draw(detailLines[i].c_str(),x+14,y+39+20*static_cast<int>(i),color(233,237,250),15,width-28);
+    paintTooltip(DSurface::Composite,option,{x,y,width,height},detailLines);
 }
 void drawResearchButton(RectangleStruct tab,int points) {
     auto surface=DSurface::Composite;
@@ -487,7 +502,7 @@ void drawInfoTip(const RectangleStruct& icon) {
     RectangleStruct tip{std::max(view.X,icon.X+icon.Width-width),icon.Y+icon.Height+4,width,52};
     DSurface::Composite->FillRect(&tip,color(14,23,36));
     DSurface::Composite->DrawRect(&tip,color(75,111,131));
-    ResearchText::draw(L"流火实验室 0.36",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
+    ResearchText::draw(L"流火实验室 0.37",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
     ResearchText::draw(L"By 斩断云天",tip.X+10,tip.Y+28,color(159,194,210),14,width-20);
 }
 void centered(const std::wstring& text,RectangleStruct bounds,int y,int ink,int size) {
@@ -495,11 +510,11 @@ void centered(const std::wstring& text,RectangleStruct bounds,int y,int ink,int 
     int width=std::min(ResearchText::maskFor(text.c_str(),size).w,available);
     ResearchText::draw(text.c_str(),bounds.X+(bounds.Width-width)/2,y,ink,size,available);
 }
-// The opaque card skin is identical on all slots. Scale and convert it only when the layout changes.
+// Cache the scaled foreground and alpha, never pixels blended with the map.
 void drawCardSkin(RectangleStruct rect) {
     auto art=imageFor("sfrcard.png",108,Research::Rarity::Common,true);
     auto& skin=cardSkinCache();
-    auto& [source,width,height,pixels]=skin;
+    auto& [source,width,height,pixels,alpha]=skin;
     auto surface=DSurface::Composite;
     constexpr size_t maxSkinPixels=1024*1024;
     if(rect.Width<=0 || rect.Height<=0) return;
@@ -513,15 +528,35 @@ void drawCardSkin(RectangleStruct rect) {
         source=art;
         width=rect.Width;height=rect.Height;
         std::vector<WORD>(static_cast<size_t>(width)*height).swap(pixels);
+        std::vector<BYTE>(pixels.size()).swap(alpha);
         for(int y=0;y<height;++y) for(int x=0;x<width;++x) {
             auto p=&art->pixels[4*((y*art->height/height)*art->width+x*art->width/width)];
             pixels[y*width+x]=static_cast<WORD>(color(p[2],p[1],p[0]));
+            alpha[y*width+x]=p[3];
         }
     }
+    int left=std::max(0,rect.X),top=std::max(0,rect.Y);
+    int right=std::min(surface->GetWidth(),rect.X+width),bottom=std::min(surface->GetHeight(),rect.Y+height);
+    if(left>=right || top>=bottom) return;
     int pitch=surface->GetPitch();
-    auto dest=static_cast<BYTE*>(surface->Lock(rect.X,rect.Y));
+    auto dest=static_cast<BYTE*>(surface->Lock(left,top));
     if(!dest) return;
-    for(int y=0;y<height;++y) memcpy(dest+y*pitch,pixels.data()+y*width,width*sizeof(WORD));
+    const int shifts[]={Drawing::RedShiftLeft,Drawing::GreenShiftLeft,Drawing::BlueShiftLeft};
+    const int masks[]={255>>Drawing::RedShiftRight,255>>Drawing::GreenShiftRight,255>>Drawing::BlueShiftRight};
+    for(int y=top;y<bottom;++y) {
+        auto row=reinterpret_cast<WORD*>(dest+(y-top)*pitch);
+        for(int x=left;x<right;++x) {
+            size_t index=static_cast<size_t>(y-rect.Y)*width+x-rect.X;int a=alpha[index];
+            if(!a) continue;
+            if(a==255) {row[x-left]=pixels[index];continue;}
+            int result=0;
+            for(int k=0;k<3;++k) {
+                int fg=(pixels[index]>>shifts[k])&masks[k],bg=(row[x-left]>>shifts[k])&masks[k];
+                result|=((fg*a+bg*(255-a)+127)/255)<<shifts[k];
+            }
+            row[x-left]=static_cast<WORD>(result);
+        }
+    }
     surface->Unlock();
 }
 void cardLines(const std::wstring& text,RectangleStruct bounds,int y,int size,int ink,int maxLines) {
@@ -581,15 +616,16 @@ void drawCard(const Layout& l,int slot,int index,Point2D pointer,bool showRefres
         centered(used?L"已刷新":active?L"↻  刷新":L"無可替換",button,button.Y+4,active?color(226,240,254):color(144,153,167),15);
     }
 }
-// Draw one complete card at its native size, then composite its pixels over the
-// saved background. Text and icons therefore fade and scale together.
+// Render on black and white to recover premultiplied color and coverage for
+// the entire card (skin, icon and text). Scaling a snapshot already blended
+// with terrain would also move that terrain through transparent PNG regions.
 void drawAnimatedCard(const Layout& l,int slot,int index,Point2D pointer,double scale,int shiftY,int opacity,bool selected) {
     auto surface=DSurface::Composite;auto c=l.card(slot);
     if(surface->GetBytesPerPixel()!=2 || c.X<0 || c.Y<0 || c.X+c.Width>surface->GetWidth() || c.Y+c.Height>surface->GetHeight()) {
         drawCard(l,slot,index,pointer,false,selected);return;
     }
-    static std::vector<WORD> before,after;
-    before.resize(static_cast<size_t>(c.Width)*c.Height);after.resize(before.size());
+    static std::vector<WORD> before,onBlack,onWhite;
+    before.resize(static_cast<size_t>(c.Width)*c.Height);onBlack.resize(before.size());onWhite.resize(before.size());
     int pitch=surface->GetPitch();
     auto capture=[&](std::vector<WORD>& pixels,bool restore) {
         auto base=static_cast<BYTE*>(surface->Lock(c.X,c.Y));if(!base) return false;
@@ -600,8 +636,12 @@ void drawAnimatedCard(const Layout& l,int slot,int index,Point2D pointer,double 
         surface->Unlock();return true;
     };
     if(!capture(before,false)) return;
+    surface->FillRect(&c,color(0,0,0));
     drawCard(l,slot,index,pointer,false,selected);
-    if(!capture(after,false)) {capture(before,true);return;}
+    if(!capture(onBlack,false)) {capture(before,true);return;}
+    surface->FillRect(&c,color(255,255,255));
+    drawCard(l,slot,index,pointer,false,selected);
+    if(!capture(onWhite,false)) {capture(before,true);return;}
     if(!capture(before,true)) return;
     int w=std::max(1,static_cast<int>(std::lround(c.Width*scale)));
     int h=std::max(1,static_cast<int>(std::lround(c.Height*scale)));
@@ -618,11 +658,14 @@ void drawAnimatedCard(const Layout& l,int slot,int index,Point2D pointer,double 
         auto row=reinterpret_cast<WORD*>(base+(y-top)*pitch);
         int sy=(y-dy)*c.Height/h;
         for(int x=left;x<right;++x) {
-            WORD fg=after[static_cast<size_t>(sy)*c.Width+(x-dx)*c.Width/w],bg=row[x-left];
+            size_t index=static_cast<size_t>(sy)*c.Width+(x-dx)*c.Width/w;
+            WORD dark=onBlack[index],light=onWhite[index],bg=row[x-left];
             int result=0;
             for(int k=0;k<3;++k) {
-                int a=(fg>>shifts[k])&masks[k],b=(bg>>shifts[k])&masks[k];
-                result|=((a*opacity+b*(255-opacity)+127)/255)<<shifts[k];
+                int a=(dark>>shifts[k])&masks[k],b=(bg>>shifts[k])&masks[k];
+                int coverage=std::clamp(masks[k]-((light>>shifts[k])&masks[k])+a,0,masks[k]);
+                int alpha=(coverage*opacity+masks[k]/2)/masks[k];
+                result|=std::clamp((a*opacity+b*(255-alpha)+127)/255,0,masks[k])<<shifts[k];
             }
             row[x-left]=static_cast<WORD>(result);
         }
@@ -697,17 +740,14 @@ void draw() {
     surface->FillRect(&info,color(14,23,36));
     surface->DrawRect(&info,inside(info,pointer)?accent:color(75,111,131));
     ResearchText::draw(L"i",info.X+7,info.Y+1,color(182,228,245),15);
-    auto completed=completedProjects();
+    auto completed=Research::completedProjects(HouseClass::CurrentPlayer->ArrayIndex);
     auto page=badgePage(static_cast<int>(completed.size()));
     int hoveredCompleted=-1;
     RectangleStruct hoverRect{};
     for(int slot=0;slot<page.count;++slot) {
         auto rect=completedRect(tab,slot);
         int index=completed[page.first+slot];
-        surface->FillRect(&rect,color(14,23,35));
-        RectangleStruct glyph{rect.X+2,rect.Y+2,rect.Width-4,rect.Height-4};
-        drawProjectIcon(Research::options[index],glyph);
-        surface->DrawRect(&rect,color(56,73,89));
+        ResearchImages::drawBadge(surface,index,rect);
         if(inside(rect,pointer)) { hoveredCompleted=index;hoverRect=rect;surface->DrawRect(&rect,accent); }
     }
     if(page.pages>1) {
@@ -782,6 +822,19 @@ void draw() {
 }
 #include "ActiveSkillUI.inc"
 }
+void ResearchImages::drawBadge(Surface* surface,int project,RectangleStruct rect) {
+    surface->FillRect(&rect,color(14,23,35));
+    RectangleStruct glyph{rect.X+2,rect.Y+2,rect.Width-4,rect.Height-4};
+    drawProjectIcon(Research::options[project],glyph,surface);
+    surface->DrawRect(&rect,color(56,73,89));
+}
+ResearchImages::Bitmap ResearchImages::tooltip(int project,int width,int maxHeight) {
+    const auto lines=tooltipLines(project,width,maxHeight);
+    int height=tooltipHeight(lines);
+    Bitmap image(GameCreate<BSurface>(width,height));
+    paintTooltip(image.get(),project,{0,0,width,height},lines);
+    return image;
+}
 DEFINE_HOOK(0x4F4583, SF_ResearchDraw, 6) {
     ResearchAudio::pump();
     if(visible() && WWMouseClass::Instance) draw();
@@ -837,7 +890,7 @@ bool hudButton(Point2D pointer,int flags) {
                 }
             }
             else if(hit==nextPageHit) {
-                int pages=badgePage(static_cast<int>(completedProjects().size())).pages;
+                int pages=badgePage(static_cast<int>(Research::completedProjects(HouseClass::CurrentPlayer->ArrayIndex).size())).pages;
                 Research::badgePageIndex=(Research::badgePageIndex+1)%pages;
                 playClick();
             }
@@ -955,6 +1008,7 @@ DEFINE_HOOK(0x4C6CC8, SF_ResearchCommand, 5) {
         if(sender>=0 && sender<HouseClass::Array.Count) {
             auto house=HouseClass::Array.Items[sender];
             if(house && !house->Defeated && !house->IsObserver()) success=Research::claimBuilding(id,sender,option);
+            if(success) showResearchSelection(house,option);
         }
         if(HouseClass::CurrentPlayer && sender==HouseClass::CurrentPlayer->ArrayIndex && cardAnimation.pending && cardAnimation.pendingOption==option && cardAnimation.pendingBuilding==id) {
             cardAnimation.pending=false;cardAnimation.selecting=success;cardAnimation.selectAt=GetTickCount64();
@@ -985,6 +1039,7 @@ DEFINE_HOOK(0x4C6CC8, SF_ResearchCommand, 5) {
         auto house=HouseClass::Array.Items[sender];
         if(house && !house->Defeated && !house->IsObserver()) {
             success=Research::purchase(sender,option,house->Type ? house->Type->ID : "");
+            if(success) showResearchSelection(house,option);
         }
     }
     if(HouseClass::CurrentPlayer && sender==HouseClass::CurrentPlayer->ArrayIndex && cardAnimation.pending && cardAnimation.pendingOption==option && !cardAnimation.pendingBuilding) {
