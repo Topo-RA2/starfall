@@ -11,6 +11,7 @@
 #include "ResearchText.h"
 #include "ResearchImages.h"
 #include "ResearchAudio.h"
+#include "player_name_policy.h"
 #include <WWMouseClass.h>
 #include <BuildingClass.h>
 #include <TacticalClass.h>
@@ -41,8 +42,7 @@ void playClick() {
 }
 void showResearchSelection(HouseClass* house,int option) {
     if(!Research::announceSelection) return;
-    std::wstring player=house->UIName;
-    if(player.empty()) player=L"玩家 "+std::to_wstring(house->ArrayIndex+1);
+    const auto player=PlayerNamePolicy::label(house->UIName,house->ArrayIndex);
     // Keep the full message within the engine's 162-character message buffer.
     const auto message=player+L" 已研究「"+Research::options[option].name.substr(0,120)+L"」。";
     MessageListClass::Instance.PrintMessage(message.c_str(),RulesClass::Instance->MessageDelay,house->ColorSchemeIndex,true);

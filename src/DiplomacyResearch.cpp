@@ -1,5 +1,6 @@
 #include "Research.h"
 #include "ResearchImages.h"
+#include "player_name_policy.h"
 #include <Drawing.h>
 #include <HouseClass.h>
 #include <OwnerDraw.h>
@@ -80,7 +81,7 @@ void showProjects() {
     const int count=static_cast<int>(page.projects.size());
     const int last=count?(count-1)/page.capacity*page.capacity:0;
     page.first=std::clamp(page.first,0,last);
-    std::wstring title=owner->UIName;
+    auto title=PlayerNamePolicy::label(owner->UIName,owner->ArrayIndex);
     title+=count?L"   研究 ("+std::to_wstring(count)+L")":L"   尚無研究項目";
     if(last) title+=L"   "+std::to_wstring(1+page.first/page.capacity)+L"/"+std::to_wstring(1+last/page.capacity);
     setCaption(heading,title.c_str());
