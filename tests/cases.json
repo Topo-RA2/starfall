@@ -193,6 +193,7 @@
       "Expected": {
         "fresh": [
           "PASS external DLL distinguishes missing house and empty ownership",
+          "PASS external display API distinguishes empty research",
           "PASS random research configuration validated",
           "PASS INI rare reward is free and preserves ordinary progress",
           "PASS random research announced once",
@@ -203,6 +204,7 @@
           "PASS country prerequisite and effect restrictions enforced",
           "PASS saved",
           "PASS external DLL reads exact research IDs for each house",
+          "PASS external display API reads completed research and bounded icon",
           "PASS default All grants one additional project",
           "PASS reward draw leaves native RNG unchanged",
           "PASS research switch blocks free grants",
@@ -216,6 +218,7 @@
         ],
         "load": [
           "PASS external DLL reads exact research IDs for each house",
+          "PASS external display API reads completed research and bounded icon",
           "PASS free research and round zero survive load",
           "PASS research passive survives load",
           "PASS default All grants one additional project",

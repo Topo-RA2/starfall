@@ -58,6 +58,7 @@ Research::CostChange readCostChange(string value,const string& category) {
 
 void Research::readConfiguration(const char* configPath) {
     Research::clearPresentationCaches();
+    if (++Research::displayCatalogRevision==0) ++Research::displayCatalogRevision;
     using Research::Option;
     const Option defaults[]={
         {"sf_repair","sf_researchrepair",{},{"mtnk"},L"战场维修",L"击杀时修复自身",L"击杀敌人时，额外恢复 {amount} 点生命"},

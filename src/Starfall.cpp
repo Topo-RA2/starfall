@@ -3924,6 +3924,7 @@ bool Research::Detail::Runtime::canTransformUnit(TechnoClass* unit,TechnoTypeCla
 bool Research::Detail::Runtime::transformUnit(TechnoClass* unit,TechnoTypeClass* to) { return ::transformUnit(unit,to); }
 
 void Research::ensureReady() { if(!ready) readSkills(); }
+bool Research::readyForDisplay() noexcept { return ready && enabled; }
 std::vector<int> Research::buildingOptions(unsigned long id,int house) {
     std::vector<int> result;
     if(!isEnabled()) return result;

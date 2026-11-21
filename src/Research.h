@@ -75,6 +75,8 @@ enum class SoundCue { Button, Cards, Refresh, Select, Available };
 extern std::array<std::string,5> soundFiles;
 extern std::string freeRewardSound;
 extern unsigned uiGeneration;
+extern uint32_t displayCatalogRevision;
+bool readyForDisplay() noexcept;
 inline constexpr int rarityCount=static_cast<int>(Rarity::Invalid);
 inline constexpr std::array<int,rarityCount> defaultRarityWeights={5,4,1,0};
 extern std::array<int,rarityCount> rarityWeights;
@@ -99,6 +101,7 @@ extern std::map<int,unsigned> completedRounds;
 // Loaded match seed; unset for a fresh scenario. Reading offers never mutates it.
 extern std::optional<unsigned> raritySequenceSeed;
 std::vector<int> completedProjects(int house);
+std::vector<int> loadedCompletedProjects(int house);
 extern std::map<int,std::vector<std::string>> unlockOrder;
 extern std::map<int,int> points;
 struct GlobalIncome {

@@ -10,6 +10,7 @@
 #include <PCX.h>
 #include "ResearchText.h"
 #include "ResearchImages.h"
+#include "starfall_research_display_v1.h"
 #include "ResearchAudio.h"
 #include "player_name_policy.h"
 #include <WWMouseClass.h>
@@ -352,7 +353,8 @@ std::shared_ptr<const PngImage> imageFor(const std::string& path,int resource,Re
         return image.pixels.capacity()+2*(std::get<0>(key).size()+1)+sizeof(PngImage);
     });
 }
-bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rarity=Research::Rarity::Common,int opacity=255,const RectangleStruct* clip=nullptr,Surface* surface=DSurface::Composite) {
+template<typename UseImage>
+bool withImage(const char* name,Research::Rarity rarity,const UseImage& use) {
     // Zero IDs preserve legacy .pcx aliases for externally supplied PNGs.
     struct Builtin { const char* stem;int id; };
     static const Builtin builtins[]={{"sfrlab",101},{"sfrpanel",0},{"sfrfocus",0},{"sfrdefault",104},{"sfrheal",0},{"sfrdrain",0},{"sfrripst",0},{"sfframe",109},{"sfactive_default",110}};
@@ -361,7 +363,7 @@ bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rar
         if(!_stricmp(name,(std::string(builtin.stem)+".pcx").c_str()) || !_stricmp(name,(std::string(builtin.stem)+".png").c_str())) {
             std::string pngName=std::string(builtin.stem)+".png";
             if(!builtin.id) {
-                if(_stricmp(name,pngName.c_str()) && blit(pngName.c_str(),rect,crop,rarity,opacity,clip,surface)) return true;
+                if(_stricmp(name,pngName.c_str()) && withImage(pngName.c_str(),rarity,use)) return true;
                 break;
             }
             path=pngName;resource=builtin.id;break;
@@ -369,11 +371,22 @@ bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rar
     }
     bool png=resource || (path.size()>=4 && !_stricmp(path.c_str()+path.size()-4,".png"));
     auto image=imageFor(path,resource,rarity,png);
-    return !image->pixels.empty() && drawPng(*image,rect,crop,opacity,clip,surface);
+    return !image->pixels.empty() && use(*image);
+}
+bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rarity=Research::Rarity::Common,int opacity=255,const RectangleStruct* clip=nullptr,Surface* surface=DSurface::Composite) {
+    return withImage(name,rarity,[&](const PngImage& image) {
+        return drawPng(image,rect,crop,opacity,clip,surface);
+    });
+}
+template<typename UseImage>
+bool withProjectIcon(const Research::Option& project,const UseImage& use) {
+    return (!project.icon.empty() && withImage(project.icon.c_str(),project.rarity,use)) ||
+        withImage("sfrdefault.pcx",project.rarity,use);
 }
 void drawProjectIcon(const Research::Option& project,RectangleStruct rect,Surface* surface=DSurface::Composite) {
-    if(project.icon.empty() || !blit(project.icon.c_str(),rect,0,project.rarity,255,nullptr,surface))
-        blit("sfrdefault.pcx",rect,0,project.rarity,255,nullptr,surface);
+    withProjectIcon(project,[&](const PngImage& image) {
+        return drawPng(image,rect,0,255,nullptr,surface);
+    });
 }
 std::wstring targetLabel(const Research::Option& option,bool compact) {
     if(!option.targetLabel.empty()) return option.targetLabel;
@@ -1002,6 +1015,23 @@ void ResearchImages::drawBadge(Surface* surface,int project,RectangleStruct rect
     RectangleStruct glyph{rect.X+2,rect.Y+2,rect.Width-4,rect.Height-4};
     drawProjectIcon(Research::options[project],glyph,surface);
     hudOutline(rect,color(56,73,89),surface);
+}
+bool ResearchImages::copyProjectIcon(int project,std::uint8_t* rgba) {
+    constexpr int size=STARFALL_RESEARCH_ICON_SIZE_V1;
+    return withProjectIcon(Research::options[project],[&](const PngImage& image) {
+        // Use the native icon's nearest-neighbor sampling and convert cached BGRA to straight RGBA.
+        for(int y=0;y<size;++y) {
+            const auto row=image.pixels.data()+static_cast<size_t>(y*image.height/size)*image.width*4;
+            for(int x=0;x<size;++x) {
+                const auto pixel=row+(x*image.width/size)*4;
+                *rgba++=pixel[2];
+                *rgba++=pixel[1];
+                *rgba++=pixel[0];
+                *rgba++=pixel[3];
+            }
+        }
+        return true;
+    });
 }
 ResearchImages::Bitmap ResearchImages::tooltip(int project,int width,int maxHeight) {
     const auto lines=tooltipLines(project,width,maxHeight);

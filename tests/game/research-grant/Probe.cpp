@@ -12,6 +12,12 @@ bool checkExternalList(int house,const char* expected,uint32_t bytes) {
     static auto verify=client?reinterpret_cast<ClientCheck>(GetProcAddress(client,"CheckOwnedResearch")):nullptr;
     return verify && verify(house,expected,bytes);
 }
+bool checkExternalDisplay(int house,const char* firstId,uint32_t count) {
+    using ClientCheck=int (__cdecl*)(int32_t,const char*,uint32_t);
+    static const auto client=GetModuleHandleW(L"ResearchApiClient.dll");
+    static const auto verify=client?reinterpret_cast<ClientCheck>(GetProcAddress(client,"CheckResearchDisplay")):nullptr;
+    return verify && verify(house,firstId,count);
+}
 bool ownerReward(HouseClass* house,const char* rarity) {
     ScriptFields fields{{"action","grantrandomresearch"},{"action.target","owner"}};
     if(rarity) fields["action.rarity"]=rarity;
@@ -46,6 +52,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchGrant,5) {
     if(frame==20) {
         check(checkExternalList(-1,nullptr,0) && checkExternalList(HouseClass::Array.Count,nullptr,0) &&
             checkExternalList(h,"\0",2),"external DLL distinguishes missing house and empty ownership");
+        check(checkExternalDisplay(h,nullptr,0),"external display API distinguishes empty research");
         check(skills.contains("rarereward") && skills.contains("epicreward") && skills.contains("scriptreward") &&
             !skills.contains("badrarity") && !skills.contains("badrarityfield"),"random research configuration validated");
         // Apply the boost to the actual target type supplied by the base map.
@@ -98,6 +105,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchGrant,5) {
         constexpr char playerIds[]="rarea\0rareb\0",opponentIds[]="epicboost\0insanea\0";
         check(checkExternalList(h,playerIds,sizeof(playerIds)) && checkExternalList(v,opponentIds,sizeof(opponentIds)),
             "external DLL reads exact research IDs for each house");
+        check(checkExternalDisplay(v,"epicboost",2),"external display API reads completed research and bounded icon");
         check(Research::owns(h,"rarea") && Research::owns(h,"rareb") && Research::owns(v,"epicboost") &&
             Research::owns(v,"insanea") && Research::unlocked[h].size()==2 && Research::unlocked[v].size()==2 &&
             Research::completedRounds.empty() && Research::balance(h)==100 && Research::slotUsed(h,0),"free research and round zero survive load");

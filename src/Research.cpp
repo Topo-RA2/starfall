@@ -14,6 +14,7 @@ std::vector<Option> options;
 std::array<std::string,5> soundFiles;
 std::string freeRewardSound="builtin:available";
 unsigned uiGeneration=0;
+uint32_t displayCatalogRevision=0;
 std::array<int,rarityCount> rarityWeights=defaultRarityWeights;
 std::array<std::wstring,rarityCount> Detail::rarityNameOverrides;
 const wchar_t* rarityName(Rarity rarity) {
@@ -61,7 +62,10 @@ bool owns(int house,const std::string& id) {
     return it!=unlocked.end() && it->second.contains(id);
 }
 std::vector<int> completedProjects(int house) {
-    Research::ensureReady();
+    ensureReady();
+    return loadedCompletedProjects(house);
+}
+std::vector<int> loadedCompletedProjects(int house) {
     std::vector<int> result;
     auto add=[&](const std::string& id) {
         if(!Research::owns(house,id)) return;
