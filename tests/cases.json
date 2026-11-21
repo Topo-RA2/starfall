@@ -57,6 +57,15 @@
       "action-sequence"
     ],
     "research": [
+      "hex-tactics",
+      "hex-support",
+      "hex-ordnance",
+      "hex-economy",
+      "hex-defense",
+      "hex-helicopter",
+      "hex-fortress",
+      "research-grant",
+      "hex-gameplay",
       "research-hud",
       "research-cost",
       "building-reward",
@@ -79,6 +88,15 @@
       "multiplayer"
     ],
     "full": [
+      "hex-tactics",
+      "hex-support",
+      "hex-ordnance",
+      "hex-economy",
+      "hex-defense",
+      "hex-helicopter",
+      "hex-fortress",
+      "research-grant",
+      "hex-gameplay",
       "ground-pickups",
       "unit",
       "building-transform",
@@ -128,16 +146,133 @@
   },
   "Cases": [
     {
+      "Name": "hex-economy",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "HexEconomy.sav",
+      "Log": "hex-economy.log",
+      "Phases": [
+        "art",
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "art": [
+          "PASS prepared complete art rules"
+        ],
+        "fresh": [
+          "PASS complete HexBrawl catalog loaded",
+          "PASS allied plant output increased only for researcher",
+          "PASS power surplus exact threshold and cap",
+          "PASS magnetron native enemy kill drops random reward crate",
+          "PASS native random reward crate collected",
+          "PASS native factory placement gifts exactly one sentry",
+          "PASS human factory placement gifts exactly one sentry",
+          "PASS undeployment restores both native slots",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS load does not repeat construction gifts",
+          "PASS power and price research survive load",
+          "PASS all five projects persist through save"
+        ]
+      }
+    },
+    {
+      "Name": "research-grant",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "ResearchGrant.sav",
+      "Log": "research-grant.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS external DLL distinguishes missing house and empty ownership",
+          "PASS random research configuration validated",
+          "PASS INI rare reward is free and preserves ordinary progress",
+          "PASS random research announced once",
+          "PASS target owner receives live research passive",
+          "PASS Lua exact rarity ignores ordinary zero weights and rejects duplicates",
+          "PASS owner context grants remaining rare project without a unit",
+          "PASS ineligible pool fails without RNG consumption",
+          "PASS country prerequisite and effect restrictions enforced",
+          "PASS saved",
+          "PASS external DLL reads exact research IDs for each house",
+          "PASS default All grants one additional project",
+          "PASS reward draw leaves native RNG unchanged",
+          "PASS research switch blocks free grants",
+          "PASS scoped and unrestricted free cards survive save and load",
+          "PASS INI scope and default Lua pool use eligible distinct cards",
+          "PASS free choice validates scope owner and single use",
+          "PASS research effect queues a separate scoped choice at zero points",
+          "PASS explicit rarity includes zero-weight eligible projects",
+          "PASS AI claims one pending choice without research points",
+          "PASS completed random research test"
+        ],
+        "load": [
+          "PASS external DLL reads exact research IDs for each house",
+          "PASS free research and round zero survive load",
+          "PASS research passive survives load",
+          "PASS default All grants one additional project",
+          "PASS random research resumes same draw after load",
+          "PASS reward draw leaves native RNG unchanged",
+          "PASS research switch blocks free grants",
+          "PASS scoped and unrestricted free cards survive save and load",
+          "PASS INI scope and default Lua pool use eligible distinct cards",
+          "PASS free choice validates scope owner and single use",
+          "PASS research effect queues a separate scoped choice at zero points",
+          "PASS explicit rarity includes zero-weight eligible projects",
+          "PASS AI claims one pending choice without research points",
+          "PASS completed random research test"
+        ]
+      }
+    },
+    {
       "Name": "ground-pickups",
       "Kind": "game",
       "Map": "maps/Starfall_TestRange.map",
       "Save": "Pickups.sav",
       "Log": "ground-pickups.log",
-      "Phases": ["fresh", "load"],
+      "Phases": [
+        "fresh",
+        "load"
+      ],
       "Standalone": true,
       "Expected": {
-        "fresh": ["PASS visible SHP changes ground pixels", "PASS default pickup art available", "PASS event spawns independent pickup", "PASS custom SHP loads", "PASS occupied cell uses nearby slot", "PASS saved occupied and expiring pickups", "PASS collector receives rewards exactly once", "PASS random actions execute per draw", "PASS random refresh rejects occupied final cell", "PASS relocated crate retains reward and pickup remains", "PASS pickup avoids existing native crate", "PASS full neighborhood rejects targeted crate"],
-        "load": ["PASS collector receives rewards exactly once", "PASS collected and expired removed", "PASS random actions execute per draw", "PASS random refresh rejects occupied final cell", "PASS relocated crate retains reward and pickup remains", "PASS pickup avoids existing native crate", "PASS full neighborhood rejects targeted crate"]
+        "fresh": [
+          "PASS visible SHP changes ground pixels",
+          "PASS default pickup art available",
+          "PASS event spawns independent pickup",
+          "PASS custom SHP loads",
+          "PASS occupied cell uses nearby slot",
+          "PASS saved occupied and expiring pickups",
+          "PASS collector receives rewards exactly once",
+          "PASS random actions execute per draw",
+          "PASS random refresh rejects occupied final cell",
+          "PASS relocated crate retains reward and pickup remains",
+          "PASS pickup avoids existing native crate",
+          "PASS full neighborhood rejects targeted crate",
+          "PASS global cleanup without center preserves native crate and queues no reward",
+          "PASS Lua point cleanup reports success and empty result",
+          "PASS superweapon cleanup uses clicked cell"
+        ],
+        "load": [
+          "PASS collector receives rewards exactly once",
+          "PASS collected and expired removed",
+          "PASS random actions execute per draw",
+          "PASS random refresh rejects occupied final cell",
+          "PASS relocated crate retains reward and pickup remains",
+          "PASS pickup avoids existing native crate",
+          "PASS full neighborhood rejects targeted crate",
+          "PASS global cleanup without center preserves native crate and queues no reward",
+          "PASS Lua point cleanup reports success and empty result",
+          "PASS superweapon cleanup uses clicked cell"
+        ]
       }
     },
     {
@@ -146,7 +281,10 @@
       "Map": "maps/Starfall_TestRange.map",
       "Save": "BuildingTransform.sav",
       "Log": "building-transform.log",
-      "Phases": ["fresh", "load"],
+      "Phases": [
+        "fresh",
+        "load"
+      ],
       "Standalone": true,
       "Expected": {
         "fresh": [
@@ -184,7 +322,10 @@
       "Map": "maps/Starfall_TestRange.map",
       "Save": "SpawnBuilding.sav",
       "Log": "spawn-building.log",
-      "Phases": ["fresh", "load"],
+      "Phases": [
+        "fresh",
+        "load"
+      ],
       "Standalone": true,
       "Expected": {
         "fresh": [
@@ -318,7 +459,7 @@
           "PASS both skills bound",
           "PASS INI binding overrides legacy",
           "PASS INI display and parameters",
-            "PASS indicator configuration parsed",
+          "PASS indicator configuration parsed",
           "PASS shared script variant",
           "PASS independent skill parameters",
           "PASS canceled without orders",
@@ -482,12 +623,30 @@
           "PASS spy privilege revoked on transfer",
           "PASS engineer privilege",
           "PASS claimed once",
+          "PASS free research does not advance ordinary rounds",
+          "PASS large pool offers three distinct positive-weight cards",
+          "PASS unoffered configured project rejected",
+          "PASS free count badge on research tab",
+          "PASS free authorization plays the available cue at zero points",
+          "PASS new free entitlement animates the research button",
+          "PASS repeated authorization does not replay the animation",
+          "PASS ordinary research accessible while free rewards are pending",
+          "PASS zero-point tab opens free research",
+          "PASS reopening preserves weighted board",
+          "PASS three building rewards counted and fixed lists retain order",
+          "PASS one claim consumes one free reward at zero points",
           "PASS native engineer capture",
           "PASS saved"
         ],
         "load": [
           "PASS saved permissions",
           "PASS saved claimed",
+          "PASS free research round zero survives load",
+          "PASS weighted board and free count survive load",
+          "PASS restored free rewards do not replay the cue",
+          "PASS card click grants one free research through the command queue",
+          "PASS free selection plays the confirmation cue",
+          "PASS free selection animation completes",
           "PASS loaded no duplicate"
         ]
       }
@@ -814,25 +973,25 @@
           "PASS round trip preserves sensors and neighbour counts",
           "PASS sensor registration cleaned on removal",
           "PASS vehicle and infantry tracking follows motion after save load",
-            "PASS custom airborne threshold survives save load",
-            "PASS air targeting restored after save load",
-            "PASS native AA missile damages airborne ground unit",
-            "PASS saved airborne target cleans up",
-            "PASS below threshold remains ground target",
-            "PASS threshold admits AA and excludes ground-only acquisition",
-            "PASS target coordinates include lift once",
-            "PASS air registration has no duplicates",
-            "PASS aerial scan follows horizontal displacement",
-            "PASS replacement applies custom threshold immediately",
-            "PASS zero threshold disables air classification",
-            "PASS descent restores ground acquisition",
-            "PASS AA missile aims at elevated target",
-            "PASS infantry supports airborne targeting",
-            "PASS destroyed airborne unit leaves tracker",
-            "PASS INI custom airborne threshold",
-            "PASS Lua custom airborne threshold",
-            "PASS below-threshold lifted target takes normal damage",
-            "PASS air and ground chains do not duplicate splash damage"
+          "PASS custom airborne threshold survives save load",
+          "PASS air targeting restored after save load",
+          "PASS native AA missile damages airborne ground unit",
+          "PASS saved airborne target cleans up",
+          "PASS below threshold remains ground target",
+          "PASS threshold admits AA and excludes ground-only acquisition",
+          "PASS target coordinates include lift once",
+          "PASS air registration has no duplicates",
+          "PASS aerial scan follows horizontal displacement",
+          "PASS replacement applies custom threshold immediately",
+          "PASS zero threshold disables air classification",
+          "PASS descent restores ground acquisition",
+          "PASS AA missile aims at elevated target",
+          "PASS infantry supports airborne targeting",
+          "PASS destroyed airborne unit leaves tracker",
+          "PASS INI custom airborne threshold",
+          "PASS Lua custom airborne threshold",
+          "PASS below-threshold lifted target takes normal damage",
+          "PASS air and ground chains do not duplicate splash damage"
         ],
         "load": [
           "PASS overlap in transit without damage",
@@ -856,10 +1015,10 @@
           "PASS canceled path stays canceled",
           "PASS interrupted vehicle reaches new order",
           "PASS vehicle and infantry tracking follows motion after save load",
-            "PASS custom airborne threshold survives save load",
-            "PASS air targeting restored after save load",
-            "PASS native AA missile damages airborne ground unit",
-            "PASS saved airborne target cleans up"
+          "PASS custom airborne threshold survives save load",
+          "PASS air targeting restored after save load",
+          "PASS native AA missile damages airborne ground unit",
+          "PASS saved airborne target cleans up"
         ]
       }
     },
@@ -926,6 +1085,144 @@
       }
     },
     {
+      "Name": "hex-defense",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "HexDefense.sav",
+      "Log": "hex-defense.log",
+      "Phases": [
+        "art",
+        "fresh",
+        "load"
+      ],
+      "Standalone": true,
+      "Expected": {
+        "fresh": [
+          "PASS epic project and nine replacements parsed",
+          "PASS all giant towers redraw complete silhouette and clear previous bounds on shrink",
+          "PASS scaled voxel turret and barrel stay aligned with the building body",
+          "PASS purchased giant tower research",
+          "PASS ordinary order cancelled with exact refund",
+          "PASS native factory accepts giant order",
+          "PASS saved"
+        ],
+        "art": [
+          "PASS prepared complete art rules"
+        ],
+        "load": [
+          "PASS research and replacements survive load",
+          "PASS giant order survives load"
+        ]
+      }
+    },
+    {
+      "Name": "hex-helicopter",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "HexHelicopter.sav",
+      "Log": "hex-helicopter.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS ordinary helicopter has closed cabin before research",
+          "PASS research fixture is airborne with silent passengers",
+          "PASS rare helicopter project available",
+          "PASS purchased helicopter research",
+          "PASS variant retains helicopter stats capacity weapons and price",
+          "PASS original helicopter weapon retained",
+          "PASS airborne conversion activates existing passengers and preserves identity rank cargo",
+          "PASS other house helicopter remains closed",
+          "PASS mixed passengers fire natively from airborne helicopter",
+          "PASS future helicopter and newly boarded passenger gain open cabin",
+          "PASS saved airborne open cabin"
+        ],
+        "load": [
+          "PASS loaded airborne helicopter and passenger firing state retained",
+          "PASS passengers continue native airborne firing after load",
+          "PASS native helicopter unloading clears passenger firing state",
+          "PASS conversion back to closed cabin clears passenger firing state",
+          "PASS closed cabin passengers stop firing"
+        ]
+      }
+    },
+    {
+      "Name": "hex-fortress",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "HexFortress.sav",
+      "Log": "hex-fortress.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS ordinary fortress unchanged before research",
+          "PASS full large infantry cargo can transform by count",
+          "PASS size based capacity still rejects oversized cargo",
+          "PASS epic fortress project available",
+          "PASS purchased fortress research",
+          "PASS fortress armor scale and speed",
+          "PASS triple production price only for researcher",
+          "PASS factory charges upgraded price",
+          "PASS conversion preserves passenger identity owner and rank",
+          "PASS other house fortress remains unchanged",
+          "PASS tank entry and eight-slot rules",
+          "PASS tank occupies one slot regardless of Size",
+          "PASS native tank boarding completes",
+          "PASS future production transforms automatically",
+          "PASS ninth passenger rejected",
+          "PASS fortress nesting rejected",
+          "PASS tank fires from open-topped fortress",
+          "PASS invalid capacity mode rejected without changing live state",
+          "PASS saved loaded fortress"
+        ],
+        "load": [
+          "PASS fortress armor scale and speed",
+          "PASS triple production price only for researcher",
+          "PASS loaded fortress research identity rank and mixed passengers",
+          "PASS loaded tank unloads normally",
+          "PASS unloading reopens one slot",
+          "PASS count based conversion remains available after load"
+        ]
+      }
+    },
+    {
+      "Name": "hex-gameplay",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "HexGameplay.sav",
+      "Log": "hex-gameplay.log",
+      "Phases": [
+        "fresh"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS energy aura range allies and vehicle filter",
+          "PASS energy overlap does not stack and new coils inherit",
+          "PASS energy aura withdraws on exit",
+          "PASS energy aura withdraws on source destruction",
+          "PASS shrink weapon selected for tanks with infantry combat retained",
+          "PASS native sniper fires shrink weapon",
+          "PASS shrink hit reduces size and outgoing damage",
+          "PASS cluster granted only to patriot and guardian GI",
+          "PASS cluster fires at two distinct enemies",
+          "PASS level up veteran grants health damage and size",
+          "PASS level up elite accumulates permanent bonuses",
+          "PASS level up does not repeat and bonuses remain permanent",
+          "PASS repeated shrink refreshes without stacking",
+          "PASS shrink refresh extends original deadline",
+          "PASS shrink expires and restores size and damage after two seconds"
+        ]
+      }
+    },
+    {
       "Name": "hex-icons",
       "Kind": "game",
       "Map": "maps/Starfall_TestRange.map",
@@ -940,31 +1237,33 @@
           "PASS atlas and rarity",
           "PASS PCX and fallback",
           "PASS bounded image cache and LRU",
-            "PASS image reload and card cache cleanup",
-            "PASS projected PNG indicators and viewport clipping",
-            "PASS arrow caps preserved across lengths",
-            "PASS animated markers and bright blue validity color",
-            "PASS GPU-only projected indicator",
-            "PASS active UI alpha in ready cooldown and fallback states",
-            "PASS cached and animated card alpha",
-            "PASS active icon and label stay inside frame",
-            "PASS cooldown countdown rounding grouping and rendering",
-            "PASS all HexBrawl PCX icons and transparency"
+          "PASS image reload and card cache cleanup",
+          "PASS projected PNG indicators and viewport clipping",
+          "PASS arrow caps preserved across lengths",
+          "PASS animated markers and bright blue validity color",
+          "PASS GPU-only projected indicator",
+          "PASS active UI alpha in ready cooldown and fallback states",
+          "PASS cached and animated card alpha",
+          "PASS active icon and label stay inside frame",
+          "PASS cooldown countdown rounding grouping and rendering",
+          "PASS all HexBrawl PCX icons and transparency",
+          "PASS custom and automatic research subtitles"
         ],
         "load": [
           "PASS atlas and rarity",
           "PASS PCX and fallback",
           "PASS bounded image cache and LRU",
-            "PASS image reload and card cache cleanup",
-            "PASS projected PNG indicators and viewport clipping",
-            "PASS arrow caps preserved across lengths",
-            "PASS animated markers and bright blue validity color",
-            "PASS GPU-only projected indicator",
-            "PASS active UI alpha in ready cooldown and fallback states",
-            "PASS cached and animated card alpha",
-            "PASS active icon and label stay inside frame",
-            "PASS cooldown countdown rounding grouping and rendering",
-            "PASS all HexBrawl PCX icons and transparency"
+          "PASS image reload and card cache cleanup",
+          "PASS projected PNG indicators and viewport clipping",
+          "PASS arrow caps preserved across lengths",
+          "PASS animated markers and bright blue validity color",
+          "PASS GPU-only projected indicator",
+          "PASS active UI alpha in ready cooldown and fallback states",
+          "PASS cached and animated card alpha",
+          "PASS active icon and label stay inside frame",
+          "PASS cooldown countdown rounding grouping and rendering",
+          "PASS all HexBrawl PCX icons and transparency",
+          "PASS custom and automatic research subtitles"
         ]
       }
     },
@@ -1254,6 +1553,8 @@
           "PASS consume target carrier",
           "PASS target carrier receives event",
           "PASS building passenger consumed",
+            "PASS INI consumes event target without death reward",
+            "PASS Lua consumes nearby material exactly once without death reward",
           "PASS saved"
         ],
         "load": [
@@ -1534,6 +1835,16 @@
           "PASS loaded production license",
           "PASS licensed unit in production queue",
           "PASS purchase production license",
+          "PASS shared rarity reads merged rules",
+          "PASS explicit shared rarity switch overrides rules",
+          "PASS invalid shared rarity switch diagnosed",
+          "PASS excess research rounds rejected atomically",
+          "PASS invalid research house rejected atomically",
+          "PASS excess research houses rejected atomically",
+          "PASS truncated research rounds rejected atomically",
+          "PASS legacy save resumes after owned projects",
+          "PASS research rounds restored from stream",
+          "PASS ordinary research rounds survive game load",
           "PASS license respects build limit",
           "PASS reject invalid price options",
           "PASS locked order",
@@ -1546,7 +1857,8 @@
           "PASS other player unchanged",
           "PASS ownership",
           "PASS loaded production license",
-          "PASS licensed unit in production queue"
+          "PASS licensed unit in production queue",
+          "PASS ordinary research rounds survive game load"
         ]
       }
     },
@@ -1581,6 +1893,10 @@
           "PASS unregistered projects empty",
           "PASS registered projects restored",
           "PASS empty border",
+          "PASS silent available focus spans the battlefield",
+          "PASS GPU-only focus composites trails without native writes",
+          "PASS available focus finishes without repeating",
+          "PASS disabled available focus stays hidden",
           "PASS native click sound configured",
           "PASS configured wav loaded",
           "PASS embedded wav loaded",
@@ -1821,6 +2137,110 @@
           "PASS retained per-unit range",
           "PASS state exit",
           "PASS event lower limit"
+        ]
+      }
+    },
+    {
+      "Name": "hex-ordnance",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "HexOrdnance.sav",
+      "Log": "hex-ordnance.log",
+      "Phases": [
+        "art",
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "art": [
+          "PASS prepared complete art rules"
+        ],
+        "fresh": [
+          "PASS complete HexBrawl catalog loaded",
+          "PASS allied and soviet native production unlocked",
+          "PASS miner elite uses same weapon family",
+          "PASS normal and elite rocket damage and radius doubled",
+          "PASS actual detonation schedules independent Lua fireworks",
+          "PASS saved mid fireworks",
+          "PASS eight bursts per bomb finish without recursion or timer leaks",
+          "PASS mini nuke fixed 120 damage and terrorist warhead",
+          "PASS flak attacks probabilistically emit additional mini nuke projectiles",
+          "PASS treasure pays 15000 immediately once",
+          "PASS soviet barracks supports both licensed units",
+          "PASS one nearby conscript grants five percent",
+          "PASS conscript bonus caps at fifty percent",
+          "PASS legacy heals and grants fire rate after death"
+        ],
+        "load": [
+          "PASS unexploded bomb and ongoing Lua sequence restored",
+          "PASS miner lifetime choice survives load",
+          "PASS save load preserves exact random positions timing and damage"
+        ]
+      }
+    },
+    {
+      "Name": "hex-support",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "HexSupport.sav",
+      "Log": "hex-support.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS native reward chain excludes self and duplicates with one payment and round",
+          "PASS healing exact interval amount and maximum",
+          "PASS saved between healing ticks",
+          "PASS completed infantry and random reward projects"
+        ],
+        "load": [
+          "PASS research and modifiers persist without duplicate rewards",
+          "PASS healing exact interval amount and maximum",
+          "PASS random chain resumes same stream after load",
+          "PASS completed infantry and random reward projects"
+        ]
+      }
+    },
+    {
+      "Name": "hex-tactics",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "HexTactics.sav",
+      "Log": "hex-tactics.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "load": [
+          "PASS loaded full stage retains exactly one firepower bonus",
+          "PASS teleport cooldown never disables dodge",
+          "PASS research stats persist after load",
+          "PASS teleport available at exact cooldown boundary",
+          "PASS second teleport succeeds immediately after cooldown",
+          "PASS blocked landing leaves position and teleport cooldown unchanged",
+          "PASS refreshed debuffs expire at thirty frames in fresh and loaded games",
+          "PASS completed five tactics projects"
+        ],
+        "fresh": [
+          "PASS elite final stage rounds gain damage",
+          "PASS ground and air rounds follow current Gattling stage",
+          "PASS next state tick grants maximum stage firepower without a shot",
+          "PASS next state tick removes firepower after cooling without a shot",
+          "PASS ground vehicle death refunds exactly base cost thirty percent",
+          "PASS native mind control blocked by Boris aura",
+          "PASS parasite kill detonates ninety damage within one point five cells without friendly fire",
+          "PASS native seventy percent dodge uses one independent chance per hit",
+          "PASS saved with teleport cooldown",
+          "PASS instant teleport updates map registration without native chrono freeze",
+          "PASS no vehicle leaves position and teleport cooldown unchanged",
+          "PASS refreshed debuffs expire at thirty frames in fresh and loaded games",
+          "PASS completed five tactics projects"
         ]
       }
     }

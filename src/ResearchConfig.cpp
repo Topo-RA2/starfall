@@ -137,8 +137,9 @@ void Research::readConfiguration(const char* configPath) {
         if(auto it=fields.find(sec);it!=fields.end()) for(const auto& entry:it->second) check(entry.first);
         for(const auto& entry:unknown) warn(sec,entry.second.c_str(),"科研配置不读取此字段，请核对拼写");
     };
-    warnUnknown("starfall.research",{"enabled","allowcardrefresh","announceselection","title","initialpoints","periodicpoints","periodicintervalseconds",
-        "rarityweight.common","rarityweight.rare","rarityweight.epic","rarityweight.insane"});
+    warnUnknown("starfall.research",{"enabled","allowcardrefresh","allowairesearch","showavailableanimation","sharedraritysequence","announceselection","title","initialpoints","periodicpoints","periodicintervalseconds",
+        "rarityweight.common","rarityweight.rare","rarityweight.epic","rarityweight.insane",
+        "rarityname.common","rarityname.rare","rarityname.epic","rarityname.insane"});
     warnUnknown("starfall.researchsounds",{"button","cards","refresh","select","available"});
     auto enabled=lower(field("starfall.research","Enabled","yes"));
     Research::enabled=enabled!="no" && enabled!="false" && enabled!="0";
@@ -150,11 +151,22 @@ void Research::readConfiguration(const char* configPath) {
     Research::options.clear();
     constexpr std::array<const char*,5> soundKeys={"Button","Cards","Refresh","Select","Available"};
     for(size_t i=0;i<soundKeys.size();++i) Research::soundFiles[i]=field("starfall.researchsounds",soundKeys[i]);
+    Research::freeRewardSound=field("starfall.researchsounds","Available","builtin:available");
     auto refresh=lower(trim(field("starfall.research","AllowCardRefresh","yes")));
     Research::allowCardRefresh=refresh=="yes" || refresh=="true" || refresh=="1";
+    auto ai=lower(trim(field("starfall.research","AllowAIResearch","no")));
+    Research::allowAIResearch=includes({"yes","true","1"},ai);
+    if(!Research::allowAIResearch && !includes({"no","false","0"},ai))
+        warn("starfall.research","AllowAIResearch","无效开关值，按 no 处理");
+    auto shared=lower(trim(field("starfall.research","SharedRaritySequence","no")));
+    Research::sharedRaritySequence=includes({"yes","true","1"},shared);
+    if(!Research::sharedRaritySequence && !includes({"no","false","0"},shared))
+        warn("starfall.research","SharedRaritySequence","无效开关值，按 no 处理");
     auto announce=lower(trim(field("starfall.research","AnnounceSelection","yes")));
     Research::announceSelection=!includes({"no","false","0"},announce);
-    for(const auto key:{"Enabled","AllowCardRefresh","AnnounceSelection"}) {
+    auto animation=lower(trim(field("starfall.research","ShowAvailableAnimation","yes")));
+    Research::showAvailableAnimation=!includes({"no","false","0"},animation);
+    for(const auto key:{"Enabled","AllowCardRefresh","AnnounceSelection","ShowAvailableAnimation"}) {
         auto value=lower(field("starfall.research",key,"yes"));
         if(!includes({"yes","true","1","no","false","0"},value))
             warn("starfall.research",key,string("无效开关值，当前按 ")+(string(key)=="AllowCardRefresh"?"no":"yes")+" 处理");
@@ -172,8 +184,10 @@ void Research::readConfiguration(const char* configPath) {
     if(income.periodicPoints<0) income.periodicPoints=0;
     income.intervalFrames=seconds>=0 && seconds<=INT_MAX/15?static_cast<unsigned>(seconds)*15u:0;
     constexpr std::array<const char*,Research::rarityCount> weightKeys={"RarityWeight.Common","RarityWeight.Rare","RarityWeight.Epic","RarityWeight.Insane"};
+    constexpr std::array<const char*,Research::rarityCount> nameKeys={"RarityName.Common","RarityName.Rare","RarityName.Epic","RarityName.Insane"};
     const auto& defaultWeights=Research::defaultRarityWeights;
     for(size_t i=0;i<weightKeys.size();++i) {
+        rarityNameOverrides[i]=displayText(field("starfall.research",nameKeys[i]));
         int weight=number(field("starfall.research",weightKeys[i],std::to_string(defaultWeights[i])));
         if(weight<0) {
             warn("starfall.research",weightKeys[i],"无效权重，使用默认值 "+std::to_string(defaultWeights[i]));
@@ -214,11 +228,26 @@ void Research::readConfiguration(const char* configPath) {
             return effect=="grantpassive"?E::Passive:effect=="givecredits"?E::Credits:
                 (effect=="unlocktech" || effect=="unlockteck")?E::Technology:effect=="convertinfantry"?E::ConvertInfantry:
                 effect=="convertvehicle"?E::ConvertVehicle:effect=="modifytypecost"?E::TypeCost:
-                effect=="modifycategorycost"?E::CategoryCost:E::Invalid;
+                effect=="modifycategorycost"?E::CategoryCost:effect=="replaceproduction"?E::ReplaceProduction:
+                effect=="grantrandomresearch"?E::RandomResearch:effect=="grantfreeresearch"?E::FreeResearch:E::Invalid;
         };
         auto costFields=[&](auto& effect,const string& section) {
             if(effect.effect==E::TypeCost || effect.effect==E::CategoryCost)
                 effect.cost=readCostChange(field(section,"CostModifier"),lower(field(section,"Category")));
+            if(effect.effect==E::RandomResearch || effect.effect==E::FreeResearch) {
+                const auto rarity=lower(field(section,"Reward.Rarity","Any"));
+                if(rarity!="any") effect.reward.rarity=rarity=="common"?Rarity::Common:rarity=="rare"?Rarity::Rare:
+                    rarity=="epic"?Rarity::Epic:rarity=="insane"?Rarity::Insane:Rarity::Invalid;
+                effect.reward.count=number(field(section,"Reward.Count","1"));
+                if(effect.effect==E::FreeResearch) {
+                    const auto raw=trim(field(section,"Reward.ResearchOptions"));
+                    effect.reward.projects=split(raw);
+                    if(!raw.empty() && effect.reward.projects.empty()) {
+                        warn(section,"Reward.ResearchOptions","候选范围须填写科技 ID");
+                        effect.effect=E::Invalid;
+                    }
+                }
+            }
         };
         o.effect=parseEffect(lower(field(id,"Effect","GrantPassive")));
         costFields(o,id);
@@ -240,8 +269,8 @@ void Research::readConfiguration(const char* configPath) {
             for(int i=0;i<ini->GetKeyCount(rulesSection(id));++i)
                 if(!_stricmp(ini->GetKeyName(rulesSection(id),i),"Effects")) {hasList=true;break;}
         }
-        static const std::set<string> projectKeys={"name","summary","detail","icon","countries","prerequisites","rarity","effects","effect",
-            "costmodifier","category","credits","technology","fromtype","totype","passive","targettypes"};
+        static const std::set<string> projectKeys={"name","summary","detail","targetlabel","icon","countries","prerequisites","rarity","effects","effect",
+            "costmodifier","category","credits","technology","fromtype","totype","passive","targettypes","reward.rarity","reward.count","reward.researchoptions"};
         if(hasList && !Runtime::hasPassive(id) && !TechnoTypeClass::Find(id.c_str())) warnUnknown(id,projectKeys);
         auto auditEffect=[&](const string& sec,const Research::EffectSpec& spec) {
             if(!Runtime::hasPassive(sec) && !TechnoTypeClass::Find(sec.c_str())) warnUnknown(sec,projectKeys);
@@ -269,6 +298,7 @@ void Research::readConfiguration(const char* configPath) {
             }
         } else auditEffect(id,singleEffect(o));
         auto label=field(id,"Name"),brief=field(id,"Summary"),detail=field(id,"Detail");
+        o.targetLabel=displayText(field(id,"TargetLabel"));
         if(!label.empty()) o.name=displayText(label);
         if(!brief.empty()) o.summary=displayText(brief);
         if(!detail.empty()) o.detail=displayText(detail);
@@ -278,7 +308,8 @@ void Research::readConfiguration(const char* configPath) {
     Research::clearOfferCache();
     for(const auto& project:Research::options) {
         const bool grantsTech=project.effectList ? std::any_of(project.effects.begin(),project.effects.end(),
-            [](const auto& effect){return effect.effect==Research::Effect::Technology;}) : project.effect==Research::Effect::Technology;
+            [](const auto& effect){return effect.effect==Research::Effect::Technology || effect.effect==Research::Effect::ReplaceProduction;}) :
+            project.effect==Research::Effect::Technology || project.effect==Research::Effect::ReplaceProduction;
         if(grantsTech) {installProductionCheck();break;}
     }
 }

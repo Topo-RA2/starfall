@@ -111,6 +111,32 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassengerConsume,5) {
         balance=Research::balance(house->ArrayIndex);
         capture("onkill",building,enemy,building,enemy,0);dispatch();
         check(building->Passengers.NumPassengers==0 && Research::balance(house->ArrayIndex)==balance+cost && house->RecheckPower,"building passenger consumed");
+        grantToUnit(helper,PassiveGrant{{"consumecounterpart","consumebyhandle","unexpectedkill"},-1});
+        grantToUnit(building,PassiveGrant{{"consumeddeath","unexpecteddamage"},-1});
+        balance=Research::balance(house->ArrayIndex);
+        capture("onfire",helper,enemy,helper,enemy,0);dispatch();
+        check(enemy->Passengers.NumPassengers==1 && Research::balance(house->ArrayIndex)==balance,"loaded target and reward unchanged");
+        DWORD buildingId=building->UniqueID;
+        capture("onfire",helper,building,helper,building,0);dispatch();dispatch();
+        auto exists=[](DWORD uid) {
+            for(auto unit:TechnoClass::Array) if(unit->UniqueID==uid && alive(unit)) return true;
+            return false;
+        };
+        check(!exists(buildingId) && Research::balance(house->ArrayIndex)==balance+1,"INI consumes event target without death reward");
+        auto material=static_cast<InfantryClass*>(InfantryTypeClass::Find("SNIPE")->CreateObject(house));
+        check(material!=nullptr,"created fusion material");
+        bool placed=false;
+        auto center=helper->GetMapCoords();
+        for(short y=-2;y<=2 && !placed;++y) for(short x=-2;x<=2 && !placed;++x) {
+            CellStruct pos{static_cast<short>(center.X+x),static_cast<short>(center.Y+y)};
+            if(auto cell=MapClass::Instance.TryGetCellAt(pos);cell && !cell->GetBuilding() && !cell->GetContent())
+                placed=material->Unlimbo(cell->GetCoordsWithBridge(),DirType::North);
+        }
+        check(placed,"fusion material placed");
+        auto materialId=material->UniqueID;
+        grantToUnit(material,PassiveGrant{{"consumeddeath","unexpecteddamage"},-1});
+        capture("ondeploy",helper,nullptr,helper,nullptr,0);dispatch();dispatch();
+        check(!exists(materialId) && Research::balance(house->ArrayIndex)==balance+4,"Lua consumes nearby material exactly once without death reward");
         TerminateProcess(GetCurrentProcess(),0);
     } else {
         int before=0,hp=0;std::ifstream("passenger-consume.id")>>id>>before>>hp;

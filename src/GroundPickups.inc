@@ -45,6 +45,33 @@ bool placePickup(const string& id,CellStruct origin) {
     return false;
 }
 
+bool removePickups(const PassiveAction& action,CellStruct center) {
+    const int range=action.pickupRange;
+    auto matches=[&](const GroundPickup& pickup) {
+        return action.removePickupTypes.empty() || includes(action.removePickupTypes,pickup.type);
+    };
+    auto redraw=[](const PickupCell& at) {
+        if(auto cell=MapClass::Instance.TryGetCellAt(CellStruct{at.first,at.second})) cell->MarkForRedraw();
+    };
+    if(range==0) {
+        auto it=groundPickups.find({center.X,center.Y});
+        if(it==groundPickups.end() || !matches(it->second)) return false;
+        redraw(it->first);
+        groundPickups.erase(it);
+        return true;
+    }
+    return std::erase_if(groundPickups,[&](const auto& entry) {
+        const auto& [at,pickup]=entry;
+        if(range>0) {
+            const int dx=at.first-center.X,dy=at.second-center.Y;
+            if(1LL*dx*dx+1LL*dy*dy>1LL*range*range) return false;
+        }
+        if(!matches(pickup)) return false;
+        redraw(at);
+        return true;
+    })!=0;
+}
+
 void collectPickups() {
     for(auto it=groundPickups.begin();it!=groundPickups.end();) {
         auto cell=MapClass::Instance.TryGetCellAt(CellStruct{it->first.first,it->first.second});

@@ -1,4 +1,4 @@
-#include "Research.h"
+#include "ResearchInternal.h"
 #include "ConfigText.h"
 #include <cstdio>
 #include <cstdlib>
@@ -8,6 +8,8 @@
 namespace {
 unsigned seed=1234567, effectClears=0, presentationClears=0;
 bool effectsSucceed=true, stoppedAudio=false;
+std::set<std::string> blockedEffects;
+int randomPick=0,randomDraws=0,lastPoolSize=0;
 void check(bool ok,const char* label) {
     if(!ok) { std::fprintf(stderr,"FAIL %s\n",label);std::exit(1); }
 }
@@ -37,16 +39,228 @@ void fixture() {
     auto invalid=rare;invalid.id="invalid";invalid.rarity=Research::Rarity::Invalid;
     Research::options.push_back(invalid);
 }
+void buildingWeightsTest() {
+    using namespace Research;
+    fixture();
+    const std::vector<std::string> pool={"common0","common1","common2","common3","rare","invalid"};
+    rarityWeights={1,3,0,0};
+    int firstRare=0,mixed=0;
+    const int drawsBefore=randomDraws;
+    for(unsigned id=1;id<=512;++id) {
+        const auto& board=Detail::buildingOfferRows(id,0,pool);
+        check(board.size()==3 && std::set<int>(board.begin(),board.end()).size()==3,"building cards are distinct");
+        firstRare+=options[board.front()].rarity==Rarity::Rare;
+        mixed+=std::any_of(board.begin(),board.end(),[](int i){return options[i].rarity==Rarity::Rare;});
+    }
+    check(firstRare>335 && firstRare<435 && mixed>firstRare && randomDraws==drawsBefore,
+        "building weights apply per tier and slot, independent of project count and game RNG");
+    const auto board=Detail::buildingOfferRows(12,0,pool);
+    clearOfferCache();
+    check(Detail::buildingOfferRows(12,0,pool)==board,"building draw survives cache eviction");
+    rarityWeights={0,1,0,0};clearOfferCache();
+    check(Detail::buildingOfferRows(12,0,pool)==std::vector<int>{8},"only positive tiers offered when pool runs short");
+    unlocked[0].insert("rare");clearOfferCache();
+    check(Detail::buildingOfferRows(12,0,pool).empty(),"exhausted weighted building has no choices");
+}
+void freeChoiceTests() {
+    using namespace Research;
+    fixture();
+    options[8].countries={"america"};
+    rarityWeights={0,1,0,0};
+    const std::vector<std::string> scope={"common4","common6","common0","rare"};
+    const auto draws=randomDraws;
+    check(grantFree(0,"AMERICA",scope,{}) && ticketOptions(lastTicket,0,"america")==std::vector<int>{8},
+        "long free scope uses global rarity weights and never offers outside IDs");
+    check(ticketOptions(lastTicket,1,"america").empty() && randomDraws==draws,"ticket belongs to one house and uses no game RNG");
+    check(!grantFree(0,"america",{"unknown","blocked"},{}) && lastTicket==1,"empty scope does not create a ticket");
+    check(canOfferFree(0,"america",{"next"},{},0) && !canOfferFree(0,"america",{"common0"},{},0) &&
+        !canOfferFree(0,"america",{"next"},{},-1),"source excludes itself and can unlock its own successor");
+    check(grantFree(0,"america",{"common4","common0"},{}) &&
+        ticketOptions(lastTicket,0,"america")==std::vector<int>({4,0}),"short scope keeps order even with zero weight");
+    auto ticket=lastTicket;
+    unlocked[0].insert("common4");clearOfferCache();
+    check(ticketOptions(ticket,0,"america")==std::vector<int>{0},"ownership changes preserve scope");
+    enabled=false;
+    check(!grantFree(0,"america",{},Rarity::Common) && ticketOptions(ticket,0,"america").empty(),"research switch blocks tickets");
+    reset();
+    check(lastTicket==0 && freeTickets.empty(),"scenario reset drops outstanding tickets");
+}
+void sharedFixture() {
+    Research::reset();Research::sharedRaritySequence=true;
+    Research::rarityWeights={5,4,1,0};Research::allowCardRefresh=true;
+    for(const auto country:{"america","japan"}) for(int tier=0;tier<4;++tier) for(int i=0;i<20;++i) {
+        Research::Option option;
+        option.id=std::string(country)+std::to_string(tier)+"-"+std::to_string(i);
+        option.rarity=static_cast<Research::Rarity>(tier);option.validChain=true;option.countries={country};
+        Research::options.push_back(option);
+    }
+}
+Research::Rarity boardRarity(int house,const char* country) {
+    const auto& board=Research::offers(house,country);
+    check(board.size()==3,"shared sequence has three eligible cards");
+    auto rarity=Research::options[board.front()].rarity;
+    check(std::all_of(board.begin(),board.end(),[&](int i){return Research::options[i].rarity==rarity;}),"one rarity per shared round");
+    check(rarity!=Research::Rarity::Insane,"zero weight excluded from shared sequence");
+    return rarity;
+}
+void sharedSequenceTests() {
+    sharedFixture();
+    std::vector<Research::Rarity> sequence;
+    Research::award(0,1000);Research::award(1,1000);
+    const auto slowBoard=ids(1,"japan");
+    for(int round=0;round<10;++round) {
+        sequence.push_back(boardRarity(0,"america"));
+        auto option=Research::offers(0,"america").front();
+        check(Research::refresh(0,"america",0,option) && boardRarity(0,"america")==sequence.back(),"refresh keeps common rarity");
+        check(Research::completedRounds.size()==(round?1u:0u),"refresh and panel reads do not advance rounds");
+        auto board=ids(0);
+        Research::clearOfferCache();
+        check(ids(0)==board,"shared board survives cache rebuild");
+        option=Research::offers(0,"america").front();
+        effectsSucceed=false;
+        check(!Research::purchase(0,option,"america") && ids(0)==board,"failed shared purchase keeps round");
+        effectsSucceed=true;
+        check(Research::purchase(0,option,"america") && Research::completedRounds.at(0)==round+1u,"successful purchase advances once");
+        check(!Research::purchase(0,option,"america") && Research::completedRounds.at(0)==round+1u,"duplicate purchase cannot advance round");
+        check(ids(1,"japan")==slowBoard && !Research::completedRounds.contains(1),"fast player does not advance slow player");
+    }
+    check(std::set<Research::Rarity>(sequence.begin(),sequence.end()).size()>1,"shared sequence varies across rounds");
+    Research::allowAIResearch=true;
+    for(int round=0;round<10;++round) {
+        check(boardRarity(1,"japan")==sequence[round],"different countries and acquisition order share nth rarity");
+        check(Research::purchaseForAI(1,"japan",round*15)>=0 && Research::completedRounds.at(1)==round+1u,"AI follows shared sequence");
+    }
+    sharedFixture();
+    check(boardRarity(1,"japan")==sequence.front(),"fresh scenario restarts shared sequence");
+    const auto rarity=boardRarity(0,"america");
+    // A free acquisition changes ownership but must not consume a numbered round.
+    Research::unlocked[0].insert(Research::options.front().id);
+    Research::savedOffers.erase(0);Research::clearOfferCache();
+    check(boardRarity(0,"america")==rarity && Research::completedRounds.empty(),"free ownership does not advance shared sequence");
+    for(auto& option:Research::options)
+        if(option.countries==std::vector<std::string>{"america"} && option.rarity==rarity) option.prerequisites={"unavailable"};
+    Research::savedOffers.erase(0);Research::clearOfferCache();
+    check(boardRarity(0,"america")!=rarity && boardRarity(1,"japan")==rarity &&
+        Research::completedRounds.empty(),"empty personal tier falls back without changing others or skipping rounds");
+    Research::rarityWeights={INT_MAX,INT_MAX,INT_MAX,0};Research::savedOffers.clear();Research::clearOfferCache();
+    check(!ids(1,"japan").empty(),"large shared weights do not overflow");
+    Research::rarityWeights={0,0,0,0};Research::savedOffers.clear();Research::clearOfferCache();
+    check(ids(0).empty() && ids(1,"japan").empty(),"all zero weights disable shared offers");
+    sharedFixture();
+    const auto original=boardRarity(0,"america");bool varied=false;
+    const auto originalBoard=ids(0);
+    const auto initialSeed=seed;
+    Research::raritySequenceSeed=seed;
+    seed^=0x12345678u;Research::savedOffers.clear();Research::clearOfferCache();
+    check(boardRarity(0,"america")==original && ids(0)==originalBoard,"loaded sequence seed survives a different process seed");
+    Research::raritySequenceSeed.reset();
+    for(unsigned offset=1;offset<=32;++offset) {
+        seed=initialSeed+offset;Research::savedOffers.clear();Research::clearOfferCache();
+        varied|=boardRarity(0,"america")!=original;
+    }
+    check(varied,"different matches produce different common sequences");seed=initialSeed;
+}
+void randomResearchTests() {
+    fixture();Research::rarityWeights={0,0,0,0};
+    check(Research::grantRandom(0,"america",Research::Rarity::Rare)<0 && randomDraws==0,"random research filters countries and prerequisites before drawing");
+    check(Research::grantRandom(1,"JAPAN",Research::Rarity::Rare)==8 && Research::owns(1,"rare") &&
+        Research::unlockOrder.at(1)==std::vector<std::string>{"rare"} && Research::points.empty() && Research::completedRounds.empty(),"specified rarity grants free research despite zero ordinary weights");
+    check(Research::grantRandom(1,"japan",Research::Rarity::Rare)<0 && randomDraws==0,"exhausted tier neither falls back nor consumes RNG");
+    check(Research::grantRandom(0,"america",Research::Rarity::Common)==0,"random common grant");
+    const auto owned=Research::unlocked;
+    const auto order=Research::unlockOrder;
+    effectsSucceed=false;
+    check(Research::grantRandom(0,"america",Research::Rarity::Rare)<0 && Research::unlocked==owned &&
+        Research::unlockOrder==order && Research::completedRounds.empty(),"failed random effect does not commit ownership or rounds");
+    effectsSucceed=true;
+    check(Research::grantRandom(0,"america",Research::Rarity::Rare)==10,"free research unlocks prerequisite chains");
+    fixture();Research::award(0,100);
+    const auto board=Research::offers(0,"america");
+    check(Research::refresh(0,"america",0,board.front()),"prepare used refresh slot before grant");
+    const auto mask=Research::refreshedSlots.at(0);
+    check(Research::grantRandom(0,"america",Research::Rarity::Common)==0 && Research::refreshedSlots.at(0)==mask &&
+        !Research::canRefresh(0,"america",0) && Research::balance(0)==100,"free research preserves points and used refresh allowance");
+    check(std::find(Research::savedOffers.at(0).begin(),Research::savedOffers.at(0).end(),"common0")==Research::savedOffers.at(0).end(),"owned reward excluded from rebuilt ordinary offers");
+    fixture();ids(0);
+    Research::grantRandom(0,"america");const auto localBoard=ids(0);const auto localSeen=Research::seenOffers;
+    fixture();Research::grantRandom(0,"america");
+    check(ids(0)==localBoard && Research::seenOffers==localSeen,"random grant rebuild is independent of local panel history");
+    sharedFixture();
+    const auto rarity=boardRarity(0,"america");
+    check(Research::grantRandom(0,"america",Research::Rarity::Insane)>=0 &&
+        Research::completedRounds.empty() && boardRarity(0,"america")==rarity,"random reward does not consume shared rarity sequence");
+    Research::reset();Research::rarityWeights={0,0,0,0};
+    for(int tier=0;tier<4;++tier) {
+        Research::Option option;option.id="tier"+std::to_string(tier);option.validChain=true;
+        option.rarity=static_cast<Research::Rarity>(tier);Research::options.push_back(option);
+    }
+    blockedEffects.insert("tier0");randomPick=2;
+    check(Research::grantRandom(0,"")==3 && lastPoolSize==3,"all rarities use equal project slots and exclude effects that cannot apply");
+    blockedEffects.clear();randomPick=0;
+    for(int tier=0;tier<3;++tier) check(Research::grantRandom(0,"")==tier,"all rarities drawn without duplicate ownership");
+    const auto draws=randomDraws;
+    check(Research::grantRandom(0,"")<0 && randomDraws==draws,"empty reward pool consumes no random draw");
+    check(Research::grantRandom(-1,"")<0 && Research::grantRandom(1,"",Research::Rarity::Invalid)<0,"invalid random research arguments rejected");
+    Research::enabled=false;
+    check(Research::grantRandom(1,"")<0 && !Research::unlocked.contains(1) && randomDraws==draws,"disabled research rejects random grants");
+}
+void rewardChainTests() {
+    using namespace Research;
+    reset();rarityWeights={1,1,1,0};randomPick=0;
+    auto add=[](const char* id,Rarity rarity,Effect effect,std::optional<Rarity> reward,int count) {
+        Option o;o.id=id;o.rarity=rarity;o.effect=effect;o.reward={reward,count};o.validChain=true;options.push_back(o);
+    };
+    add("rare-upgrade",Rarity::Common,Effect::RandomResearch,Rarity::Rare,1);
+    add("epic-upgrade",Rarity::Rare,Effect::RandomResearch,Rarity::Epic,1);
+    add("chaos",Rarity::Epic,Effect::RandomResearch,std::nullopt,2);
+    add("armor",Rarity::Epic,Effect::Passive,std::nullopt,1);
+    add("heal",Rarity::Rare,Effect::Passive,std::nullopt,1);
+    award(0,200);savedOffers[0]={"rare-upgrade"};
+    check(purchase(0,0,"") && unlockOrder[0]==std::vector<std::string>{"rare-upgrade","epic-upgrade","chaos","armor","heal"},
+        "reward cards chain through other cards and exclude every acquired card including self");
+    check(balance(0)==100 && completedRounds[0]==1 && unlocked[0].size()==5 && !unlocked.contains(1),
+        "entire chain charges and advances only original purchase for original owner");
+    const auto owned=unlocked;const auto order=unlockOrder;
+    clearOfferCache();offers(0,"");completedProjects(0);
+    check(unlocked==owned && unlockOrder==order && !purchase(0,0,""),"cache reload and duplicate purchase do not issue rewards again");
+    // Only a cycle remains: neither source can lead to a usable reward.
+    options.resize(3);unlocked.clear();unlockOrder.clear();savedOffers.clear();clearOfferCache();
+    check(!canApply(0,0) && !canApply(0,1) && !canApply(0,2) && grantRandom(0,"")<0,
+        "reward-only cycles cannot enable themselves");
+    // A terminal project makes the chain usable, even when fewer than two remain.
+    add("last",Rarity::Epic,Effect::Passive,std::nullopt,1);
+    unlocked[0]={"rare-upgrade","epic-upgrade"};
+    check(grantRandom(0,"")==2 && owns(0,"last") && unlocked[0].size()==4,"short reward pool grants remaining project once");
+    reset();add("bundle",Rarity::Common,Effect::Passive,std::nullopt,1);
+    options[0].effectList=true;EffectSpec reward;reward.effect=Effect::RandomResearch;reward.reward={Rarity::Rare,1};
+    options[0].effects={reward};add("reward",Rarity::Rare,Effect::Passive,std::nullopt,1);
+    check(grantRandom(0,"",Rarity::Common)==0 && owns(0,"reward"),"combined project dispatches random reward after ownership");
+    reset();
+    for(int i=0;i<24;++i) {
+        Option o;o.id="cycle"+std::to_string(i);o.validChain=true;o.effect=Effect::RandomResearch;options.push_back(o);
+    }
+    check(!canApply(0,0),"large reward-only cycle terminates without exponential revisits");
+}
 }
 void Research::ensureReady() {}
 bool Research::available(int option) {
     return enabled && option>=0 && option<static_cast<int>(options.size()) && options[option].rarity!=Rarity::Invalid;
 }
-bool Research::executeEffect(int,int) { return effectsSucceed; }
+bool Research::executeEffect(int house,int option) { return effectsSucceed && canApply(house,option); }
+bool Research::canApply(int house,int option) {
+    if(house<0 || !available(option) || blockedEffects.contains(options[option].id)) return false;
+    const auto& o=options[option];
+    auto applicable=[&](const auto& e) {return e.effect!=Effect::RandomResearch || canGrantRandom(house,option,"america",e.reward.rarity);};
+    if(o.effectList) return std::any_of(o.effects.begin(),o.effects.end(),applicable);
+    return applicable(o);
+}
 void Research::clearPresentationCaches(bool stopAudio) { ++presentationClears;stoppedAudio=stopAudio; }
 namespace Research::Detail {
 void clearEffectCaches() { ++effectClears; }
 unsigned matchSeed() { return seed; }
+int randomIndex(int count) { ++randomDraws;lastPoolSize=count;return randomPick%count; }
+void announceReward(int,int) {}
+void notifyFreeResearch(int) {}
 }
 
 int main() {
@@ -105,6 +319,21 @@ int main() {
     check(Research::balance(1)==0 && Research::offers(0,"america").empty() &&
         !Research::purchase(0,choice,"america"),"disabled research blocks grants, offers and purchases");
 
+    fixture();
+    Research::allowAIResearch=true;
+    Research::award(1,99);
+    check(Research::purchaseForAI(1,"japan",15)<0 && Research::savedOffers.empty(),"AI waits for enough points");
+    Research::award(1,201);
+    effectsSucceed=false;
+    check(Research::purchaseForAI(1,"japan",30)<0 && Research::balance(1)==300,"AI retains points when effects cannot apply");
+    effectsSucceed=true;
+    check(Research::purchaseForAI(1,"japan",45)==8 && Research::owns(1,"rare") && Research::balance(1)==200,"AI buys an offered country project");
+    check(Research::purchaseForAI(1,"japan",60)<0 && Research::balance(1)==200,"AI retains surplus when pool exhausted");
+    buildingWeightsTest();
+    freeChoiceTests();
+    sharedSequenceTests();
+    randomResearchTests();
+    rewardChainTests();
     const auto generation=Research::uiGeneration;
     const auto cleared=effectClears, presented=presentationClears;
     Research::producers[1]={0,2};Research::buildingRewards[2]={0,0,true};
@@ -113,8 +342,9 @@ int main() {
     check(Research::options.empty() && Research::unlocked.empty() && Research::unlockOrder.empty() &&
         Research::points.empty() && Research::savedOffers.empty() && Research::seenOffers.empty() &&
         Research::refreshedSlots.empty() && Research::producers.empty() && Research::buildingRewards.empty() &&
-        !Research::globalIncome.initialized && !Research::expanded && Research::enabled,"scenario reset clears owned state");
+        !Research::globalIncome.initialized && !Research::expanded && Research::enabled && !Research::allowAIResearch &&
+        !Research::sharedRaritySequence && Research::completedRounds.empty() && !Research::raritySequenceSeed,"scenario reset clears owned state");
     check(Research::uiGeneration==generation+1 && effectClears==cleared+1 &&
         presentationClears==presented+1 && stoppedAudio,"reset invalidates effect and presentation caches");
-    std::puts("PASS independent research model: deterministic offers, reload, isolation, refresh, purchase, reset and configuration text");
+    std::puts("PASS independent research model: deterministic offers, shared rarity sequence, fallback, AI, reload, isolation, refresh, purchase, reset and configuration text");
 }

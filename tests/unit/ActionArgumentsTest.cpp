@@ -14,6 +14,23 @@ int main() {
     ScriptFields valid{{"action","givecredits"},{"action.amount","$(100+50)"},{"action.target","self"}};
     auto typo=valid;typo["action.amunt"]="999";
     if(!readAction(step,"review",&valid) || readAction(step,"review",&typo)) return 5;
+    ScriptFields research{{"action","grantrandomresearch"}};
+    if(!readAction(step,"review",&research) || step.actions.back().researchRarity) return 9;
+    for(auto [name,expected]:{std::pair{"Common",Research::Rarity::Common},{"Rare",Research::Rarity::Rare},
+        {"Epic",Research::Rarity::Epic},{"Insane",Research::Rarity::Insane}}) {
+        research["action.rarity"]=name;
+        if(!readAction(step,"review",&research) || step.actions.back().researchRarity!=expected) return 10;
+    }
+    for(auto rarity:{"","Mythic","Common,Rare"}) {
+        research["action.rarity"]=rarity;
+        if(readAction(step,"review",&research)) return 11;
+    }
+    research["action.rarity"]="All";research["action.amount"]="2";
+    if(readAction(step,"review",&research)) return 12;
+    research.erase("action.amount");research["action.target"]="Owner";
+    if(!ActionSequence::prepare(research) || !readAction(step,"review",&research) || step.actions.back().researchRarity) return 13;
+    valid["action.rarity"]="Rare";
+    if(readAction(step,"review",&valid)) return 14;
     ScriptFields motion{{"action","forcemove"},{"action.forcemove.mode","launch"},{"action.forcemove.duration","20"}};
     if(!readAction(step,"review",&motion) || step.actions.back().forceMove.airborneHeight!=256) return 6;
     for(auto [value,expected]:{std::pair{"0",0},{"0.5",128},{"2",512},{"512",131072}}) {

@@ -7,6 +7,7 @@ void check(bool ok,const char* label) {
     std::ofstream("prices.log",std::ios::app)<<(ok?"PASS ":"FAIL ")<<label<<"\n";
     if(!ok) TerminateProcess(GetCurrentProcess(),2);
 }
+#include "ResearchSequence.inc"
 }
 // Observe normal sidebar additions without inserting a cameo from the probe.
 DEFINE_HOOK(0x4457E7,SF_TestResearchLicenseCameo,8) {
@@ -17,7 +18,7 @@ DEFINE_HOOK(0x4457E7,SF_TestResearchLicenseCameo,8) {
 DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
     int frame=Unsorted::CurrentFrame;
-    if(frame!=20 && frame!=24 && frame!=32) return 0;
+    if(frame!=20 && frame!=24 && frame!=32 && frame!=46 && frame!=61) return 0;
     Research::ensureReady();
     auto house=HouseClass::FindByPlayerAt(HouseClass::PlayerAtA);
     auto other=HouseClass::FindByPlayerAt(HouseClass::PlayerAtB);
@@ -37,6 +38,22 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
             return string(std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>());
         };
         auto ini=CCINIClass::INI_Rules;
+        check(!Research::sharedRaritySequence,"shared rarity disabled by default");
+        check(ini->WriteString("Starfall.Research","SharedRaritySequence","yes"),"shared rarity merged rules fixture");
+        Research::readConfiguration(configPath);
+        check(Research::sharedRaritySequence,"shared rarity reads merged rules");
+        WritePrivateProfileStringA("Starfall.Research","SharedRaritySequence","no",configPath);
+        Research::readConfiguration(configPath);
+        check(!Research::sharedRaritySequence,"explicit shared rarity switch overrides rules");
+        WritePrivateProfileStringA("Starfall.Research","SharedRaritySequence","invalid",configPath);
+        Research::readConfiguration(configPath);
+        check(!Research::sharedRaritySequence && logText().find("SharedRaritySequence=invalid")!=string::npos,"invalid shared rarity switch diagnosed");
+        WritePrivateProfileStringA("Starfall.Research","SharedRaritySequence",nullptr,configPath);
+        Research::readConfiguration(configPath);
+        check(Research::sharedRaritySequence,"shared rarity returns to merged rules");
+        // Runtime edits to INI_Rules are not retained by a fresh load process.
+        // Persist the match setting after testing merged/file precedence.
+        WritePrivateProfileStringA("Starfall.Research","SharedRaritySequence","yes",configPath);
         check(ini->WriteString("Starfall.ResearchTypes","12","MergedDiagnostic") &&
             ini->WriteString("MergedDiagnostic","Effect","UnlockTech") &&
             ini->WriteString("MergedDiagnostic","Technology","NoSuchRulesUnit"),"merged rules fixture");
@@ -85,6 +102,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
         licensed->BuildLimit=0;
         check(house->CanBuild(licensed,false,false)!=CanBuildResult::Buildable,"license respects build limit");
         licensed->BuildLimit=limit;
+        checkResearchRoundSave(h);
+        std::ofstream("research-seed.txt")<<Research::raritySequenceSeed.value();
         check(ScenarioClass::SaveGame("Saved Games\\Prices.sav",L"Research prices"),"saved");
     }
     if(frame==24) {
@@ -94,6 +113,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
         check(EventClass::OutList.Add(order),"issued normal production order");
     }
     if(frame==32) {
+        unsigned savedSeed=0;std::ifstream("research-seed.txt")>>savedSeed;
+        check(Research::sharedRaritySequence && Research::completedRounds.at(h)==4 &&
+            Research::raritySequenceSeed==savedSeed,"ordinary research rounds survive game load");
         check(house->GetFactoryProducing(licensed)!=nullptr,"licensed unit in production queue");
         check(Research::Detail::hasProductionLicense(house,licensed) && !Research::Detail::hasProductionLicense(other,licensed) &&
             house->CanBuild(licensed,false,false)==CanBuildResult::Buildable,"loaded production license");
@@ -107,6 +129,19 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
             check(types[i]->GetActualCost(other)==opponent[i],"other player unchanged");
         }
         check(Research::owns(h,"bulk") && Research::owns(h,"grizzly") && Research::owns(h,"support"),"ownership");
+        Research::award(other->ArrayIndex,150);
+        Research::award(h,100);
+    }
+    if(frame==46) {
+        check(!Research::allowAIResearch && Research::balance(other->ArrayIndex)==150 &&
+            Research::completedProjects(other->ArrayIndex).empty(),"AI research disabled by default");
+        check(CCINIClass::INI_Rules->WriteString("Starfall.Research","AllowAIResearch","yes"),"enable AI research in merged rules");
+        Research::readConfiguration(configPath);
+    }
+    if(frame==61) {
+        check(Research::allowAIResearch && Research::balance(other->ArrayIndex)==50 &&
+            Research::completedProjects(other->ArrayIndex).size()==1,"AI buys one project for 100 points");
+        check(Research::balance(h)==100 && Research::completedProjects(h).size()==4,"human retains points and choices");
         TerminateProcess(GetCurrentProcess(),0);
     }
     return 0;

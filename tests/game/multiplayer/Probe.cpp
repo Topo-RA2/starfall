@@ -127,6 +127,7 @@ void purchase(int role) {
 void setup() {
     CreateDirectoryA("samples",nullptr);
     Research::ensureReady();
+    check(Research::sharedRaritySequence,"shared rarity enabled on both peers");
     for(auto h:HouseClass::Array) if(h && h->IsHumanPlayer && !h->IsObserver()) players.push_back(h);
     check(players.size()==2 && ActiveSkills::specs.size()==1,"network fixture configuration");
     skillIndex=0;
@@ -184,6 +185,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
             check(building && building->Owner==players[role] && !_stricmp(building->Type->ID,"GAPOWR"),"building conversion keeps script identity on both peers");
         }
         check(Research::unlocked[players[0]->ArrayIndex].size()==1 && Research::unlocked[players[1]->ArrayIndex].empty(),"research purchase owner isolation");
+        check(Research::completedRounds.at(players[0]->ArrayIndex)==1 && !Research::completedRounds.contains(players[1]->ArrayIndex),"shared rarity progress is per player");
     }
     if(frame==280) {
         check(Research::announceSelection && selectionMessages(players[0])==1,"one default research announcement on each peer");
@@ -194,6 +196,24 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
     if(frame==340) refresh(1);
     if(frame==380) purchase(1);
     if(frame==430) check(selectionMessages(players[1])==0,"disabled research stays silent on each peer");
+    if(frame==430) {
+        auto first=Research::completedProjects(players[0]->ArrayIndex).front();
+        auto second=Research::completedProjects(players[1]->ArrayIndex).front();
+        check(Research::options[first].rarity==Research::options[second].rarity,"staggered first purchases share rarity");
+        // Sample next-round rarity without populating remote lazy board state.
+        const auto boards=Research::savedOffers;
+        const auto seen=Research::seenOffers;
+        std::array<Research::Rarity,2> rarity{};
+        for(int role=0;role<2;++role) {
+            auto h=players[role];
+            check(Research::completedRounds.at(h->ArrayIndex)==1,"duplicate network purchase advances only once");
+            const auto& board=Research::offers(h->ArrayIndex,h->Type->ID);
+            check(board.size()==3,"second shared research round available");
+            rarity[role]=Research::options[board.front()].rarity;
+        }
+        check(rarity[0]==rarity[1],"second round shares rarity across players");
+        Research::savedOffers=boards;Research::seenOffers=seen;Research::clearOfferCache();
+    }
     if(frame==440) {
         auto local=HouseClass::CurrentPlayer;
         int role=local==players[0]?0:1;
@@ -210,13 +230,75 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
             check(Research::unlocked[players[role]->ArrayIndex].size()==1 && Research::balance(players[role]->ArrayIndex)>900,"research ownership and probabilistic income");
             check(!ActiveSkills::remaining(casters[role],ActiveSkills::specs[skillIndex]),"cooldown expired on both peers");
         }
-        check(scriptTimers.queue.empty() && LuaAnim::entries.empty() && ForceMove::motions.empty(),"timers animations and forced moves retired");
+        check(scriptTimers.queue.size()==2 && LuaAnim::entries.empty() && ForceMove::motions.empty(),"only scheduled research rewards remain");
     }
     if(frame==640) for(auto caster:casters) grantToUnit(caster,PassiveGrant{{"mp_cloak"},120});
     if(frame==660) for(auto caster:casters)
         check(cloakableUnits.contains(caster->UniqueID) && caster->IsCloakable() && !caster->Cloakable,"temporary cloak capability on both peers");
+    if(frame==680) {
+        for(int role=0;role<2;++role) {
+            const int house=players[role]->ArrayIndex;
+            const auto projects=Research::completedProjects(house);
+            check(state(role,"researchRewards")==2 && projects.size()==3 && Research::completedRounds.at(house)==1 &&
+                Research::options[projects[1]].rarity==Research::Rarity::Rare,"random research grants synchronized without advancing ordinary rounds");
+            check(players[role]->Available_Money()==credits[role]+411,"two random research effects applied once");
+        }
+        check(scriptTimers.queue.empty(),"timers animations and forced moves retired");
+    }
     if(frame==800) for(auto caster:casters)
         check(!cloakableUnits.contains(caster->UniqueID) && !caster->IsCloakable() && !caster->Cloakable,"temporary cloak withdrawn on both peers");
+    if(frame==810) {
+        BuildingClass* power=nullptr;
+        for(auto b:BuildingClass::Array) if(b && b->Owner==players[1] && !_stricmp(b->Type->ID,"GAPOWR")) {power=b;break;}
+        auto spy=static_cast<InfantryClass*>(InfantryTypeClass::Find("SPY")->CreateObject(players[0]));
+        check(power && spy,"network building reward fixture");
+        authorizeBuildingReward(spy,power,Research::BuildingRewardSource::Spy);
+        if(HouseClass::CurrentPlayer==players[0]) {
+            auto board=Research::buildingOptions(power->UniqueID,players[0]->ArrayIndex);
+            check(board.size()==3,"local weighted free board");
+            int id=power->UniqueID;
+            EventClass claim(players[0]->ArrayIndex,EventType::SpecialPlace,-0x100000-board.back(),
+                CellStruct{static_cast<short>(id),static_cast<short>(static_cast<unsigned>(id)>>16)});
+            send(claim,"weighted free choice queued");send(claim,"duplicate free choice queued");
+        }
+    }
+    if(frame==810) {
+        auto h=players[1];
+        check(Research::grantFree(h->ArrayIndex,h->Type->ID,{},Research::Rarity::Rare),"granted one network research choice");
+        if(HouseClass::CurrentPlayer==players[0]) {
+            const auto id=Research::lastTicket;
+            auto board=Research::ticketOptions(id,h->ArrayIndex,h->Type->ID);
+            send(EventClass(players[0]->ArrayIndex,EventType::SpecialPlace,-0x110000-board.front(),
+                CellStruct{static_cast<short>(id),static_cast<short>(id>>16)}),"other house attempts ticket claim");
+        }
+    }
+    if(frame==845) {
+        auto h=players[1];
+        check(Research::freeTickets.size()==1 && Research::completedProjects(h->ArrayIndex).size()==3,"other house cannot consume ticket");
+        if(HouseClass::CurrentPlayer==h) {
+            const auto id=Research::lastTicket;
+            const auto& view=DSurface::ViewBounds;
+            const Point2D tab{view.X+view.Width-32,view.Y+48};
+            SF_ResearchDraw(nullptr);
+            check(WindowMouse::button(tab,1) && WindowMouse::button(tab,4) &&
+                Research::rewardPanel==(Research::ticketFlag|id),"research tab opens action reward");
+            const auto rows=Research::freeOptions(Research::rewardPanel,h->ArrayIndex);
+            check(rows.size()==3,"three rare cards in action reward");
+            const Point2D middle{view.X+view.Width/2,view.Y+view.Height/2};
+            auto before=EventClass::OutList.Count;
+            check(WindowMouse::button(middle,1) && WindowMouse::button(middle,4) && EventClass::OutList.Count==before+1,
+                "ticket card click queues exactly one command");
+            send(EventClass(h->ArrayIndex,EventType::SpecialPlace,-0x110000-rows[1],
+                CellStruct{static_cast<short>(id),static_cast<short>(id>>16)}),"repeat ticket claim");
+        }
+    }
+    if(frame==870) {
+        check(Research::completedProjects(players[0]->ArrayIndex).size()==4 &&
+            Research::completedProjects(players[1]->ArrayIndex).size()==4 && Research::freeTickets.empty() &&
+            Research::completedRounds.at(players[1]->ArrayIndex)==1 && Research::completedRounds.at(players[0]->ArrayIndex)==1 &&
+            Research::pendingBuildingRewards(players[0]->ArrayIndex).empty(),"weighted building claim commits once on both peers");
+        check(players[1]->Available_Money()==credits[1]+511,"ticket click and duplicate grant one project on both peers");
+    }
     if(frame==700) for(int role=0;role<2;++role) if(players[role]==HouseClass::CurrentPlayer) {
         auto cell=MapClass::Instance.GetCellAt(CellStruct{static_cast<short>(45+role*7),80});
         send(EventClass(players[role]->ArrayIndex,TargetClass(casters[role]),Mission::Move,TargetClass(),TargetClass(cell),TargetClass()),"native movement queued after skills");

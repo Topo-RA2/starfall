@@ -129,12 +129,13 @@ int nearby(lua_State* L) {
     auto radius=luaL_checknumber(L,3);
     if(!std::isfinite(radius) || radius<0 || radius>128) return luaL_error(L,"nearbyUnits range must be 0..128 cells");
     vector<string> houses{"all"},types{"*"};
-    bool includeSelf=false;
+    bool includeSelf=false,visibleOnly=false;
     if(!lua_isnoneornil(L,4)) {
         luaL_checktype(L,4,LUA_TTABLE);
         lua_getfield(L,4,"houses");if(!lua_isnil(L,-1)) houses=list(L,-1);lua_pop(L,1);
         lua_getfield(L,4,"types");if(!lua_isnil(L,-1)) types=list(L,-1);lua_pop(L,1);
         lua_getfield(L,4,"includeSelf");includeSelf=lua_toboolean(L,-1)!=0;lua_pop(L,1);
+        lua_getfield(L,4,"visibleOnly");visibleOnly=lua_toboolean(L,-1)!=0;lua_pop(L,1);
         for(const auto& h:houses) if(!includes({"all","self","allies","enemies","neutral"},h))
             return luaL_error(L,"unknown house filter: %s",h.c_str());
     }
@@ -150,7 +151,14 @@ int nearby(lua_State* L) {
         if(distanceCells(pos,unit->GetCenterCoords())>radius) return;
         const char* house=unit->Owner==owner?"self":owner->IsAlliedWith(unit->Owner)?"allies":unit->Owner->IsNeutral()?"neutral":"enemies";
         if(!includes(houses,"all") && !includes(houses,house)) return;
-        if(!Research::matchesTarget(types,lower(unit->GetTechnoType()->ID),kind(unit))) return;
+        if(!Research::matchesTarget(types,lower(unit->GetTechnoType()->ID),kind(unit),groundVehicle(unit))) return;
+        if(visibleOnly && unit->Owner!=owner && !owner->IsAlliedWith(unit->Owner)) {
+            if(unit->CloakState!=CloakState::Uncloaked) {
+                const auto cell=MapClass::Instance.TryGetCellAt(unit->GetMapCoords());
+                if(!cell || owner->ArrayIndex<0 || owner->ArrayIndex>=24 || !cell->Sensors_InclHouse(owner->ArrayIndex)) return;
+            }
+            if(unit->Disguised && !unit->IsClearlyVisibleTo(owner)) return;
+        }
         pushUnit(L,id);lua_seti(L,-2,++n);
     });
     return 1;
@@ -261,7 +269,7 @@ int sequence(lua_State* L) {
         arguments(L,-1,fields,target,point,false);lua_pop(L,1);
         bool result=action(L,fields,frame(L).skill.id,target,point);
         changed|=result;
-        if(!result && lower(fields["action"])=="consumepassenger") break;
+        if(!result && includes({"consumepassenger","consumetarget"},lower(fields["action"]))) break;
     }
     return result(L,changed);
 }
@@ -428,7 +436,7 @@ int invoke(lua_State* L) {
         const auto& cast=ActionSequence::casts.at(e.sequenceCast);
         if(cast.point.X>=0 && cast.point.Y>=0) {pushPoint(L,cast.point);lua_setfield(L,-2,"point");}
         lua_pushinteger(L,cast.owner);lua_setfield(L,-2,"owner");
-        if(!cast.typeId.starts_with("@map:")) {lua_pushstring(L,cast.typeId.c_str());lua_setfield(L,-2,"superWeapon");}
+        if(!cast.typeId.starts_with("@map:") && !cast.typeId.starts_with("@bomb:")) {lua_pushstring(L,cast.typeId.c_str());lua_setfield(L,-2,"superWeapon");}
         lua_pushinteger(L,e.sequenceCast);lua_setfield(L,-2,"castId");
     }
     if(e.trigger=="oncast") {
@@ -451,6 +459,7 @@ int invoke(lua_State* L) {
         }
     }
     lua_newtable(L);
+    if(e.trigger=="ondeath") {pushPoint(L,CellClass::Coord2Cell(e.origin));lua_setfield(L,-2,"selfPoint");}
     if(e.trigger=="onfire" && e.hasImpact) {
         pushPoint(L,CellClass::Coord2Cell(e.impact));lua_setfield(L,-2,"targetPoint");
     }
@@ -496,6 +505,7 @@ bool runScript(const PassiveAction& a,Event& event,const Objects& objects,int st
 
 Event sequenceEvent(DWORD id,const ActionSequence::Cast& cast) {
     Event e{};e.trigger="onsuperweapon";e.kind="none";e.owner=cast.owner;e.sequenceCast=id;
+    if(cast.typeId.starts_with("@bomb:")) e.trigger="onbombdetonate";
     if(cast.typeId.starts_with("@map:")) {
         e.trigger="onmaptrigger";
         auto split=cast.typeId.find(':',5);

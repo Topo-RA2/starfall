@@ -2,6 +2,7 @@
 
 #include <TechnoClass.h>
 #include <map>
+class BuildingTypeClass;
 
 namespace VisualScale {
     // Store only non-default values. Base size is serialized; state factors are derived.
@@ -14,5 +15,7 @@ namespace VisualScale {
     // Attached animation ID -> owning unit ID; its scale is read at draw time.
     inline std::map<DWORD,DWORD> attachedAnims;
     int percent(DWORD id);
+    void setStateFactor(TechnoClass* unit,double factor);
+    int placementPercent(BuildingTypeClass* type);
     void clearSprites();
 }

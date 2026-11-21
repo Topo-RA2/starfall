@@ -10,6 +10,22 @@ void check(bool ok,const char* label) {
 bool approximately(double value,double expected) {return std::abs(value-expected)<0.00001;}
 void grammar() {
     HealthFormula f;
+    check(f.compile("$(floor(1.9)+floor(-1.1))") && f.evaluate(0,0)==-1,"floor rounds toward negative infinity");
+    for(auto text:{"$(floor())","$(floor(1,2))","$(floor(1/0))"})
+        check(!f.compile(text) || !f.evaluate(0,0),"invalid floor expression rejected");
+    check(f.compile("$(owner.powersurplus + self.rank)") && f.usesLiveState(),"live formula variables compile");
+    bool absent=false;
+    check(!f.evaluate(0,0,0,{},0,{},&absent) && absent,"live variables require live context");
+    auto eval=[&](HealthFormula::LiveState state) {return f.evaluate(0,0,0,{},0,{},nullptr,{},{},{},{},{},state);};
+    check(eval({2,600,100})==502 && !eval({2}),"live owner power and rank");
+    check(f.compile("$(owner.powersurplus)") && eval({0,INT_MAX,INT_MIN})==4294967295.0,"power difference avoids integer overflow");
+    check(f.compile("$(1+clamp(floor(owner.powersurplus/500),0,5)*10%)") &&
+        approximately(eval({0,499,0}).value_or(0),1) && approximately(eval({0,500,0}).value_or(0),1.1) &&
+        approximately(eval({0,2499,0}).value_or(0),1.4) && approximately(eval({0,10000,0}).value_or(0),1.5),"power tiers floor and clamp");
+    check(f.compile("$(self.gattlingstage == max(1,self.maxgattlingstage))") && f.usesLiveState()
+        && !f.evaluate(0,0,0,{},0,{},&absent) && absent
+        && eval({0})==0 && eval({0,{},{},1,1})==1 && eval({0,{},{},2,4})==0 && eval({0,{},{},4,4})==1,
+        "Gattling formulas support non-Gattling and variable stage counts in live state");
     bool missingSelf=false;
     check(f.compile("$(100+50)") && f.evaluate(0,0)==150 &&
         f.compile("$(if(1,7,self.health))") && f.evaluate(0,0)==7 &&

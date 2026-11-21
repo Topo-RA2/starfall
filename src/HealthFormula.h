@@ -9,7 +9,7 @@
 
 // The INI reader already lowercases values. Compile once when rules are loaded.
 class HealthFormula {
-    enum class Op { Literal, Health, MaxHealth, SelfCost, SelfAmmo, SelfPassengers, TargetHealth, TargetMaxHealth, TargetCost, SenderHealth, SenderMaxHealth, SenderCost, SignalValue, Stack, Damage, Distance, Neg, Add, Sub, Mul, Div, Min, Max, Clamp, Less, LessEqual, Greater, GreaterEqual, Equal, NotEqual, JumpIfFalse, Jump };
+    enum class Op { Literal, Health, MaxHealth, SelfCost, SelfAmmo, SelfPassengers, TargetHealth, TargetMaxHealth, TargetCost, SenderHealth, SenderMaxHealth, SenderCost, SignalValue, Stack, Damage, Distance, Neg, Add, Sub, Mul, Div, Min, Max, Clamp, Less, LessEqual, Greater, GreaterEqual, Equal, NotEqual, JumpIfFalse, Jump, Floor, SelfRank, GattlingStage, MaxGattlingStage, PowerOutput, PowerDrain, PowerSurplus };
     struct Instruction { Op op; double number; };
     static constexpr size_t limit=96;
     std::vector<Instruction> code;
@@ -89,6 +89,12 @@ class HealthFormula {
             if(name=="self.cost") return emit(Op::SelfCost);
             if(name=="self.ammo") return emit(Op::SelfAmmo);
             if(name=="self.passengers") return emit(Op::SelfPassengers);
+            if(name=="self.rank") return emit(Op::SelfRank);
+            if(name=="self.gattlingstage") return emit(Op::GattlingStage);
+            if(name=="self.maxgattlingstage") return emit(Op::MaxGattlingStage);
+            if(name=="owner.poweroutput") return emit(Op::PowerOutput);
+            if(name=="owner.powerdrain") return emit(Op::PowerDrain);
+            if(name=="owner.powersurplus") return emit(Op::PowerSurplus);
             if(name=="target.health") return emit(Op::TargetHealth);
             if(name=="target.maxhealth") return emit(Op::TargetMaxHealth);
             if(name=="target.cost") return emit(Op::TargetCost);
@@ -99,6 +105,7 @@ class HealthFormula {
             if(name=="this.stack") return emit(Op::Stack);
             if(name=="event.damage") return emit(Op::Damage);
             if(name=="event.distance") return emit(Op::Distance);
+            if(name=="floor") return take('(') && comparison(depth+1) && take(')') && emit(Op::Floor);
             if(name=="if") {
                 if(!take('(') || !comparison(depth+1) || !take(',')) return false;
                 const size_t branch=output.size();
@@ -118,6 +125,9 @@ class HealthFormula {
     };
 public:
     struct Values { int current,maximum; std::optional<int> cost{}; };
+    // Live-only variables deliberately do not invent snapshots for queued events.
+    struct LiveState { int rank; std::optional<int> powerOutput{},powerDrain{}; int gattlingStage=0,maxGattlingStage=0; };
+    bool usesLiveState() const { return std::any_of(code.begin(),code.end(),[](const auto& i){return i.op==Op::SelfRank || i.op==Op::GattlingStage || i.op==Op::MaxGattlingStage || i.op==Op::PowerOutput || i.op==Op::PowerDrain || i.op==Op::PowerSurplus;}); }
     bool empty() const { return code.empty(); }
     bool usesDamage() const { return std::any_of(code.begin(),code.end(),[](const auto& i){return i.op==Op::Damage;}); }
     bool usesDistance() const { return std::any_of(code.begin(),code.end(),[](const auto& i){return i.op==Op::Distance;}); }
@@ -134,7 +144,7 @@ public:
         code.clear();
         return false;
     }
-    std::optional<double> evaluate(int hp,int maximum,int damage=0,std::optional<double> distance=std::nullopt,int stacks=0,std::optional<Values> target=std::nullopt,bool* missing=nullptr,std::optional<int> selfCost=std::nullopt,std::optional<int> selfAmmo=std::nullopt,std::optional<int> selfPassengers=std::nullopt,std::optional<Values> sender=std::nullopt,std::optional<double> signalValue=std::nullopt) const {
+    std::optional<double> evaluate(int hp,int maximum,int damage=0,std::optional<double> distance=std::nullopt,int stacks=0,std::optional<Values> target=std::nullopt,bool* missing=nullptr,std::optional<int> selfCost=std::nullopt,std::optional<int> selfAmmo=std::nullopt,std::optional<int> selfPassengers=std::nullopt,std::optional<Values> sender=std::nullopt,std::optional<double> signalValue=std::nullopt,std::optional<LiveState> live=std::nullopt) const {
         if(missing) *missing=false;
         if(empty()) return {};
         std::array<double,limit> stack;
@@ -143,6 +153,17 @@ public:
             auto ins=code[pc++];
             switch(ins.op) {
                 case Op::Literal: stack[used++]=ins.number; break;
+                case Op::SelfRank:
+                    if(!live) {if(missing) *missing=true;return {};}
+                    stack[used++]=live->rank;break;
+                case Op::GattlingStage: case Op::MaxGattlingStage:
+                    if(!live) {if(missing) *missing=true;return {};}
+                    stack[used++]=ins.op==Op::GattlingStage?live->gattlingStage:live->maxGattlingStage;
+                    break;
+                case Op::PowerOutput: case Op::PowerDrain: case Op::PowerSurplus:
+                    if(!live || !live->powerOutput || !live->powerDrain) {if(missing) *missing=true;return {};}
+                    stack[used++]=ins.op==Op::PowerOutput?double(*live->powerOutput):ins.op==Op::PowerDrain?double(*live->powerDrain):double(*live->powerOutput)-double(*live->powerDrain);
+                    break;
                 case Op::Health:
                     if(maximum<=0) {if(missing) *missing=true;return {};}
                     stack[used++]=std::clamp(hp,0,maximum);break;
@@ -177,6 +198,7 @@ public:
                 case Op::JumpIfFalse: if(stack[--used]==0) pc=static_cast<size_t>(ins.number); break;
                 case Op::Jump: pc=static_cast<size_t>(ins.number); break;
                 case Op::Neg: stack[used-1]=-stack[used-1]; break;
+                case Op::Floor: stack[used-1]=std::floor(stack[used-1]); break;
                 case Op::Clamp: {
                     double hi=stack[--used],lo=stack[--used];
                     if(lo>hi) return {};

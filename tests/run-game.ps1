@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][string]$GameDirectory,
     [string]$PhobosPackageDirectory,
     [string]$StandaloneSpawner,
+    [string]$SpawnerOverride,
     [string]$TornadoConfig,
     [switch]$Rebuild,
     [switch]$CopyGameAssets,
@@ -34,6 +35,11 @@ $save=$definition.Save
 $logName=$definition.Log
 Write-Host "Test directory: $run"
 Copy-TestGameFiles $game $run -CopyArchives:$CopyGameAssets
+if($SpawnerOverride) {
+    if($StandaloneSpawner) {throw 'Choose either standalone or regular extension spawner override.'}
+    Copy-Item -LiteralPath $SpawnerOverride -Destination (Join-Path $run 'CnCNet-Spawner.dll')
+    [IO.File]::AppendAllText((Join-Path $run 'RA2MD.ini'),"`r`n[Debug]`r`nSkipCreateAppMutex=yes`r`n")
+}
 if ($StandaloneSpawner) {
     Copy-Item -LiteralPath $StandaloneSpawner -Destination (Join-Path $run 'CnCNet-Spawner.dll')
 }
@@ -48,15 +54,33 @@ if ($PhobosPackageDirectory) {
     if (Test-Path -LiteralPath $symbols -PathType Leaf) { Copy-Item -LiteralPath $symbols -Destination $run }
 }
 Copy-Item -LiteralPath (Join-Path $root "build/tests/$Case/Starfall.dll") -Destination $run
+if ($Case -eq 'research-grant') {
+    Copy-Item -LiteralPath (Join-Path $root "build/tests/$Case/ResearchApiClient.dll") -Destination $run
+}
 $loaderText=[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $run 'Syringe.exe')))
 if (!$loaderText.Contains('-i=') -or !$loaderText.Contains('--nodetach') -or !$loaderText.Contains('--args')) {
     throw 'These tests require SyringeEx with explicit DLL imports, --args and --nodetach. Supply a compatible loader in GameDirectory or PhobosPackageDirectory.'
 }
+if ($Case -like 'hex-*') { Copy-Item -LiteralPath (Join-Path $root 'examples/HexBrawl.lua') -Destination $run }
 if ($Case -eq 'hex-icons') {
     Copy-Item -LiteralPath (Join-Path $root 'examples/Starfall.HexBrawl.ini') -Destination (Join-Path $run 'Starfall.ini')
     Copy-Item -LiteralPath (Join-Path $root 'examples/HexBrawlIcons') -Destination $run -Recurse
     Get-ChildItem -LiteralPath (Join-Path $root 'examples/HexBrawlIconsPCX') -Filter '*.pcx' | Copy-Item -Destination $run
     Copy-Item -LiteralPath (Join-Path $fixture 'hx-test.pcx') -Destination (Join-Path $run 'hx-test.pcx')
+} elseif ($Case -in 'hex-gameplay','hex-fortress','hex-helicopter','hex-defense','hex-economy','hex-ordnance','hex-support','hex-tactics') {
+    Copy-Item -LiteralPath (Join-Path $root 'examples/Starfall.HexBrawl.ini') -Destination (Join-Path $run 'Starfall.ini')
+    if($Case -eq 'hex-economy') {
+        $path=Join-Path $run 'Starfall.ini'
+        $text=[IO.File]::ReadAllText($path).Replace('[Starfall.PassiveTypes]',"[Starfall.PassiveTypes]`r`n9998=InvalidLiveEvent`r`n9999=InvalidLiveAction")
+        $text += [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $fixture 'Starfall.ini'))
+        [IO.File]::WriteAllText($path,$text)
+    }
+    if($Case -eq 'hex-helicopter') {
+        $path=Join-Path $run 'Starfall.ini'
+        $text=[IO.File]::ReadAllText($path).Replace('[Starfall.PassiveTypes]',"[Starfall.PassiveTypes]`r`n9999=HelicopterTestShots")
+        $text += [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $fixture 'Starfall.ini'))
+        [IO.File]::WriteAllText($path,$text)
+    }
 } elseif ($Case -eq 'action-sequence') {
     $example=Join-Path $root 'examples/ActionSequence'
     $scripts=Get-Item -LiteralPath $run
@@ -104,14 +128,20 @@ if ($Case -eq 'hex-icons') {
 } else {
     Copy-Item -LiteralPath (Join-Path $fixture 'Starfall.ini') -Destination $run
 }
-if ($Case -in 'chrono-teleport','force-move','building-upgrade','spawn-building','building-transform','map-lua') {
+if ($Case -in 'chrono-teleport','force-move','building-upgrade','spawn-building','building-transform','map-lua','research-grant','ground-pickups','passenger-consume') {
     $scripts=Get-Item -LiteralPath $run
     Get-ChildItem -LiteralPath $fixture -Filter '*.lua' | Copy-Item -Destination $scripts.FullName
 }
 if ($Case -eq 'research-hud') {
     Copy-Item -LiteralPath (Join-Path $fixture 'ui-test.wav') -Destination $run
 }
+if ($Case -in 'hex-defense','hex-economy','hex-ordnance','hex-support','hex-tactics') {
+    Copy-Item -LiteralPath (Join-Path $root 'examples/HexBrawl.art.ini') -Destination $run
+}
 Copy-Item -LiteralPath $map -Destination (Join-Path $run 'spawnmap.ini')
+if ($Case -in 'hex-icons','hex-gameplay','hex-fortress','hex-helicopter','hex-defense','hex-economy','hex-ordnance','hex-support','hex-tactics') {
+    [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $root 'examples/HexBrawl.rules.ini')))
+}
 if ($Case -eq 'building-upgrade') {
     [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), "`r`n[GAPOWR]`r`nUpgrades=3`r`n[GAPILE]`r`nPowersUpBuilding=GAPOWR`r`n")
 }
@@ -129,13 +159,29 @@ if ($Case -in 'spawn-passives','cloakable') {
 }
 New-Item -ItemType Directory (Join-Path $run 'Saved Games') | Out-Null
 $spawn = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'game/spawn.ini'))
+if($SpawnerOverride) {
+    # Most probes pass "Saved Games\\name.sav" to the native save function.
+    # The modern spawner prefixes SavedGameDir on both save and load.
+    $spawn=$spawn.Replace('[Settings]',"[Settings]`r`nSavedGameDir=.")
+    $save='Saved Games\'+$save
+}
 $records = (New-Item -Force -ItemType Directory (Join-Path $PSScriptRoot 'local/records')).FullName
 if ($Case -eq 'action-sequence') { $spawn=$spawn.Replace('Superweapons=False','Superweapons=True') }
 $freshSpawn=$spawn
 $phases=if($PhobosPackageDirectory -and $definition.PSObject.Properties['PhobosPhases']) {@($definition.PhobosPhases)} else {@($definition.Phases)}
 foreach ($phase in $phases) {
     $phaseWatch=[Diagnostics.Stopwatch]::StartNew()
+    if ($Case -in 'hex-defense','hex-economy','hex-ordnance','hex-support','hex-tactics') {
+        if ($phase -eq 'art') { New-Item -ItemType File (Join-Path $run 'art-export.flag') | Out-Null }
+        else { Remove-Item -LiteralPath (Join-Path $run 'art-export.flag') -ErrorAction SilentlyContinue }
+    }
     if ($phase -in 'load','without-phobos-load') {
+        if($SpawnerOverride -and !(Test-Path -LiteralPath (Join-Path $run $save) -PathType Leaf)) {
+            # Older standalone-aware probes explicitly save into the run root.
+            # Resolve the actual file before starting the modern load screen.
+            if(Test-Path -LiteralPath (Join-Path $run $definition.Save) -PathType Leaf) {$save=$definition.Save}
+            else {throw "Missing save for $Case/$phase`: $save"}
+        }
         New-Item -ItemType File (Join-Path $run 'reload.flag') | Out-Null
         $spawn = $freshSpawn.Replace('[Settings]', "[Settings]`r`nLoadSaveGame=yes`r`nSaveGameName=$save")
     }
@@ -149,10 +195,10 @@ foreach ($phase in $phases) {
     $report = Join-Path $run $logName
     [IO.File]::WriteAllText($report,'')
     $modules=@('Starfall.dll')
-    $extensions=if ($StandaloneSpawner) { @('CnCNet-Spawner.dll') } elseif ($Case -eq 'action-sequence' -and !$PhobosPackageDirectory) { @('cncnet5.dll') } else { @('Ares.dll','cncnet5.dll','Phobos.dll') }
+    $extensions=if ($StandaloneSpawner) { @('CnCNet-Spawner.dll') } elseif($SpawnerOverride) { @('Ares.dll','CnCNet-Spawner.dll','Phobos.dll') } elseif ($Case -eq 'action-sequence' -and !$PhobosPackageDirectory) { @('cncnet5.dll') } else { @('Ares.dll','cncnet5.dll','Phobos.dll') }
     $modules+=@($extensions | Where-Object { Test-Path -LiteralPath (Join-Path $run $_) -PathType Leaf })
     $imports=($modules | ForEach-Object { '-i='+$_ }) -join ' '
-    $gameArgs=if ($StandaloneSpawner) {'-SPAWN -LOG -CD'} else {'-SPAWN -LOG -CD -WIN'}
+    $gameArgs=if ($StandaloneSpawner -or $SpawnerOverride) {'-SPAWN -LOG -CD'} else {'-SPAWN -LOG -CD -WIN'}
     $arguments='gamemd.exe '+$imports+' --args="'+$gameArgs+'" --nodetach'
     Write-Host "$Case/$phase module order: $($modules -join ' -> ')"
     & (Join-Path $PSScriptRoot 'check-hook-ranges.ps1') -Primary (Join-Path $run 'Starfall.dll') -Extensions @($modules | Select-Object -Skip 1 | ForEach-Object { Join-Path $run $_ })
