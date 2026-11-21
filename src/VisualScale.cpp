@@ -1,13 +1,20 @@
 #include "VisualScale.h"
 #include <FootClass.h>
+#include <AnimClass.h>
+#include <BuildingClass.h>
+#include <DisplayClass.h>
+#include <CCINIClass.h>
 #include <Unsorted.h>
 #include <Surface.h>
+#include <TacticalClass.h>
 #include <algorithm>
 #include <cmath>
 #include <tuple>
 #include <vector>
 
 namespace VisualScale {
+static int placementScale=100;
+static std::map<BuildingTypeClass*,int> placementScales;
 static int rasterPercent(double value) {
     // Beyond this magnification a single source pixel already covers the view.
     // Bound only the raster calculation; never discard earned size increments.
@@ -21,13 +28,52 @@ int percent(DWORD id) {
     if(fixed==base.end() && factor==state.end()) return 100;
     return rasterPercent(std::max(static_cast<double>(minimum),(fixed==base.end()?100:fixed->second)*(factor==state.end()?1.0:factor->second)));
 }
+void setStateFactor(TechnoClass* unit,double factor) {
+    auto entry=state.find(unit->UniqueID);
+    const double previous=entry==state.end()?1.0:entry->second;
+    if(previous==factor) return;
+    if(factor<previous && unit->WhatAmI()==AbstractType::Building && unit->IsOnMap &&
+       !unit->InLimbo && percent(unit->UniqueID)>100) {
+        // MarkForRedraw uses the new dimensions next frame. Clear the old
+        // overhang too when a temporary enlargement ends or weakens.
+        RectangleStruct oldBounds{};
+        unit->GetRenderDimensions(&oldBounds);
+        TacticalClass::Instance->RegisterDirtyArea(oldBounds,false);
+    }
+    if(factor==1.0) state.erase(entry);
+    else state.insert_or_assign(unit->UniqueID,factor);
+    unit->MarkForRedraw();
+}
+int placementPercent(BuildingTypeClass* type) {
+    if(!type) return 100;
+    auto [entry,fresh]=placementScales.try_emplace(type,100);
+    if(fresh) {
+        const double factor=CCINIClass::INI_Art.ReadDouble(type->ImageFile,"Starfall.PlacementPreviewScale",1.0);
+        if(std::isfinite(factor) && factor>=0.01 && factor<=2.0) entry->second=rasterPercent(factor*100.0);
+    }
+    return entry->second;
+}
 static int projectileRaster(DWORD id) {
     auto it=projectiles.find(id);
     return it==projectiles.end()?100:rasterPercent(it->second);
 }
-static int animationPercent(DWORD id) {
+static int animationPercent(ObjectClass* object) {
+    auto id=object->UniqueID;
     if(auto it=attachedAnims.find(id);it!=attachedAnims.end()) return percent(it->second);
     if(auto it=explosions.find(id);it!=explosions.end()) return rasterPercent(it->second);
+    if(object->WhatAmI()==AbstractType::Anim) {
+        auto anim=static_cast<AnimClass*>(object);
+        if(anim->IsBuildingAnim) {
+            if(anim->OwnerObject) return percent(anim->OwnerObject->UniqueID);
+            // Native building animations live in their building's slot array,
+            // often without OwnerObject. Resolve once, also after a save load.
+            for(auto building:BuildingClass::Array)
+                for(auto slot:building->Anims) if(slot==anim) {
+                    attachedAnims[id]=building->UniqueID;
+                    return percent(building->UniqueID);
+                }
+        }
+    } else if(object->WhatAmI()==AbstractType::Building) return percent(id);
     return 100;
 }
 namespace {
@@ -135,14 +181,37 @@ SHPStruct* framePair(SHPStruct* source,int index,int scale) {
     return reinterpret_cast<SHPStruct*>(cached->second.data());
 }
 }
-void clearSprites() { sprites.clear();cacheBytes=0; }
+void clearSprites() { sprites.clear();cacheBytes=0;placementScales.clear(); }
+}
+
+// Phobos draws its placement ghost directly through CC_Draw_Shape, before the
+// product is on the map. Bracket that call without replacing its preview hook.
+DEFINE_HOOK(0x6D5284,SF_PlacementScaleBegin,6) {
+    VisualScale::placementScale=100;
+    if(R->EBX<int>()>=R->ECX<int>()) {
+        auto object=DisplayClass::Instance.CurrentBuilding;
+        if(object && object->WhatAmI()==AbstractType::Building)
+            VisualScale::placementScale=VisualScale::placementPercent(static_cast<BuildingClass*>(object)->Type);
+    }
+    return 0;
+}
+DEFINE_HOOK(0x6D5290,SF_PlacementScaleEnd,5) {
+    VisualScale::placementScale=100;return 0;
+}
+DEFINE_HOOK(0x4AED70,SF_PlacementShapeScale,6) {
+    if(VisualScale::placementScale!=100) {
+        if(auto shape=VisualScale::framePair(R->Stack<SHPStruct*>(4),R->Stack<int>(8),VisualScale::placementScale)) {
+            R->Stack(4,shape);R->Stack<int>(8,0);
+        }
+    }
+    return 0;
 }
 
 // All ordinary animation palette paths meet here with the resolved SHP and
 // frame in draw-local slots. The native drawer retains lighting and blending.
 DEFINE_HOOK(0x423358, SF_ExplosionSpriteScale, 6) {
-    if(VisualScale::explosions.empty() && VisualScale::attachedAnims.empty()) return 0;
-    const int scale=VisualScale::animationPercent(R->ESI<ObjectClass*>()->UniqueID);
+    if(VisualScale::explosions.empty() && VisualScale::attachedAnims.empty() && VisualScale::state.empty() && VisualScale::base.empty()) return 0;
+    const int scale=VisualScale::animationPercent(R->ESI<ObjectClass*>());
     if(scale==100) return 0;
     auto shape=VisualScale::framePair(R->Stack<SHPStruct*>(0x28),R->Stack<int>(0x2C),
         scale);
@@ -156,9 +225,9 @@ DEFINE_HOOK(0x423358, SF_ExplosionSpriteScale, 6) {
 // Extend the native dirty rectangle on both sides by the maximum extra
 // reach of a centered SHP. This also covers frames with asymmetric artwork.
 DEFINE_HOOK(0x5F4AF0, SF_ExplosionRenderBounds, 6) {
-    if(VisualScale::explosions.empty() && VisualScale::attachedAnims.empty()) return 0;
+    if(VisualScale::explosions.empty() && VisualScale::attachedAnims.empty() && VisualScale::state.empty() && VisualScale::base.empty()) return 0;
     auto object=R->Stack<ObjectClass*>(0x0C);
-    int scale=VisualScale::animationPercent(object->UniqueID);
+    int scale=VisualScale::animationPercent(object);
     if(scale<=100) return 0;
     auto padding=[scale](int size,int screen) {
         int enlarged=std::min(VisualScale::scaled(size,scale),2*(screen+512));
@@ -178,6 +247,34 @@ DEFINE_HOOK(0x4228EB, SF_ExplosionDestroyed, 6) {
     return 0;
 }
 
+// BuildingClass has its own GetRenderDimensions, including a camera-position
+// cache. Both exits have ESI pointing at the completed, unscaled cached rect.
+// Expand only the caller's copy so repeated draws and scale changes stay stable.
+DEFINE_HOOK_AGAIN(0x455D2C, SF_BuildingRenderBounds, 7)
+DEFINE_HOOK(0x455C96, SF_BuildingRenderBounds, 7) {
+    if(VisualScale::state.empty() && VisualScale::base.empty()) return 0;
+    static_assert(offsetof(BuildingClass,unknown_rect_63C)==0x63C);
+    auto building=reinterpret_cast<BuildingClass*>(R->ESI()-offsetof(BuildingClass,unknown_rect_63C));
+    const int scale=VisualScale::percent(building->UniqueID);
+    if(scale<=100) return 0;
+    // On a cache miss the final native height store is one of the displaced
+    // instructions. Commit it before returning, preserving the native cache.
+    if(R->Origin()==0x455D2C) building->unknown_rect_63C.Height=R->EAX<int>();
+    const auto& native=building->unknown_rect_63C;
+    auto image=building->Type->GetImage();
+    // Frames are magnified around the SHP canvas center. The native rect can
+    // enclose only opaque pixels, so its half-width alone is not a safe margin.
+    auto margin=[scale](int span,int screen) {
+        return static_cast<int>(std::min<int64_t>((int64_t(span)*(scale-100)+199)/200,screen+512));
+    };
+    int dx=margin(std::max(native.Width,image?int(image->Width):0),DSurface::ViewBounds.Width);
+    int dy=margin(std::max(native.Height,image?int(image->Height):0),DSurface::ViewBounds.Height);
+    auto result=R->Stack<RectangleStruct*>(0x48);
+    *result={native.X-dx,native.Y-dy,native.Width+2*dx,native.Height+2*dy};
+    R->EAX(result);
+    return 0x455D44;
+}
+
 // VXLs first render into the game's fixed 256-square voxel surface. Resample
 // that raster at the final blit, never projecting oversized geometry into it.
 // Keep the native blitter for palette conversion, transparency and depth tests.
@@ -189,14 +286,16 @@ struct ScaledBlit {
     RectangleStruct source{},destination{};
     Point2D position{};
 
-    bool prepare(Surface* original,RectangleStruct in,Point2D dest,RectangleStruct clip,int percent) {
+    bool prepare(Surface* original,RectangleStruct in,Point2D dest,RectangleStruct clip,int percent,
+                 const Point2D* screenPivot=nullptr) {
         if(!original || in.Width<=0 || in.Height<=0) return false;
         int bpp=original->GetBytesPerPixel();
         if(bpp!=1 && bpp!=2) return false;
         const double zoom=percent/100.0;
         // The raster origin is at the center of the voxel surface. Splitting
         // water/bridge draws preserves the same pivot for both pieces.
-        const int pivotX=original->GetWidth()/2,pivotY=original->GetHeight()/2;
+        const int pivotX=screenPivot?in.X+screenPivot->X-dest.X:original->GetWidth()/2;
+        const int pivotY=screenPivot?in.Y+screenPivot->Y-dest.Y:original->GetHeight()/2;
         auto axis=[&](int old,int pos,int pivot,int offset) {
             return pos-(old-pivot)+static_cast<int>(std::round((old+offset-pivot)*zoom));
         };
@@ -260,6 +359,13 @@ DEFINE_HOOK(0x414976, SF_AircraftScaleKey, 5) {
     if(VisualScale::percent(R->EBP<TechnoClass*>()->UniqueID)!=100) R->Stack<int>(0x10,-1);
     return 0;
 }
+DEFINE_HOOK(0x706640, SF_BuildingVoxelScaleKey, 7) {
+    auto unit=R->ECX<TechnoClass*>();
+    if(unit->WhatAmI()==AbstractType::Building && VisualScale::percent(unit->UniqueID)!=100) {
+        R->Stack<int>(0x0C,-1);R->Stack<DWORD>(0x10,0);
+    }
+    return 0;
+}
 DEFINE_HOOK(0x706BD0, SF_ScaleShadowKey, 5) {
     if(VisualScale::percent(R->ECX<TechnoClass*>()->UniqueID)!=100) {
         R->Stack<int>(0x0C,-1); R->Stack<DWORD>(0x10,0);
@@ -277,19 +383,29 @@ DEFINE_HOOK(0x4AF2A0, SF_ScaleIndexedVoxel, 7) {
     auto caller=R->Stack<DWORD>(0);
     bool shadow=caller==0x707437;
     int scale=100;
+    Point2D buildingOrigin{};
+    const Point2D* pivot=nullptr;
     if(caller==0x46B24D) {
         // 11 arguments and the return address separate the two stack frames.
         scale=R->Stack<int>(0x48);
     } else {
         if(!shadow && caller!=0x70723A) return 0;
         auto unit=shadow?R->EBX<TechnoClass*>():R->EBP<TechnoClass*>();
-        if(!shadow && unit->WhatAmI()!=AbstractType::Aircraft) return 0;
+        if(!shadow && unit->WhatAmI()!=AbstractType::Aircraft && unit->WhatAmI()!=AbstractType::Building) return 0;
         scale=VisualScale::percent(unit->UniqueID);
+        if(scale!=100 && !shadow && unit->WhatAmI()==AbstractType::Building) {
+            // The native voxel drawer passes the mounted screen position at
+            // esp+14C before pushing the final blit's 11 arguments and return.
+            // Each voxel has its own cropped raster, including the cannon barrel.
+            auto building=static_cast<BuildingClass*>(unit);
+            buildingOrigin=*R->Stack<Point2D*>(0x17C)-building->Type->GetBuildingAnim(BuildingAnimSlot::Turret).Position;
+            pivot=&buildingOrigin;
+        }
     }
     if(scale!=100) {
         auto& blit=scaledBlit();
         if(blit.prepare(R->Stack<Surface*>(4),*R->Stack<RectangleStruct*>(8),
-            *R->Stack<Point2D*>(12),*R->Stack<RectangleStruct*>(16),scale)) {
+            *R->Stack<Point2D*>(12),*R->Stack<RectangleStruct*>(16),scale,pivot)) {
             R->Stack(4,&blit.surface);R->Stack(8,&blit.source);R->Stack(12,&blit.position);
         }
     }

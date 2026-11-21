@@ -45,7 +45,7 @@ ScriptFields fields(const Sections& rules,const string& id) {
         for(const auto& [key,value]:found->second) values[key]=value;
     return values;
 }
-bool monetary(const string& name) {return name=="givecredits" || name=="giveresearchpoints";}
+bool houseAction(const string& name) {return name=="givecredits" || name=="giveresearchpoints" || name=="grantrandomresearch" || name=="grantfreeresearch";}
 // Translate the SW's point and house to the location/owner paths in the
 // existing action executor. A unit action in Lua must carry a real unit handle.
 bool prepare(ScriptFields& f,bool selected=false) {
@@ -56,7 +56,7 @@ bool prepare(ScriptFields& f,bool selected=false) {
     if(selected) f["action.target"]="target";
     else if(positionalAction(name) && (target.empty() || target=="point" || target=="victimlocation"))
         f["action.target"]="victimlocation";
-    else if(monetary(name) && (target.empty() || target=="owner"))
+    else if(houseAction(name) && (target.empty() || target=="owner"))
         f["action.target"]="self";
     else return false;
     if(auto it=f.find("action.owner");it!=f.end() && lower(it->second)=="owner") it->second="self";
@@ -122,6 +122,10 @@ void load() {
 }
 const Skill* stepFor(const Cast& cast,const string& section) {
     auto name=lower(cast.typeId);
+    if(name.starts_with("@bomb:") && name.substr(6)==section) {
+        auto found=skills.find(section);
+        return found!=skills.end() && found->second.trigger=="onbombdetonate"?&found->second:nullptr;
+    }
     if(name.starts_with("@map:")) {auto split=name.find(':',5);if(split!=string::npos) name.resize(split);}
     auto it=definitions.find(name);
     if(it!=definitions.end()) for(const auto& step:it->second) if(step.id==section) return &step;

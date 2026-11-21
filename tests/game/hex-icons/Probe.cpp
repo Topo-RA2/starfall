@@ -8,6 +8,34 @@ void check(bool ok,const char* label) {
     std::ofstream("hex-icons.log",std::ios::app)<<"FAIL "<<label<<"\n";
     TerminateProcess(GetCurrentProcess(),2);
 }
+void testResearchLabels() {
+    using Research::Rarity;
+    const char* file="test-research-labels.ini";
+    const char* projects="[Starfall.ResearchTypes]\n0=SubtitleTest\n"
+        "[SubtitleEffect]\nEffect=ModifyTypeCost\nTargetTypes=MTNK\nCostModifier=-10%\n"
+        "[SubtitleTest]\nRarity=Rare\nEffects=SubtitleEffect\n";
+    std::ofstream(file)<<"[Starfall.Research]\nRarityName.Common=基础\nRarityName.Rare=精良\n"
+        "RarityName.Epic=卓越\nRarityName.Insane=传奇\n"<<projects<<"TargetLabel=装甲部队\n";
+    Research::readConfiguration(file);
+    auto project=[]() -> const Research::Option& {
+        auto it=std::find_if(Research::options.begin(),Research::options.end(),[](const auto& o){return o.id=="subtitletest";});
+        check(it!=Research::options.end(),"subtitle test project registered");
+        return *it;
+    };
+    check(cardSubtitle(project())==L"精良  ·  装甲部队","custom compound project subtitle");
+    check(project().effects.size()==1 && project().effects.front().types==std::vector<std::string>{"mtnk"},
+        "target display override preserves the unit filter");
+    check(std::wstring(Research::rarityName(Rarity::Common))==L"基础" && std::wstring(Research::rarityName(Rarity::Epic))==L"卓越"
+        && std::wstring(Research::rarityName(Rarity::Insane))==L"传奇","all rarity display names loaded");
+    std::ofstream(file)<<"[Starfall.Research]\nRarityName.Rare=\n"<<projects<<"TargetLabel=\n";
+    Research::readConfiguration(file);
+    auto tank=TechnoTypeClass::Find("MTNK");
+    check(tank && tank->UIName && *tank->UIName && cardSubtitle(project())==std::wstring(L"稀有  ·  ")+tank->UIName,
+        "blank fields restore automatic subtitle on reload");
+    check(std::wstring(Research::rarityName(Rarity::Epic))==L"史诗","omitted rarity name restored on reload");
+    DeleteFileA(file);
+    std::ofstream("hex-icons.log",std::ios::app)<<"PASS custom and automatic research subtitles\n";
+}
 std::vector<WORD> snapshot(RectangleStruct rect) {
     auto surface=DSurface::Composite;
     int pitch=surface->GetPitch();
@@ -181,6 +209,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexIcons,5) {
     testUIAlpha();
     testCooldown();
     testIndicators();
+    testResearchLabels();
     TerminateProcess(GetCurrentProcess(),0);
     return 0;
 }

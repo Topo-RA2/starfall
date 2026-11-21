@@ -13,6 +13,12 @@ function skill.cast(ctx)
     local anim = ctx:spawnAnim("PIFF", ctx.point, {loop=true,duration=35})
     assert(anim and ctx:moveAnim(anim, {x=ctx.point.x+1,y=ctx.point.y}, 20))
     ctx:schedule(5, "pulse", {left=4})
+    if ctx.state.casts == 3 then ctx:schedule(160, "researchReward", {}) end
+end
+function skill.researchReward(ctx)
+    assert(ctx:action("GrantRandomResearch", {Rarity="Rare"}))
+    assert(ctx:action("GrantRandomResearch", {Rarity="All"}))
+    ctx.state.researchRewards = 2
 end
 function skill.pulse(ctx, data)
     ctx.state.pulses = (ctx.state.pulses or 0) + 1

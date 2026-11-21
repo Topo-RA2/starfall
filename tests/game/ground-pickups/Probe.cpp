@@ -35,6 +35,21 @@ void checkCrateAvoidance() {
     for(int dy=-3;dy<=3;++dy) for(int dx=-3;dx<=3;++dx)
         groundPickups.try_emplace({short(origin.X+dx),short(origin.Y+dy)},GroundPickup{"medkit",0});
     checkPickup(!map.PlacePowerupCrate(origin,Powerup::Veteran) && !hasNativeCrate(cell),"full neighborhood rejects targeted crate");
+
+    Event event{};
+    auto clear=[&](const char* id,std::optional<CellStruct> point=std::nullopt) {
+        return apply(skills.at(id).actions.front(),event,nullptr,Objects{},1,std::nullopt,point);
+    };
+    checkPickup(!skills.contains("clearwrong") && !skills.contains("clearinvalid"),"reject invalid cleanup type");
+    auto queued=pending.size();
+    checkPickup(clear("clearcell",origin) && !clear("clearcell",origin),"default cleanup matches exact cell once");
+    PickupCell edge{short(origin.X+3),short(origin.Y+4)},outside{short(origin.X+4),short(origin.Y+4)};
+    groundPickups.emplace(edge,GroundPickup{"medkit",0});
+    groundPickups.emplace(outside,GroundPickup{"medkit",0});
+    checkPickup(clear("clearkits",origin) && !groundPickups.contains(edge) && groundPickups.contains(outside) &&
+        groundPickups.size()==2,"circular cleanup includes boundary and filters type");
+    checkPickup(clear("clearall") && groundPickups.empty() && !clear("clearall") &&
+        pending.size()==queued && hasNativeCrate(crate),"global cleanup without center preserves native crate and queues no reward");
 }
 void checkPickupDrawing() {
     MapClass::Instance.Reveal(HouseClass::CurrentPlayer);
@@ -97,6 +112,17 @@ DEFINE_HOOK(0x55B4EB,SF_TestGroundPickups,5) {
         collectPickups();dispatch();
         checkPickup(Research::balance(tank->Owner->ArrayIndex)==before+21,"random actions execute per draw");
         checkCrateAvoidance();
+        auto at=tank->GetCell()->MapCoords;
+        checkPickup(placePickup("medkit",at),"place pickup for Lua");
+        auto snapshot=eventSnapshot("ondeploy",tank,nullptr,nullptr,nullptr,0);
+        Objects objects{{tank->UniqueID,tank}};
+        checkPickup(apply(skills.at("scriptcleanup").actions.front(),snapshot,tank,objects,1) &&
+            groundPickups.empty() && Research::balance(tank->Owner->ArrayIndex)==before+22,"Lua point cleanup reports success and empty result");
+        ScriptFields fields{{"action","RemovePickup"},{"action.target","Point"}};
+        Skill step{};step.id="clearpoint";step.trigger="onsuperweapon";
+        checkPickup(placePickup("medkit",at) && ActionSequence::prepare(fields) && readAction(step,step.id,&fields),"prepare superweapon cleanup");
+        snapshot.hasImpact=true;snapshot.impact=tank->GetCell()->GetCoordsWithBridge();
+        checkPickup(apply(step.actions.front(),snapshot,nullptr,objects,1) && groundPickups.empty(),"superweapon cleanup uses clicked cell");
         TerminateProcess(GetCurrentProcess(),0);
     }
     return 0;

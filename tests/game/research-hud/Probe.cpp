@@ -21,6 +21,54 @@ int pixel(int x,int y) {
     Point2D p{x,y};
     return DSurface::Composite->GetPixel(&p);
 }
+void checkAvailableFocus(int house) {
+    auto& view=DSurface::ViewBounds;
+    const auto full=view;
+    const auto cue=static_cast<size_t>(Research::SoundCue::Available);
+    const auto originalSound=Research::soundFiles[cue];
+    auto drawAndCount=[&] {
+        const int cx=view.X+view.Width-32,cy=view.Y+48;
+        RectangleStruct sample{cx-view.Width/2,cy+view.Height/20,view.Width/2,view.Height*2/5};
+        auto surface=DSurface::Composite;
+        surface->FillRect(&sample,0);
+        SF_ResearchDraw(nullptr);
+        const int pitch=surface->GetPitch();
+        auto pixels=static_cast<BYTE*>(surface->Lock(sample.X,sample.Y));
+        verify(pixels!=nullptr,"focus sample readable");
+        int distantPixels=0,lowerPixels=0;
+        for(int y=0;y<sample.Height;++y) {
+            auto row=reinterpret_cast<WORD*>(pixels+y*pitch);
+            for(int x=0;x<sample.Width;++x) if(row[x]) {
+                if(x<view.Width/8) ++distantPixels;
+                if(y>view.Height/4) ++lowerPixels;
+            }
+        }
+        surface->Unlock();
+        return distantPixels>0 && lowerPixels>0;
+    };
+    verify(Research::showAvailableAnimation,"available focus enabled by default");
+    Research::soundFiles[cue].clear();
+    for(int scale:{100,75}) {
+        view.Width=full.Width*scale/100;view.Height=full.Height*scale/100;
+        Research::points[house]=0;SF_ResearchDraw(nullptr);
+        Research::points[house]=100;SF_ResearchDraw(nullptr);
+        Sleep(160);
+        verify(drawAndCount(),"silent available focus spans the battlefield");
+        Sleep(620);
+        SF_ResearchDraw(nullptr);Sleep(160);
+        verify(!drawAndCount(),"available focus finishes without repeating");
+    }
+    view=full;
+    verify(WritePrivateProfileStringA("Starfall.Research","ShowAvailableAnimation","no",configPath),"configure disabled available focus");
+    Research::readConfiguration(configPath);
+    verify(!Research::showAvailableAnimation && Research::soundFiles[cue]==originalSound,"disable focus independently of sound");
+    Research::points[house]=0;SF_ResearchDraw(nullptr);
+    Research::points[house]=100;SF_ResearchDraw(nullptr);Sleep(160);
+    verify(!drawAndCount(),"disabled available focus stays hidden");
+    WritePrivateProfileStringA("Starfall.Research","ShowAvailableAnimation",nullptr,configPath);
+    Research::readConfiguration(configPath);
+    Research::points[house]=0;SF_ResearchDraw(nullptr);
+}
 bool diplomacyChecked=false;
 void captureHud(const char* name,int x0,int top,int width,int height,Surface* surface=DSurface::Composite);
 bool paintedDiplomacyImage(HWND window) {
@@ -256,6 +304,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         Research::points[house]=0;
         SF_ResearchDraw(nullptr);
         verify(pixel(x+24,y+1)==track && pixel(x+24,y+46)==track && pixel(x+1,y+24)==track,"empty border");
+        checkAvailableFocus(house);
         input(tab,1);input({tab.X-100,tab.Y+100},4);
         input(tab,16);input(tab,64);
         click(tab);verify(!Research::expanded,"disabled at zero");

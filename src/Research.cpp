@@ -1,6 +1,8 @@
 #include "ResearchInternal.h"
 #include "ConfigText.h"
 #include <random>
+#include <deque>
+#include <tuple>
 
 using std::string;
 using std::vector;
@@ -10,20 +12,36 @@ using ConfigText::includes;
 namespace Research {
 std::vector<Option> options;
 std::array<std::string,5> soundFiles;
+std::string freeRewardSound="builtin:available";
 unsigned uiGeneration=0;
 std::array<int,rarityCount> rarityWeights=defaultRarityWeights;
+std::array<std::wstring,rarityCount> Detail::rarityNameOverrides;
+const wchar_t* rarityName(Rarity rarity) {
+    constexpr std::array<const wchar_t*,rarityCount> defaults={L"普通",L"稀有",L"史诗",L"疯狂"};
+    const auto index=static_cast<size_t>(rarity);
+    if(index>=defaults.size()) return L"未知";
+    const auto& name=Detail::rarityNameOverrides[index];
+    return name.empty()?defaults[index]:name.c_str();
+}
 std::wstring title;
 bool enabled=true;
 bool allowCardRefresh=true;
+bool allowAIResearch=false;
+bool showAvailableAnimation=true;
+bool sharedRaritySequence=false;
 bool announceSelection=true;
 std::map<int,unsigned> refreshedSlots;
 Unlocks unlocked;
+std::map<int,unsigned> completedRounds;
+std::optional<unsigned> raritySequenceSeed;
 std::map<int,std::vector<std::string>> unlockOrder;
 std::map<int,int> points;
 GlobalIncome globalIncome;
 std::map<unsigned long,Producer> producers;
 std::map<unsigned long,BuildingReward> buildingRewards;
-unsigned long rewardPanel=0;
+std::map<unsigned long,FreeResearchTicket> freeTickets;
+unsigned long lastTicket=0;
+RewardId rewardPanel=0;
 std::map<int,std::vector<std::string>> savedOffers;
 std::map<int,std::set<std::string>> seenOffers;
 bool expanded=false;
@@ -65,15 +83,100 @@ bool purchase(int house,int option,const char* country) {
     if(!executeEffect(house,option)) return false;
     unlocked[house].insert(options[option].id);
     unlockOrder[house].push_back(options[option].id);
+    ++completedRounds[house];
     points[house]-=price;
     savedOffers.erase(house); seenOffers.erase(house); refreshedSlots.erase(house); clearOfferCache();
+    grantProjectRewards(house,option,country);
     return true;
+}
+int purchaseForAI(int house,const char* country,unsigned frame) {
+    if(!isEnabled() || !allowAIResearch || balance(house)<price) return -1;
+    // Buying clears the offer cache. Shuffle a copy using synchronized inputs.
+    auto candidates=offers(house,country);
+    if(candidates.empty()) return -1;
+    std::mt19937 rng(Detail::matchSeed() ^ (0x9E3779B9u*(house+1u)) ^ frame);
+    std::shuffle(candidates.begin(),candidates.end(),rng);
+    for(int option:candidates) if(purchase(house,option,country)) return option;
+    return -1;
+}
+int grantRandom(int house,const char* country,std::optional<Rarity> rarity) {
+    if(house<0 || !isEnabled() || (rarity && (*rarity<Rarity::Common || *rarity>=Rarity::Invalid))) return -1;
+    const auto countryId=lower(country?country:"");
+    vector<int> candidates;
+    for(int i=0;i<static_cast<int>(options.size());++i) {
+        const auto& option=options[i];
+        if((!rarity || option.rarity==*rarity) && !owns(house,option.id) && available(i) && meetsPrerequisites(house,i) &&
+            (option.countries.empty() || includes(option.countries,"*") || includes(option.countries,countryId)) && canApply(house,i))
+            candidates.push_back(i);
+    }
+    if(candidates.empty()) return -1;
+    const int option=candidates.size()==1?candidates.front():candidates[Detail::randomIndex(static_cast<int>(candidates.size()))];
+    if(!executeEffect(house,option)) return -1;
+    unlocked[house].insert(options[option].id);
+    unlockOrder[house].push_back(options[option].id);
+    // Local panels may have populated different lazy boards before this event.
+    // Rebuild on every peer, keeping the synchronized per-slot refresh allowance.
+    savedOffers.erase(house);seenOffers.erase(house);clearOfferCache();
+    offers(house,country);
+    grantProjectRewards(house,option,country);
+    return option;
+}
+bool canGrantRandom(int house,int source,const char* country,std::optional<Rarity> rarity) {
+    // Ignore ancestors while checking chains, so a cycle without a real reward
+    // cannot enable a card. This check neither draws RNG nor changes ownership.
+    static std::set<std::pair<int,int>> checking;
+    static std::set<std::tuple<int,int,int>> visited;
+    if(checking.empty()) visited.clear();
+    if(!visited.emplace(house,source,rarity?static_cast<int>(*rarity):-1).second) return false;
+    const auto key=std::pair{house,source};
+    if(!checking.insert(key).second) return false;
+    struct Guard {
+        std::set<std::pair<int,int>>& set;std::pair<int,int> key;
+        ~Guard() {set.erase(key);}
+    } guard{checking,key};
+    const auto countryId=lower(country?country:"");
+    for(int i=0;i<static_cast<int>(options.size());++i) {
+        const auto& candidate=options[i];
+        if(!checking.contains({house,i}) && (!rarity || candidate.rarity==*rarity) &&
+           !owns(house,candidate.id) && available(i) && meetsPrerequisites(house,i) &&
+           (candidate.countries.empty() || includes(candidate.countries,"*") || includes(candidate.countries,countryId)) && canApply(house,i)) return true;
+    }
+    return false;
+}
+void grantProjectRewards(int house,int option,const char* country) {
+    struct Pending {int house;std::string country;ProjectReward reward;};
+    static std::deque<Pending> pending;
+    static bool draining=false;
+    const auto& project=options[option];
+    auto enqueue=[&](const auto& effect) {
+        if(effect.effect==Effect::FreeResearch) grantFree(house,country,effect.reward.projects,effect.reward.rarity);
+        if(effect.effect==Effect::RandomResearch) pending.push_back({house,country?country:"",effect.reward});
+    };
+    if(project.effectList) {for(const auto& effect:project.effects) enqueue(effect);}
+    else enqueue(project);
+    if(draining || pending.empty()) return;
+    draining=true;
+    // Each acquired project is owned before it queues more work. All chains
+    // therefore terminate, without a recursive acquisition call stack.
+    while(!pending.empty()) {
+        auto next=std::move(pending.front());pending.pop_front();
+        for(int n=0;n<next.reward.count;++n) {
+            const int granted=grantRandom(next.house,next.country.c_str(),next.reward.rarity);
+            if(granted<0) break;
+            Detail::announceReward(next.house,granted);
+        }
+    }
+    draining=false;
 }
 void reset() {
     clearPresentationCaches(true);
-    ++uiGeneration;soundFiles={};enabled=true;announceSelection=true;
+    Detail::rarityNameOverrides={};
+    freeRewardSound="builtin:available";
+    ++uiGeneration;soundFiles={};enabled=true;announceSelection=true;showAvailableAnimation=true;allowAIResearch=false;sharedRaritySequence=false;
     globalIncome={};
-    unlocked.clear(); unlockOrder.clear(); points.clear(); producers.clear(); buildingRewards.clear(); rewardPanel=0; savedOffers.clear(); clearOfferCache();
+    raritySequenceSeed.reset();
+    freeTickets.clear();lastTicket=0;
+    unlocked.clear(); unlockOrder.clear(); completedRounds.clear(); points.clear(); producers.clear(); buildingRewards.clear(); rewardPanel=0; savedOffers.clear(); clearOfferCache();
     seenOffers.clear(); refreshedSlots.clear(); options.clear(); expanded=false; pressed=pressedOption=-1; badgePageIndex=0;
 }
 }
@@ -89,8 +192,125 @@ bool Research::meetsPrerequisites(int house,int option) {
 namespace {
 struct OfferCache { string country; vector<int> rows,pool; };
 std::map<int,OfferCache> offerCache;
+struct BuildingBoard {
+    const vector<string>* configuration=nullptr;
+    vector<int> order;
+};
+std::map<std::pair<unsigned long,int>,BuildingBoard> buildingBoards;
+std::map<unsigned long,OfferCache> ticketBoards;
+int drawRarity(std::mt19937& rng,const std::array<int,Research::rarityCount>& weights) {
+    unsigned long long total=0;
+    for(int weight:weights) if(weight>0) total+=static_cast<unsigned>(weight);
+    if(!total) return -1;
+    auto draw=std::uniform_int_distribution<unsigned long long>(0,total-1)(rng);
+    for(int i=0;i<Research::rarityCount;++i) if(weights[i]>0) {
+        auto weight=static_cast<unsigned>(weights[i]);
+        if(draw<weight) return i;
+        draw-=weight;
+    }
+    return -1;
 }
-void Research::clearOfferCache() { offerCache.clear(); Detail::clearEffectCaches(); }
+using RarityPools=std::array<vector<int>,Research::rarityCount>;
+vector<int> drawCards(RarityPools& pools,std::array<int,Research::rarityCount> weights,std::mt19937& rng) {
+    vector<int> rows;
+    for(int tier=0;tier<Research::rarityCount;++tier) {
+        auto& pool=pools[tier];
+        if(pool.empty()) weights[tier]=0;
+        else std::shuffle(pool.begin(),pool.end(),rng);
+    }
+    while(rows.size()<Research::choices) {
+        const int tier=drawRarity(rng,weights);
+        if(tier<0) break;
+        auto& pool=pools[tier];
+        rows.push_back(pool.back());pool.pop_back();
+        if(pool.empty()) weights[tier]=0;
+    }
+    return rows;
+}
+// As in ordinary research, temporary effect requirements are checked when choosing a card.
+// A project's own reward can offer a successor whose prerequisite it is about to satisfy.
+vector<int> ticketCandidates(int house,const string& country,const vector<string>& projects,
+                             std::optional<Research::Rarity> rarity,int source,bool firstOnly=false) {
+    using namespace Research;
+    vector<int> rows;
+    const bool fixed=!projects.empty() && projects.size()<=choices;
+    auto add=[&](int i) {
+        const auto& o=options[i];
+        if(i==source || !o.validChain || o.rarity==Rarity::Invalid || owns(house,o.id) ||
+           (rarity && o.rarity!=*rarity) || (!rarity && !fixed && rarityWeights[static_cast<int>(o.rarity)]<=0) ||
+           (!o.countries.empty() && !includes(o.countries,"*") && !includes(o.countries,country))) return;
+        for(const auto& key:o.prerequisites)
+            if(!owns(house,key) && (source<0 || key!=options[source].id)) return;
+        if(available(i)) rows.push_back(i);
+    };
+    if(projects.empty()) {
+        for(int i=0;i<static_cast<int>(options.size());++i) {
+            add(i);
+            if(firstOnly && !rows.empty()) break;
+        }
+    } else for(const auto& key:projects) {
+        auto it=std::find_if(options.begin(),options.end(),[&](const Option& o){return o.id==key;});
+        if(it!=options.end()) add(static_cast<int>(it-options.begin()));
+        if(firstOnly && !rows.empty()) break;
+    }
+    return rows;
+}
+}
+void Research::clearOfferCache() { offerCache.clear(); buildingBoards.clear(); ticketBoards.clear(); Detail::clearEffectCaches(); }
+const vector<int>& Research::Detail::buildingOfferRows(unsigned long id,int house,const vector<string>& configured) {
+    auto& board=buildingBoards[{id,house}];
+    if(board.configuration==&configured) return board.order;
+    board.configuration=&configured;
+    board.order.clear();
+    std::array<vector<int>,rarityCount> pools;
+    for(const auto& key:configured) {
+        auto it=std::find_if(options.begin(),options.end(),[&](const Option& option){return option.id==key;});
+        if(it==options.end() || it->rarity==Rarity::Invalid) continue;
+        int index=static_cast<int>(it-options.begin());
+        if(owns(house,key) || !available(index)) continue;
+        if(configured.size()<=choices) board.order.push_back(index);
+        else pools[static_cast<int>(it->rarity)].push_back(index);
+    }
+    if(configured.size()<=choices) return board.order;
+    // Each peer can reconstruct the board without opening the HUD or advancing game RNG.
+    std::seed_seq seed{raritySequenceSeed.value_or(matchSeed()),static_cast<unsigned>(id),static_cast<unsigned>(house),0xBD76513Fu};
+    std::mt19937 rng(seed);
+    board.order=drawCards(pools,rarityWeights,rng);
+    return board.order;
+}
+bool Research::canOfferFree(int house,const char* country,const vector<string>& projects,std::optional<Rarity> rarity,int source) {
+    return house>=0 && isEnabled() && lastTicket!=ULONG_MAX && projects.size()<=SHRT_MAX+1u &&
+        std::none_of(projects.begin(),projects.end(),[](const string& key){return key.empty() || key.size()>127;}) &&
+        !ticketCandidates(house,lower(country?country:""),projects,rarity,source,true).empty();
+}
+bool Research::grantFree(int house,const char* country,const vector<string>& projects,std::optional<Rarity> rarity) {
+    if(!canOfferFree(house,country,projects,rarity,-1)) return false;
+    freeTickets.emplace(++lastTicket,FreeResearchTicket{house,projects,rarity});
+    Detail::notifyFreeResearch(house);
+    return true;
+}
+const vector<int>& Research::ticketOptions(unsigned long id,int house,const char* country) {
+    static const vector<int> empty;
+    auto it=freeTickets.find(id);
+    if(!isEnabled() || it==freeTickets.end() || it->second.house!=house) return empty;
+    auto key=lower(country?country:"");
+    auto [entry,added]=ticketBoards.try_emplace(id);
+    auto& board=entry->second;
+    if(!added && board.country==key) return board.rows;
+    const auto& ticket=it->second;
+    board.country=key;
+    board.rows=ticketCandidates(house,key,ticket.projects,ticket.rarity,-1);
+    if(ticket.projects.empty() || ticket.projects.size()>choices) {
+        RarityPools pools;
+        for(int i:board.rows) pools[static_cast<int>(options[i].rarity)].push_back(i);
+        auto weights=rarityWeights;
+        if(ticket.rarity) weights[static_cast<int>(*ticket.rarity)]=1;
+        std::seed_seq seed{raritySequenceSeed.value_or(Detail::matchSeed()),static_cast<unsigned>(id),static_cast<unsigned>(house),0xF7ACE013u};
+        std::mt19937 rng(seed);
+        board.rows=drawCards(pools,weights,rng);
+    }
+    return board.rows;
+}
 const vector<int>& Research::offers(int house,const char* country) {
     static const vector<int> empty;
     if(!isEnabled()) return empty;
@@ -115,24 +335,29 @@ const vector<int>& Research::offers(int house,const char* country) {
         if(chosen>=0) break;
     }
     // Use only synchronized state, so opening the panel does not consume game RNG.
-    unsigned seed=Detail::matchSeed() ^ (0x9E3779B9u*(house+1u));
+    const unsigned matchSeed=sharedRaritySequence?raritySequenceSeed.value_or(Detail::matchSeed()):Detail::matchSeed();
+    unsigned seed=matchSeed ^ (0x9E3779B9u*(house+1u));
     auto owned=unlocked.find(house);
     if(owned!=unlocked.end()) for(const auto& id:owned->second) {
         for(unsigned char c:id) seed=(seed^c)*16777619u;
         seed=(seed^0xffu)*16777619u;
     }
     std::mt19937 rng(seed);
+    if(chosen<0 && sharedRaritySequence) {
+        const auto progress=completedRounds.find(house);
+        const unsigned round=progress==completedRounds.end()?0:progress->second;
+        // Neither house, country, owned project IDs nor local panel activity may
+        // influence the common sequence. Each player's purchase advances only them.
+        std::mt19937 sharedRng(matchSeed ^ 0x6C8E9CF5u ^ (0x9E3779B9u*(round+1u)));
+        chosen=drawRarity(sharedRng,rarityWeights);
+        // A country can exhaust a tier or have no eligible projects in it. Keep
+        // research usable with a personal fallback, without skipping a round.
+        if(chosen>=0 && pools[chosen].empty()) chosen=-1;
+    }
     if(chosen<0) {
-        unsigned long long total=0;
-        for(int i=0;i<rarityCount;++i) if(!pools[i].empty()) total+=static_cast<unsigned>(rarityWeights[i]);
-        if(total) {
-            auto draw=std::uniform_int_distribution<unsigned long long>(0,total-1)(rng);
-            for(int i=0;i<rarityCount;++i) if(!pools[i].empty()) {
-                auto weight=static_cast<unsigned>(rarityWeights[i]);
-                if(draw<weight) {chosen=i;break;}
-                draw-=weight;
-            }
-        }
+        auto weights=rarityWeights;
+        for(int i=0;i<rarityCount;++i) if(pools[i].empty()) weights[i]=0;
+        chosen=drawRarity(rng,weights);
     }
     if(chosen<0) {ids.clear();return result.rows;}
     auto& pool=pools[chosen];
