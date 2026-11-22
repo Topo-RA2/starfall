@@ -10,6 +10,8 @@ void testHexPCX() {
         auto source=imageFor(option.icon,0,Research::Rarity::Common,true);
         auto path=Resources::pathKey("hx_"+option.icon.substr(option.icon.find_last_of("\\/")+1));
         path.replace(path.size()-4,4,".pcx");
+        // Start with a mixed-case lookup before this PCX can populate the Starfall cache.
+        if(i==0) path.front()='H';
         // Bypass all fallbacks: every actual PCX must load through the native engine.
         auto converted=imageFor(path,0,Research::Rarity::Common,false);
         check(!source->pixels.empty() && !converted->pixels.empty(),"PNG and PCX both loaded");

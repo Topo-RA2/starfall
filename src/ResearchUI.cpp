@@ -1,5 +1,6 @@
 #include "ResearchInternal.h"
 #include "ActiveSkills.h"
+#include "ConfigText.h"
 #include <DisplayClass.h>
 #include <deque>
 #include <set>
@@ -342,8 +343,10 @@ std::shared_ptr<const PngImage> imageFor(const std::string& path,int resource,Re
         if(png) loadPng(path,resource,image);
         else {
             auto& pcx=PCX::Instance;
-            auto surface=pcx.GetSurface(path.c_str());
-            if(!surface && pcx.LoadFile(path.c_str())) surface=pcx.GetSurface(path.c_str());
+            // The engine stores lowercase ASCII keys but GetSurface compares the supplied bytes.
+            const auto cacheKey=ConfigText::lower(path);
+            auto surface=pcx.GetSurface(cacheKey.c_str());
+            if(!surface && pcx.LoadFile(path.c_str())) surface=pcx.GetSurface(cacheKey.c_str());
             if(surface) readPcxPixels(*surface,image);
         }
         if(rarity!=Research::Rarity::Common) colorRarityIcon(image,rarity);
