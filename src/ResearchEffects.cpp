@@ -16,6 +16,45 @@ namespace Research::Detail {
 // Purchased project IDs are already synchronized and saved per house. Resolve
 // their grants once per house, including technologies inside combined projects.
 std::map<int,std::set<TechnoTypeClass*>> productionLicenses;
+struct ProductionReplacements {
+    std::map<TechnoTypeClass*,TechnoTypeClass*> from,to;
+};
+std::map<int,ProductionReplacements> productionReplacements;
+std::set<TechnoTypeClass*> replacementTargets;
+bool replacementTargetsReady=false;
+bool requiresReplacement(TechnoTypeClass* type) {
+    if(!replacementTargetsReady) {
+        replacementTargetsReady=true;
+        auto collect=[](const auto& effect) {
+            if(effect.effect==Research::Effect::ReplaceProduction)
+                if(auto to=TechnoTypeClass::Find(effect.to.c_str())) replacementTargets.insert(to);
+        };
+        for(const auto& option:Research::options) {
+            if(option.effectList) {for(const auto& effect:option.effects) collect(effect);}
+            else collect(option);
+        }
+    }
+    return replacementTargets.contains(type);
+}
+const ProductionReplacements& replacements(const HouseClass* house) {
+    static const ProductionReplacements empty;
+    if(!house) return empty;
+    auto owned=Research::unlocked.find(house->ArrayIndex);
+    if(owned==Research::unlocked.end() || owned->second.empty()) return empty;
+    auto [entry,fresh]=productionReplacements.try_emplace(house->ArrayIndex);
+    if(fresh) {
+        auto collect=[&](const auto& effect) {
+            if(effect.effect!=Research::Effect::ReplaceProduction) return;
+            auto from=TechnoTypeClass::Find(effect.from.c_str()),to=TechnoTypeClass::Find(effect.to.c_str());
+            if(from && to) {entry->second.from.emplace(from,to);entry->second.to.emplace(to,from);}
+        };
+        for(const auto& option:Research::options) if(owned->second.contains(option.id)) {
+            if(option.effectList) {for(const auto& effect:option.effects) collect(effect);}
+            else collect(option);
+        }
+    }
+    return entry->second;
+}
 bool hasProductionLicense(const HouseClass* house,TechnoTypeClass* type) {
     if(!house || !type || Research::unlocked.empty()) return false;
     const int player=house->ArrayIndex;
@@ -42,8 +81,21 @@ bool useLicensedProduction(const HouseClass* house,TechnoTypeClass* type) {
 using ProductionCheck=CanBuildResult(__thiscall*)(const HouseClass*,TechnoTypeClass*,bool,bool);
 ProductionCheck previousProductionCheck=nullptr;
 CanBuildResult __fastcall checkLicensedProduction(const HouseClass* house,void*,TechnoTypeClass* type,bool limitsOnly,bool queued) {
+    const auto& replace=replacements(house);
+    if(replace.from.contains(type)) return CanBuildResult::Unbuildable;
+    if(auto it=replace.to.find(type);it!=replace.to.end()) {
+        // Check the original's country, prerequisites and factory eligibility,
+        // then the replacement's own limits. Never mutate shared type rules.
+        auto result=previousProductionCheck(house,it->second,useLicensedProduction(house,it->second),queued);
+        if(result!=CanBuildResult::Buildable) return result;
+        return previousProductionCheck(house,type,true,queued);
+    }
+    // Native AI eligibility can bypass TechLevel=-1. Keep replacement-only
+    // types hidden for every unlicensed house, including AI production.
+    if(requiresReplacement(type) && !hasProductionLicense(house,type)) return CanBuildResult::Unbuildable;
     return previousProductionCheck(house,type,limitsOnly || useLicensedProduction(house,type),queued);
 }
+bool nativeProductionPrerequisite=false;
 void installProductionCheck() {
     if(previousProductionCheck) return;
     auto entry=reinterpret_cast<BYTE*>(0x4F7870);
@@ -64,7 +116,21 @@ void installProductionCheck() {
 } // namespace
 // Vanilla has loaded buildLimitOnly into AL before pushing EDI.
 DEFINE_HOOK(0x4F787C,SF_NativeProductionLicense,7) {
-    if(!R->AL() && useLicensedProduction(R->EBP<HouseClass*>(),R->Stack<TechnoTypeClass*>(0x4C))) R->AL(1);
+    auto house=R->EBP<HouseClass*>();auto type=R->Stack<TechnoTypeClass*>(0x4C);
+    if(!nativeProductionPrerequisite) {
+        const auto& replace=replacements(house);
+        // EDI has not been pushed yet: enter each epilogue after its pop edi.
+        if(replace.from.contains(type)) return 0x4F80BE;
+        if(auto it=replace.to.find(type);it!=replace.to.end()) {
+            nativeProductionPrerequisite=true;
+            auto result=house->CanBuild(it->second,useLicensedProduction(house,it->second),R->Stack<bool>(0x54));
+            nativeProductionPrerequisite=false;
+            if(result==CanBuildResult::Unbuildable) return 0x4F80BE;
+            if(result==CanBuildResult::TemporarilyUnbuildable) return 0x4F833C;
+            R->AL(1);
+        } else if(requiresReplacement(type) && !hasProductionLicense(house,type)) return 0x4F80BE;
+    }
+    if(!R->AL() && useLicensedProduction(house,type)) R->AL(1);
     return 0;
 }
 namespace Research::Detail {
@@ -100,8 +166,25 @@ bool validateEffect(const Research::EffectSpec& o,const EffectWarning& warn) {
             return valid;
         }
         case Effect::Credits: return o.credits>0 || fail("Credits","须填写正整数资金");
+        case Effect::FreeResearch:
+            if(o.reward.count!=1) return fail("Reward.Count","一次发放一份免费科研");
+            [[fallthrough]];
+        case Effect::RandomResearch:
+            if(o.reward.count<1 || o.reward.count>256) return fail("Reward.Count","须填写 1 到 256 的整数");
+            return !o.reward.rarity || (*o.reward.rarity>=Rarity::Common && *o.reward.rarity<Rarity::Invalid) ||
+                fail("Reward.Rarity","应为 Any、Common、Rare、Epic 或 Insane");
         case Effect::Technology: return (!o.technology.empty() && TechnoTypeClass::Find(o.technology.c_str())) ||
             fail("Technology","须填写已注册的单位或建筑类型 ID");
+        case Effect::ReplaceProduction: {
+            auto from=TechnoTypeClass::Find(o.from.c_str()),to=TechnoTypeClass::Find(o.to.c_str());
+            if(!from) return fail("FromType","须填写已注册的生产类型 ID");
+            if(!to || to==from || to->WhatAmI()!=from->WhatAmI())
+                return fail("ToType","须填写不同且同类别的生产类型 ID");
+            if(from->WhatAmI()==AbstractType::BuildingType &&
+               static_cast<BuildingTypeClass*>(from)->BuildCat!=static_cast<BuildingTypeClass*>(to)->BuildCat)
+                return fail("ToType","替换建筑须使用相同的建造类别");
+            return true;
+        }
         case Effect::ConvertInfantry:
         case Effect::ConvertVehicle: {
             auto from=TechnoTypeClass::Find(o.from.c_str()),to=TechnoTypeClass::Find(o.to.c_str());
@@ -118,9 +201,17 @@ bool validateEffect(const Research::EffectSpec& o,const EffectWarning& warn) {
         default: return fail("Effect","未知或缺少科研效果");
     }
 }
-bool researchEffectCanApply(HouseClass* h,const Research::EffectSpec& o) {
+bool researchEffectCanApply(HouseClass* h,const Research::EffectSpec& o,int source) {
     using Research::Effect;
+    if(o.effect==Effect::FreeResearch) return Research::canOfferFree(h->ArrayIndex,h->Type->ID,o.reward.projects,o.reward.rarity,source);
+    if(o.effect==Effect::RandomResearch) return Research::canGrantRandom(h->ArrayIndex,source,h->Type->ID,o.reward.rarity);
     if(o.effect==Effect::Passive || o.effect==Effect::TypeCost || o.effect==Effect::CategoryCost) return true;
+    if(o.effect==Effect::ReplaceProduction) {
+        auto from=TechnoTypeClass::Find(o.from.c_str()),to=TechnoTypeClass::Find(o.to.c_str());
+        const auto& replace=replacements(h);
+        return from && to && !replace.from.contains(from) && !replace.to.contains(from) &&
+            !replace.from.contains(to) && !replace.to.contains(to);
+    }
     if(o.effect==Effect::Technology) {
         auto type=TechnoTypeClass::Find(o.technology.c_str());
         return type && !hasProductionLicense(h,type);
@@ -132,12 +223,21 @@ bool researchEffectCanApply(HouseClass* h,const Research::EffectSpec& o) {
     }
     return o.effect==Effect::Credits;
 }
-bool applyResearchEffect(HouseClass* h,const Research::EffectSpec& o) {
+bool applyResearchEffect(HouseClass* h,const Research::EffectSpec& o,int source) {
     using Research::Effect;
-    if(!researchEffectCanApply(h,o)) return false;
+    if(!researchEffectCanApply(h,o,source)) return false;
+    if(o.effect==Effect::RandomResearch || o.effect==Effect::FreeResearch) return true; // Dispatched after ownership commits.
     if(o.effect==Effect::Passive || o.effect==Effect::TypeCost || o.effect==Effect::CategoryCost) return true;
     if(o.effect==Effect::Credits) {h->GiveMoney(o.credits);return true;}
     if(o.effect==Effect::Technology) {
+        h->RecheckTechTree=true;return true;
+    }
+    if(o.effect==Effect::ReplaceProduction) {
+        auto from=TechnoTypeClass::Find(o.from.c_str());
+        for(auto factory:FactoryClass::Array) if(factory->Owner==h) {
+            while(factory->RemoveOneFromQueue(from)) {}
+            if(factory->Object && factory->Object->GetTechnoType()==from) factory->AbandonProduction();
+        }
         h->RecheckTechTree=true;return true;
     }
     auto from=TechnoTypeClass::Find(o.from.c_str()),to=TechnoTypeClass::Find(o.to.c_str());
@@ -153,24 +253,34 @@ bool Research::available(int option) {
     const auto& o=options[option];
     if(o.rarity==Rarity::Invalid) return false;
     if(!o.effectList) return validateEffect(singleEffect(o));
+    std::set<string> replacementTypes;
+    for(const auto& effect:o.effects) if(effect.effect==Effect::ReplaceProduction) {
+        if(!replacementTypes.insert(effect.from).second || !replacementTypes.insert(effect.to).second) return false;
+    }
     return !o.effects.empty() && std::all_of(o.effects.begin(),o.effects.end(),[](const auto& effect){ return validateEffect(effect); });
 }
 bool Research::canApply(int house,int option) {
     if(!isEnabled() || option<0 || option>=static_cast<int>(options.size()) || house<0 || house>=HouseClass::Array.Count) return false;
     auto h=HouseClass::Array.Items[house];if(!Runtime::eligibleHouse(h)) return false;
     const auto& o=options[option];
-    if(!o.effectList) return researchEffectCanApply(h,singleEffect(o));
-    return std::any_of(o.effects.begin(),o.effects.end(),[h](const auto& effect){return researchEffectCanApply(h,effect);});
+    if(!o.effectList) return researchEffectCanApply(h,singleEffect(o),option);
+    // Ownership enables every permanent replacement in the project. Reject the
+    // whole bundle if one would conflict instead of recording a skipped mapping.
+    for(const auto& effect:o.effects) if(effect.effect==Effect::ReplaceProduction && !researchEffectCanApply(h,effect,option)) return false;
+    return std::any_of(o.effects.begin(),o.effects.end(),[h,option](const auto& effect){return researchEffectCanApply(h,effect,option);});
 }
 bool Research::executeEffect(int house,int option) {
     if(!canApply(house,option)) return false;
     auto h=HouseClass::Array.Items[house];const auto& o=options[option];
-    if(!o.effectList) return applyResearchEffect(h,singleEffect(o));
+    if(!o.effectList) return applyResearchEffect(h,singleEffect(o),option);
     bool applied=false;
-    for(const auto& effect:o.effects) if(applyResearchEffect(h,effect)) applied=true;
+    for(const auto& effect:o.effects) if(applyResearchEffect(h,effect,option)) applied=true;
     return applied;
 }
 namespace Research::Detail {
+void announceReward(int house,int option) {
+    if(house>=0 && house<HouseClass::Array.Count) showResearchSelection(HouseClass::Array.Items[house],option);
+}
 struct CostAdjustment {
     long long percent=0, credits=0;
     bool active=false;
@@ -237,5 +347,7 @@ DEFINE_HOOK(0x4CA03D,SF_ResearchProductionCancel,6) {
 void Research::Detail::clearEffectCaches() {
     priceCache.clear();
     productionLicenses.clear();
+    productionReplacements.clear();
+    replacementTargets.clear();replacementTargetsReady=false;
 }
 unsigned Research::Detail::matchSeed() { return static_cast<unsigned>(Game::Seed); }

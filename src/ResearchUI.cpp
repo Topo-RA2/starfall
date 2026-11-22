@@ -1,5 +1,6 @@
-#include "Research.h"
+#include "ResearchInternal.h"
 #include "ActiveSkills.h"
+#include "ConfigText.h"
 #include <DisplayClass.h>
 #include <deque>
 #include <set>
@@ -10,6 +11,7 @@
 #include <PCX.h>
 #include "ResearchText.h"
 #include "ResearchImages.h"
+#include "starfall_research_display_v1.h"
 #include "ResearchAudio.h"
 #include "player_name_policy.h"
 #include <WWMouseClass.h>
@@ -27,25 +29,30 @@
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "ole32.lib")
 
+void Research::Detail::showResearchSelection(HouseClass* house,int option) {
+    if(!Research::announceSelection) return;
+    const auto player=PlayerNamePolicy::label(house->UIName,house->ArrayIndex);
+    // Keep the full message within the engine's 162-character message buffer.
+    const auto message=player+L" 已研究「"+Research::options[option].name.substr(0,120)+L"」。";
+    MessageListClass::Instance.PrintMessage(message.c_str(),RulesClass::Instance->MessageDelay,house->ColorSchemeIndex,true);
+}
+
 namespace {
 constexpr int commandId = -0x5346;
 constexpr int refreshCommandId=-0x5347;
-constexpr int refreshHit=10, closeHit=7;
+constexpr int refreshHit=10, closeHit=7, nextRewardHit=8;
+unsigned pendingFreeNotices=0;
+ULONGLONG nextFreeNoticeAt=0;
+Research::RewardId pressedReward=0;
 constexpr short commandMarker = 0x5243;
 constexpr int buildingCommandBase = -0x100000;
+constexpr int ticketCommandBase = -0x110000;
 void playClick() {
     if(ResearchAudio::play(Research::SoundCue::Button)) return;
     auto rules=RulesClass::Instance;
     if(!rules) return;
     int sound=rules->GenericClick;
     if(sound>=0 && sound<VocClass::Array.Count) VocClass::PlayGlobal(sound,0x2000,1.0f);
-}
-void showResearchSelection(HouseClass* house,int option) {
-    if(!Research::announceSelection) return;
-    const auto player=PlayerNamePolicy::label(house->UIName,house->ArrayIndex);
-    // Keep the full message within the engine's 162-character message buffer.
-    const auto message=player+L" 已研究「"+Research::options[option].name.substr(0,120)+L"」。";
-    MessageListClass::Instance.PrintMessage(message.c_str(),RulesClass::Instance->MessageDelay,house->ColorSchemeIndex,true);
 }
 bool hasAvailableResearch() {
     auto house=HouseClass::CurrentPlayer;
@@ -99,11 +106,12 @@ struct Layout {
         return {c.X+(c.Width-width)/2,c.Y+c.Height+6,width,28};
     }
     RectangleStruct close() const {return {panel.X+panel.Width-28,panel.Y,28,26};}
+    RectangleStruct nextReward() const {return {panel.X+(panel.Width-98)/2,panel.Y+panel.Height-28,98,28};}
 };
 struct CardAnimation {
     bool wasOpen=false,pending=false,selecting=false;
     int pendingOption=-1,pendingSlot=-1;
-    unsigned long pendingBuilding=0;
+    Research::RewardId pendingReward=0;
     ULONGLONG openAt=0,selectAt=0;
     std::array<ULONGLONG,Research::choices> refreshAt{};
     std::vector<int> selectionOffers;
@@ -115,7 +123,7 @@ Layout layout() {
     int count=Research::expanded?static_cast<int>(currentOffers().size()):0;
     int slots=std::max(1,count);
     int gap=view.Width>=720?16:8;
-    int footer=Research::expanded && !Research::rewardPanel && Research::allowCardRefresh && count?34:0;
+    int footer=Research::expanded && (Research::rewardPanel || Research::allowCardRefresh) && count?34:0;
     int width=std::min({244,(view.Width-24-(slots-1)*gap)/slots,(view.Height-60-footer)*2/3});
     int h=width*3/2;
     int panelWidth=width*slots+(slots-1)*gap;
@@ -132,33 +140,28 @@ const std::vector<int>& houseOffers(HouseClass* house) {
 }
 std::vector<int> currentOffers() {
     auto house=HouseClass::CurrentPlayer;
-    if(Research::rewardPanel) return Research::buildingOptions(Research::rewardPanel,house->ArrayIndex);
+    if(Research::rewardPanel) return Research::freeOptions(Research::rewardPanel,house->ArrayIndex);
     return houseOffers(house);
 }
-struct BuildingButton { unsigned long id; RectangleStruct rect; };
-std::vector<BuildingButton> buildingButtons() {
-    std::vector<BuildingButton> result;
-    auto tactical=TacticalClass::Instance;auto house=HouseClass::CurrentPlayer;
-    if(!tactical || !house) return result;
-    const auto& view=DSurface::ViewBounds;
-    for(auto* b:BuildingClass::Array) {
-        if(!b || Research::buildingOptions(b->UniqueID,house->ArrayIndex).empty()) continue;
-        auto cell=b->GetCell();if(!cell || cell->IsShrouded() || cell->IsFogged()) continue;
-        auto [point,shown]=tactical->CoordsToClient(b->GetCoords());
-        RectangleStruct rect{point.X-18,point.Y-58,36,36};
-        if(shown && rect.X>=view.X && rect.Y>=view.Y && rect.X+rect.Width<=view.X+view.Width && rect.Y+rect.Height<=view.Y+view.Height)
-            result.push_back({b->UniqueID,rect});
-    }
-    return result;
+bool canSwitchReward(const std::vector<Research::RewardId>& rewards,int house) {
+    return Research::rewardPanel && (rewards.size()>1 || Research::balance(house)>=Research::price);
+}
+Research::RewardId nextReward(const std::vector<Research::RewardId>& rewards,int house) {
+    auto current=std::find(rewards.begin(),rewards.end(),Research::rewardPanel);
+    if(current!=rewards.end() && ++current!=rewards.end()) return *current;
+    return Research::balance(house)>=Research::price || rewards.empty()?0:rewards.front();
 }
 int hitTest(const Layout& l, Point2D p) {
-    if (inside(l.tab,p)) return Research::balance(HouseClass::CurrentPlayer->ArrayIndex)>=Research::price?0:inertHit;
+    int player=HouseClass::CurrentPlayer->ArrayIndex;
+    if (inside(l.tab,p)) return Research::expanded || Research::balance(player)>=Research::price ||
+        !Research::pendingFreeRewards(player).empty()?0:inertHit;
     if (inside(infoRect(l.tab),p)) return inertHit;
     auto page=badgePage(static_cast<int>(Research::completedProjects(HouseClass::CurrentPlayer->ArrayIndex).size()));
     if(page.pages>1 && inside(completedRect(l.tab,iconColumns()-1),p)) return nextPageHit;
     for(int i=0;i<page.count;++i) if(inside(completedRect(l.tab,i),p)) return inertHit;
     if(Research::expanded && inside(l.panel,p)) {
         if(inside(l.close(),p)) return closeHit;
+        if(Research::rewardPanel && inside(l.nextReward(),p) && canSwitchReward(Research::pendingFreeRewards(player),player)) return nextRewardHit;
         auto offered=currentOffers();
         auto house=HouseClass::CurrentPlayer;
         for(int i=0;i<static_cast<int>(offered.size());++i) {
@@ -168,8 +171,6 @@ int hitTest(const Layout& l, Point2D p) {
         }
         return inertHit;
     }
-    auto buttons=buildingButtons();
-    for(int i=0;i<static_cast<int>(buttons.size());++i) if(inside(buttons[i].rect,p)) return 100+i;
     return Research::expanded && inside(DSurface::ViewBounds,p)?inertHit:-1;
 }
 int color(int r,int g,int b) { return Drawing::RGB_To_Int(r,g,b); }
@@ -342,8 +343,10 @@ std::shared_ptr<const PngImage> imageFor(const std::string& path,int resource,Re
         if(png) loadPng(path,resource,image);
         else {
             auto& pcx=PCX::Instance;
-            auto surface=pcx.GetSurface(path.c_str());
-            if(!surface && pcx.LoadFile(path.c_str())) surface=pcx.GetSurface(path.c_str());
+            // The engine stores lowercase ASCII keys but GetSurface compares the supplied bytes.
+            const auto cacheKey=ConfigText::lower(path);
+            auto surface=pcx.GetSurface(cacheKey.c_str());
+            if(!surface && pcx.LoadFile(path.c_str())) surface=pcx.GetSurface(cacheKey.c_str());
             if(surface) readPcxPixels(*surface,image);
         }
         if(rarity!=Research::Rarity::Common) colorRarityIcon(image,rarity);
@@ -353,7 +356,8 @@ std::shared_ptr<const PngImage> imageFor(const std::string& path,int resource,Re
         return image.pixels.capacity()+2*(std::get<0>(key).size()+1)+sizeof(PngImage);
     });
 }
-bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rarity=Research::Rarity::Common,int opacity=255,const RectangleStruct* clip=nullptr,Surface* surface=DSurface::Composite) {
+template<typename UseImage>
+bool withImage(const char* name,Research::Rarity rarity,const UseImage& use) {
     // Zero IDs preserve legacy .pcx aliases for externally supplied PNGs.
     struct Builtin { const char* stem;int id; };
     static const Builtin builtins[]={{"sfrlab",101},{"sfrpanel",0},{"sfrfocus",0},{"sfrdefault",104},{"sfrheal",0},{"sfrdrain",0},{"sfrripst",0},{"sfframe",109},{"sfactive_default",110}};
@@ -362,7 +366,7 @@ bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rar
         if(!_stricmp(name,(std::string(builtin.stem)+".pcx").c_str()) || !_stricmp(name,(std::string(builtin.stem)+".png").c_str())) {
             std::string pngName=std::string(builtin.stem)+".png";
             if(!builtin.id) {
-                if(_stricmp(name,pngName.c_str()) && blit(pngName.c_str(),rect,crop,rarity,opacity,clip,surface)) return true;
+                if(_stricmp(name,pngName.c_str()) && withImage(pngName.c_str(),rarity,use)) return true;
                 break;
             }
             path=pngName;resource=builtin.id;break;
@@ -370,13 +374,25 @@ bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rar
     }
     bool png=resource || (path.size()>=4 && !_stricmp(path.c_str()+path.size()-4,".png"));
     auto image=imageFor(path,resource,rarity,png);
-    return !image->pixels.empty() && drawPng(*image,rect,crop,opacity,clip,surface);
+    return !image->pixels.empty() && use(*image);
+}
+bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rarity=Research::Rarity::Common,int opacity=255,const RectangleStruct* clip=nullptr,Surface* surface=DSurface::Composite) {
+    return withImage(name,rarity,[&](const PngImage& image) {
+        return drawPng(image,rect,crop,opacity,clip,surface);
+    });
+}
+template<typename UseImage>
+bool withProjectIcon(const Research::Option& project,const UseImage& use) {
+    return (!project.icon.empty() && withImage(project.icon.c_str(),project.rarity,use)) ||
+        withImage("sfrdefault.pcx",project.rarity,use);
 }
 void drawProjectIcon(const Research::Option& project,RectangleStruct rect,Surface* surface=DSurface::Composite) {
-    if(project.icon.empty() || !blit(project.icon.c_str(),rect,0,project.rarity,255,nullptr,surface))
-        blit("sfrdefault.pcx",rect,0,project.rarity,255,nullptr,surface);
+    withProjectIcon(project,[&](const PngImage& image) {
+        return drawPng(image,rect,0,255,nullptr,surface);
+    });
 }
 std::wstring targetLabel(const Research::Option& option,bool compact) {
+    if(!option.targetLabel.empty()) return option.targetLabel;
     if(option.effectList) {
         std::wstring label;
         for(const auto& effect:option.effects) {
@@ -391,6 +407,7 @@ std::wstring targetLabel(const Research::Option& option,bool compact) {
     }
     if(option.effect==Research::Effect::CategoryCost) return std::wstring(L"本方")+Research::categoryName(option.cost.category);
     if(option.effect==Research::Effect::Credits) return L"本方资金";
+    if(option.effect==Research::Effect::RandomResearch || option.effect==Research::Effect::FreeResearch) return L"本方科研";
     if(option.effect==Research::Effect::Technology) {
         auto type=TechnoTypeClass::Find(option.technology.c_str());
         if(type && type->UIName && *type->UIName) return type->UIName;
@@ -416,14 +433,8 @@ std::wstring targetLabel(const Research::Option& option,bool compact) {
     }
     return label;
 }
-const wchar_t* rarityName(Research::Rarity rarity) {
-    switch(rarity) {
-        case Research::Rarity::Common: return L"普通";
-        case Research::Rarity::Rare: return L"稀有";
-        case Research::Rarity::Epic: return L"史诗";
-        case Research::Rarity::Insane: return L"疯狂";
-        default: return L"未知";
-    }
+std::wstring cardSubtitle(const Research::Option& project) {
+    return std::wstring(Research::rarityName(project.rarity))+L"  ·  "+targetLabel(project,true);
 }
 std::vector<std::wstring> tooltipLines(int option,int width,int maxHeight) {
     wchar_t conditions[96]{};
@@ -457,7 +468,7 @@ void paintTooltip(Surface* surface,int option,RectangleStruct rect,const std::ve
     const auto& project=Research::options[option];
     hudFill(rect,color(15,19,35),surface);
     hudOutline(rect,color(117,125,178),surface);
-    auto title=std::wstring(L"[")+rarityName(Research::options[option].rarity)+L"] "+Research::options[option].name;
+    auto title=std::wstring(L"[")+Research::rarityName(project.rarity)+L"] "+project.name;
     int titleColor=project.rarity==Research::Rarity::Insane?color(255,111,117):project.rarity==Research::Rarity::Epic?color(255,213,112):color(211,201,255);
     ResearchText::draw(title.c_str(),rect.X+14,rect.Y+8,titleColor,17,rect.Width-28,surface);
     for(size_t i=0;i<detailLines.size();++i)
@@ -480,7 +491,7 @@ void drawTooltip(const Layout& l,int slot,int option, const RectangleStruct* anc
     y=std::clamp(y,view.Y,std::max(view.Y,view.Y+view.Height-height));
     paintTooltip(DSurface::Composite,option,{x,y,width,height},detailLines);
 }
-void drawResearchButton(RectangleStruct tab,int points) {
+void drawResearchButton(RectangleStruct tab,int points,double flash) {
     auto surface=DSurface::Composite;
     RectangleStruct face{tab.X+4,tab.Y+4,tab.Width-8,tab.Height-8};
     if(!blit("sfrlab.pcx",face,5)) {
@@ -497,6 +508,10 @@ void drawResearchButton(RectangleStruct tab,int points) {
     int rim=color(19,43,57),track=color(42,64,79),inner=color(19,32,48);
     int glow=color(12,126+50*pulse/400,165+45*pulse/400);
     int light=color(60+120*pulse/400,218+35*pulse/400,251);
+    if(flash>0) {
+        glow=color(12+static_cast<int>(226*flash),148+static_cast<int>(100*flash),200+static_cast<int>(55*flash));
+        light=color(120+static_cast<int>(135*flash),234+static_cast<int>(21*flash),255);
+    }
     const int pitch=surface->GetPitch();
     const bool gpu=HudFrame::active();
     auto base=HudFrame::drawNative()?static_cast<BYTE*>(surface->Lock(tab.X,tab.Y)):nullptr;
@@ -521,7 +536,7 @@ void drawResearchButton(RectangleStruct tab,int points) {
     }
     if(base) surface->Unlock();
 }
-void drawPointsTip(const RectangleStruct& tab,int points) {
+void drawPointsTip(const RectangleStruct& tab,int points,int freeCount) {
     const auto& view=DSurface::ViewBounds;
     int width=std::min(212,view.Width);
     RectangleStruct tip{std::max(view.X,tab.X+tab.Width-width),tab.Y+tab.Height+5,width,50};
@@ -530,7 +545,8 @@ void drawPointsTip(const RectangleStruct& tab,int points) {
     wchar_t line[64]{};
     swprintf_s(line,L"科研點數  %d / %d",points,Research::price);
     ResearchText::draw(line,tip.X+10,tip.Y+4,color(218,240,251),16,width-20);
-    if(points<Research::price) swprintf_s(line,L"還差 %d 點可研究",Research::price-points);
+    if(freeCount) swprintf_s(line,L"可领取 %d 次免费科研",freeCount);
+    else if(points<Research::price) swprintf_s(line,L"還差 %d 點可研究",Research::price-points);
     else wcscpy_s(line,L"可選擇一項升級");
     ResearchText::draw(line,tip.X+10,tip.Y+26,color(159,194,210),14,width-20);
 }
@@ -540,7 +556,7 @@ void drawInfoTip(const RectangleStruct& icon) {
     RectangleStruct tip{std::max(view.X,icon.X+icon.Width-width),icon.Y+icon.Height+4,width,52};
     hudFill(tip,color(14,23,36));
     hudOutline(tip,color(75,111,131));
-    ResearchText::draw(L"流火实验室 0.37",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
+    ResearchText::draw(L"流火实验室 0.38",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
     ResearchText::draw(L"By 斩断云天",tip.X+10,tip.Y+28,color(159,194,210),14,width-20);
 }
 void centered(const std::wstring& text,RectangleStruct bounds,int y,int ink,int size) {
@@ -643,7 +659,7 @@ void drawCard(const Layout& l,int slot,int index,Point2D pointer,bool showRefres
     int top=c.Y+c.Height/2+6;
     int titleSize=c.Width>=190?21:16;
     centered(o.name,c,top,color(242,242,251),titleSize);
-    std::wstring label=std::wstring(rarityName(o.rarity))+L"  ·  "+targetLabel(o,true);
+    std::wstring label=cardSubtitle(o);
     centered(label,c,top+titleSize+6,accent,c.Width>=190?14:12);
     int summaryY=top+titleSize+29;
     int size=c.Width>=190?16:13;
@@ -758,18 +774,118 @@ void glowSweep(RectangleStruct rect,double progress,int strength) {
     }
     if(base) surface->Unlock();
 }
+// Paint only the moving trails. The simulation and its random generator are never touched.
+constexpr int focusImpactMs=530, focusDurationMs=720;
+void drawResearchFocus(const RectangleStruct& tab,int elapsed) {
+    auto surface=DSurface::Composite;
+    const auto& view=DSurface::ViewBounds;
+    const int left=std::max(0,view.X),top=std::max(0,view.Y);
+    const int right=std::min(surface->GetWidth(),view.X+view.Width);
+    const int bottom=std::min(surface->GetHeight(),view.Y+view.Height);
+    if(left>=right || top>=bottom || surface->GetBytesPerPixel()!=2) return;
+    const int pitch=surface->GetPitch();
+    const bool gpu=HudFrame::active();
+    std::vector<BYTE> peaks;
+    const size_t width=right-left;
+    if(gpu) peaks.resize(width*static_cast<size_t>(bottom-top));
+    auto base=HudFrame::drawNative()?static_cast<BYTE*>(surface->Lock(left,top)):nullptr;
+    if(!gpu && !base) return;
+    int dirtyLeft=right,dirtyTop=bottom,dirtyRight=left,dirtyBottom=top;
+    const double cx=tab.X+tab.Width*.5,cy=tab.Y+tab.Height*.5;
+    const int rs=Drawing::RedShiftLeft,gs=Drawing::GreenShiftLeft,bs=Drawing::BlueShiftLeft;
+    const int rm=255>>Drawing::RedShiftRight,gm=255>>Drawing::GreenShiftRight,bm=255>>Drawing::BlueShiftRight;
+    // Lighten each channel so the translucent edges retain highlights in the terrain.
+    auto spark=[&](double x,double y,double radius,double light) {
+        for(int py=std::max(top,int(y-radius));py<std::min(bottom,int(y+radius)+1);++py) {
+            auto row=base?reinterpret_cast<WORD*>(base+(py-top)*pitch):nullptr;
+            for(int px=std::max(left,int(x-radius));px<std::min(right,int(x+radius)+1);++px) {
+                double dx=px-x,dy=py-y;
+                double v=light*(1-(dx*dx+dy*dy)/(radius*radius));
+                if(v<=0) continue;
+                if(gpu) {
+                    const auto strength=static_cast<BYTE>(std::clamp(static_cast<int>(v*255),0,255));
+                    auto& peak=peaks[static_cast<size_t>(py-top)*width+(px-left)];
+                    if(strength>peak) {
+                        peak=strength;
+                        dirtyLeft=std::min(dirtyLeft,px);dirtyRight=std::max(dirtyRight,px+1);
+                        dirtyTop=std::min(dirtyTop,py);dirtyBottom=std::max(dirtyBottom,py+1);
+                    }
+                }
+                if(!row) continue;
+                WORD& p=row[px-left];
+                int r=std::max((p>>rs)&rm,int(rm*v*v*v));
+                int g=std::max((p>>gs)&gm,int(gm*v*v));
+                int b=std::max((p>>bs)&bm,int(bm*v));
+                p=static_cast<WORD>((r<<rs)|(g<<gs)|(b<<bs));
+            }
+        }
+    };
+    struct Ray { double x,y,bend; int delay; };
+    constexpr Ray rays[]={{.48,.09,-.035,0},{.40,.22,.032,30},{.33,.33,-.05,14},
+                          {.19,.40,.043,47},{.075,.36,-.024,22}};
+    for(const auto& ray:rays) {
+        double t=double(elapsed-ray.delay)/(focusImpactMs-ray.delay);
+        if(t<0 || t>1.12) continue;
+        double head=std::min(1.,.023+.977*t*t);
+        double tail=std::max(0.,t*t-.22);
+        if(tail>=head) continue;
+        double dx=ray.x*view.Width,dy=ray.y*view.Height,bend=ray.bend*view.Height;
+        int steps=std::max(1,int(std::ceil((head-tail)*(std::abs(dx)+dy+4*std::abs(bend)))));
+        for(int i=0;i<=steps;++i) {
+            double f=double(i)/steps,p=tail+(head-tail)*f;
+            double x=cx-dx*(1-p),y=cy+dy*(1-p)+4*bend*p*(1-p);
+            spark(x,y,1.4+2.3*f,(.16+.84*f)*std::min(1.,.38+7*t));
+        }
+    }
+    if(elapsed>=focusImpactMs) {
+        double t=double(elapsed-focusImpactMs)/(focusDurationMs-focusImpactMs);
+        double radius=tab.Width*(.42+.48*t);
+        for(int i=0;i<240;++i) {
+            double angle=i*(6.28318530718/240);
+            spark(cx+radius*std::cos(angle),cy+radius*std::sin(angle),2.1,1-t);
+        }
+    }
+    if(base) surface->Unlock();
+    if(gpu) {
+        for(int py=dirtyTop;py<dirtyBottom;++py) {
+            const auto* row=peaks.data()+static_cast<size_t>(py-top)*width;
+            for(int px=dirtyLeft;px<dirtyRight;++px) {
+                const int strength=row[px-left];
+                if(strength) HudFrame::overPixel(px,py,(strength*strength+127)/255,strength,255,strength);
+            }
+        }
+    }
+}
+
 void draw() {
-    struct Notice {unsigned generation=0;int house=-1;bool ready=false;};
+    struct Notice {unsigned generation=0;int house=-1;bool ready=false,free=false;ULONGLONG end=0;};
     static Notice notice;
     int player=HouseClass::CurrentPlayer->ArrayIndex;
     if(notice.generation!=Research::uiGeneration || notice.house!=player) notice={Research::uiGeneration,player,false};
-    bool available=!Research::soundFiles[static_cast<size_t>(Research::SoundCue::Available)].empty() && hasAvailableResearch();
-    if(available && !notice.ready) ResearchAudio::play(Research::SoundCue::Available);
+    const ULONGLONG now=GetTickCount64();
+    bool sound=!Research::soundFiles[static_cast<size_t>(Research::SoundCue::Available)].empty();
+    bool available=(sound || Research::showAvailableAnimation) && hasAvailableResearch();
+    const bool newFree=pendingFreeNotices && now>=nextFreeNoticeAt;
+    if(newFree) {--pendingFreeNotices;nextFreeNoticeAt=now+focusDurationMs;}
+    if(newFree || (available && !notice.ready)) {
+        notice.free=newFree;
+        if(Research::showAvailableAnimation) notice.end=now+focusDurationMs;
+        if(newFree) ResearchAudio::playPath(Research::freeRewardSound);
+        else if(sound) ResearchAudio::play(Research::SoundCue::Available);
+    }
+    if((!available && !notice.free) || !Research::showAvailableAnimation) notice.end=0;
     notice.ready=available;
-    ULONGLONG now=GetTickCount64();
     if(cardAnimation.selecting && now-cardAnimation.selectAt>=700) {
         cardAnimation.selecting=false;Research::expanded=false;Research::rewardPanel=0;
         cardAnimation.selectionOffers.clear();
+    }
+    const auto freeRewards=Research::pendingFreeRewards(player);
+    if(Research::expanded && Research::rewardPanel && !cardAnimation.pending && !cardAnimation.selecting &&
+       std::find(freeRewards.begin(),freeRewards.end(),Research::rewardPanel)==freeRewards.end()) {
+        Research::rewardPanel=freeRewards.empty()?0:freeRewards.front();
+        Research::expanded=Research::rewardPanel || Research::balance(player)>=Research::price;
+        Research::pressed=Research::pressedOption=-1;
+        cardAnimation.wasOpen=false;
     }
     if(Research::expanded && !cardAnimation.wasOpen) {
         cardAnimation.openAt=now;cardAnimation.refreshAt={};
@@ -788,13 +904,23 @@ void draw() {
         ColorStruct shade{5,10,20};
         hudShade(bounds,shade,45);
     }
-    for(const auto& button:buildingButtons()) {
-        auto rect=button.rect;
-        if(!blit("sfrlab.pcx",rect)) hudFill(rect,color(18,22,38));
-        if(inside(rect,pointer)) hudOutline(rect,accent);
-    }
     auto tab=l.tab;
-    drawResearchButton(tab,points);
+    double flash=0;
+    if(notice.end>now) {
+        int elapsed=focusDurationMs-static_cast<int>(notice.end-now);
+        drawResearchFocus(tab,elapsed);
+        if(elapsed>=focusImpactMs) flash=double(notice.end-now)/(focusDurationMs-focusImpactMs);
+    }
+    drawResearchButton(tab,points,flash);
+    const int freeCount=static_cast<int>(freeRewards.size());
+    if(freeCount) {
+        const auto label=std::to_wstring(freeCount);
+        const int width=std::max(18,ResearchText::maskFor(label.c_str(),13).w+8);
+        RectangleStruct badge{tab.X+tab.Width-width,tab.Y,width,18};
+        hudFill(badge,color(22,67,100));
+        hudOutline(badge,color(100,216,255));
+        centered(label,badge,badge.Y+1,white,13);
+    }
     auto info=infoRect(tab);
     hudFill(info,color(14,23,36));
     hudOutline(info,inside(info,pointer)?accent:color(75,111,131));
@@ -816,17 +942,23 @@ void draw() {
         centered(L"‹",rect,rect.Y+(rect.Height-23)/2,color(182,228,245),23);
     }
     if(!Research::expanded) {
-        if(inside(tab,pointer)) drawPointsTip(tab,points);
+        if(inside(tab,pointer)) drawPointsTip(tab,points,freeCount);
         if(inside(info,pointer)) drawInfoTip(info);
         if(hoveredCompleted>=0) drawTooltip(l,0,hoveredCompleted,&hoverRect);
         return;
     }
     auto panel=l.panel;
     auto close=l.close();
-    centered(Research::title,panel,panel.Y,color(235,245,252),23);
+    centered(Research::rewardPanel?L"免费科研":Research::title,panel,panel.Y,color(235,245,252),23);
     hudFill(close,color(18,29,44));
     hudOutline(close,inside(close,pointer)?accent:muted);
     centered(L"×",close,close.Y,white,20);
+    if(!cardAnimation.selecting && canSwitchReward(freeRewards,player)) {
+        auto button=l.nextReward();
+        hudFill(button,color(19,34,49));
+        hudOutline(button,inside(button,pointer)?accent:muted);
+        centered(nextReward(freeRewards,player)?L"下一份奖励":L"普通科研",button,button.Y+4,white,15);
+    }
     auto offered=cardAnimation.selecting?cardAnimation.selectionOffers:currentOffers();
     int hovered=-1;
     if(offered.empty()) {
@@ -876,7 +1008,7 @@ void draw() {
     if(current!=lastOption) {lastOption=current;since=GetTickCount();}
     if(!cardAnimation.pending && !cardAnimation.selecting && hovered>=0 && GetTickCount()-since>=300) drawTooltip(l,hovered,current);
     if(hoveredCompleted>=0) drawTooltip(l,0,hoveredCompleted,&hoverRect);
-    if(inside(tab,pointer)) drawPointsTip(tab,points);
+    if(inside(tab,pointer)) drawPointsTip(tab,points,freeCount);
     if(inside(info,pointer)) drawInfoTip(info);
 }
 #include "ActiveSkillUI.inc"
@@ -886,6 +1018,23 @@ void ResearchImages::drawBadge(Surface* surface,int project,RectangleStruct rect
     RectangleStruct glyph{rect.X+2,rect.Y+2,rect.Width-4,rect.Height-4};
     drawProjectIcon(Research::options[project],glyph,surface);
     hudOutline(rect,color(56,73,89),surface);
+}
+bool ResearchImages::copyProjectIcon(int project,std::uint8_t* rgba) {
+    constexpr int size=STARFALL_RESEARCH_ICON_SIZE_V1;
+    return withProjectIcon(Research::options[project],[&](const PngImage& image) {
+        // Use the native icon's nearest-neighbor sampling and convert cached BGRA to straight RGBA.
+        for(int y=0;y<size;++y) {
+            const auto row=image.pixels.data()+static_cast<size_t>(y*image.height/size)*image.width*4;
+            for(int x=0;x<size;++x) {
+                const auto pixel=row+(x*image.width/size)*4;
+                *rgba++=pixel[2];
+                *rgba++=pixel[1];
+                *rgba++=pixel[0];
+                *rgba++=pixel[3];
+            }
+        }
+        return true;
+    });
 }
 ResearchImages::Bitmap ResearchImages::tooltip(int project,int width,int maxHeight) {
     const auto lines=tooltipLines(project,width,maxHeight);
@@ -926,17 +1075,15 @@ bool hudButton(Point2D pointer,int flags) {
         int slot=hit>=refreshHit?hit-refreshHit:hit-1;
         if(slot<static_cast<int>(offered.size())) option=offered[slot];
     }
-    if(flags & 1) {Research::pressed=hit;Research::pressedOption=option;}
+    if(flags & 1) {Research::pressed=hit;Research::pressedOption=option;pressedReward=Research::rewardPanel;}
     if(hit<0 && Research::pressed<0) return false;
     if(flags & 4) {
-        if(hit>=0 && hit==Research::pressed && option==Research::pressedOption) {
-            if(hit>=100) {
-                auto buttons=buildingButtons();int slot=hit-100;
-                if(slot<static_cast<int>(buttons.size())) {
-                    Research::expanded=!Research::expanded || Research::rewardPanel!=buttons[slot].id;
-                    Research::rewardPanel=Research::expanded?buttons[slot].id:0;
-                    playClick();
-                }
+        if(hit>=0 && hit==Research::pressed && option==Research::pressedOption && pressedReward==Research::rewardPanel) {
+            if(hit==nextRewardHit) {
+                int player=HouseClass::CurrentPlayer->ArrayIndex;
+                Research::rewardPanel=nextReward(Research::pendingFreeRewards(player),player);
+                cardAnimation.wasOpen=false;
+                playClick();
             }
             else if(hit==closeHit) {
                 Research::expanded=false;
@@ -956,8 +1103,9 @@ bool hudButton(Point2D pointer,int flags) {
                 playClick();
             }
             else if(hit==0) {
-                Research::expanded=!Research::expanded || Research::rewardPanel!=0;
-                Research::rewardPanel=0;
+                const auto rewards=Research::pendingFreeRewards(HouseClass::CurrentPlayer->ArrayIndex);
+                Research::expanded=!Research::expanded;
+                Research::rewardPanel=Research::expanded && !rewards.empty()?rewards.front():0;
                 playClick();
             }
             else if(hit>=1 && hit<=Research::choices && option>=0 && (Research::rewardPanel || Research::balance(HouseClass::CurrentPlayer->ArrayIndex)>=Research::price)) {
@@ -966,12 +1114,13 @@ bool hudButton(Point2D pointer,int flags) {
                     Research::pressed=-1;
                     return true;
                 }
-                unsigned long id=Research::rewardPanel;
+                const auto id=Research::rewardPanel;
+                const int base=(id&Research::ticketFlag)?ticketCommandBase:buildingCommandBase;
                 CellStruct payload=id?CellStruct{static_cast<short>(id&0xffff),static_cast<short>((id>>16)&0xffff)}:CellStruct{commandMarker,static_cast<short>(index)};
-                EventClass event(HouseClass::CurrentPlayer->ArrayIndex,EventType::SpecialPlace,id?buildingCommandBase-index:commandId,payload);
+                EventClass event(HouseClass::CurrentPlayer->ArrayIndex,EventType::SpecialPlace,id?base-index:commandId,payload);
                 if(EventClass::OutList.Add(event)) {
                     cardAnimation.pending=true;cardAnimation.pendingOption=index;cardAnimation.pendingSlot=hit-1;
-                    cardAnimation.pendingBuilding=id;cardAnimation.selectionOffers=currentOffers();
+                    cardAnimation.pendingReward=id;cardAnimation.selectionOffers=currentOffers();
                     cardAnimation.selectionLayout=layout();
                     playClick();
                 }
@@ -1062,16 +1211,17 @@ DEFINE_HOOK(0x777627, SF_HUDWindowMouse, 8) {
 DEFINE_HOOK(0x4C6CC8, SF_ResearchCommand, 5) {
     auto event=R->ESI<EventClass*>();
     if(ActiveHUD::command(event)) return 0x4C8109;
-    if(event->Type==EventType::SpecialPlace && event->SpecialPlace.ID<=buildingCommandBase && event->SpecialPlace.ID>=buildingCommandBase-SHRT_MAX) {
-        int sender=event->HouseIndex,option=buildingCommandBase-event->SpecialPlace.ID;
-        unsigned long id=static_cast<unsigned short>(event->SpecialPlace.Location.X)|(static_cast<unsigned long>(static_cast<unsigned short>(event->SpecialPlace.Location.Y))<<16);
+    const bool ticket=event->Type==EventType::SpecialPlace && event->SpecialPlace.ID<=ticketCommandBase && event->SpecialPlace.ID>=ticketCommandBase-SHRT_MAX;
+    if(ticket || (event->Type==EventType::SpecialPlace && event->SpecialPlace.ID<=buildingCommandBase && event->SpecialPlace.ID>=buildingCommandBase-SHRT_MAX)) {
+        int sender=event->HouseIndex,option=(ticket?ticketCommandBase:buildingCommandBase)-event->SpecialPlace.ID;
+        Research::RewardId id=(ticket?Research::ticketFlag:0) | static_cast<unsigned short>(event->SpecialPlace.Location.X)|(static_cast<unsigned long>(static_cast<unsigned short>(event->SpecialPlace.Location.Y))<<16);
         bool success=false;
         if(sender>=0 && sender<HouseClass::Array.Count) {
             auto house=HouseClass::Array.Items[sender];
-            if(house && !house->Defeated && !house->IsObserver()) success=Research::claimBuilding(id,sender,option);
-            if(success) showResearchSelection(house,option);
+            if(house && !house->Defeated && !house->IsObserver()) success=Research::claimFree(id,sender,option);
+            if(success) Research::Detail::showResearchSelection(house,option);
         }
-        if(HouseClass::CurrentPlayer && sender==HouseClass::CurrentPlayer->ArrayIndex && cardAnimation.pending && cardAnimation.pendingOption==option && cardAnimation.pendingBuilding==id) {
+        if(HouseClass::CurrentPlayer && sender==HouseClass::CurrentPlayer->ArrayIndex && cardAnimation.pending && cardAnimation.pendingOption==option && cardAnimation.pendingReward==id) {
             cardAnimation.pending=false;cardAnimation.selecting=success;cardAnimation.selectAt=GetTickCount64();
             if(success) ResearchAudio::play(Research::SoundCue::Select);
         }
@@ -1100,10 +1250,10 @@ DEFINE_HOOK(0x4C6CC8, SF_ResearchCommand, 5) {
         auto house=HouseClass::Array.Items[sender];
         if(house && !house->Defeated && !house->IsObserver()) {
             success=Research::purchase(sender,option,house->Type ? house->Type->ID : "");
-            if(success) showResearchSelection(house,option);
+            if(success) Research::Detail::showResearchSelection(house,option);
         }
     }
-    if(HouseClass::CurrentPlayer && sender==HouseClass::CurrentPlayer->ArrayIndex && cardAnimation.pending && cardAnimation.pendingOption==option && !cardAnimation.pendingBuilding) {
+    if(HouseClass::CurrentPlayer && sender==HouseClass::CurrentPlayer->ArrayIndex && cardAnimation.pending && cardAnimation.pendingOption==option && !cardAnimation.pendingReward) {
         cardAnimation.pending=false;cardAnimation.selecting=success;cardAnimation.selectAt=GetTickCount64();
         if(success) ResearchAudio::play(Research::SoundCue::Select);
     }
@@ -1111,7 +1261,13 @@ DEFINE_HOOK(0x4C6CC8, SF_ResearchCommand, 5) {
 }
 
 void Research::clearPresentationCaches(bool stopAudio) {
+    if(stopAudio) {pendingFreeNotices=0;nextFreeNoticeAt=0;cardAnimation={};}
     imageCache().clear();
     cardSkinCache()=CardSkin{};
     ResearchAudio::clearCache(stopAudio);
+}
+
+void Research::Detail::notifyFreeResearch(int house) {
+    auto player=HouseClass::CurrentPlayer;
+    if(player && player->ArrayIndex==house) ++pendingFreeNotices;
 }

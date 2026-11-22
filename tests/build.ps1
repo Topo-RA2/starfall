@@ -56,9 +56,11 @@ try {
             $dependencies=$source+$headers+$lua+$assets+@((Join-Path $PSScriptRoot "unit/$name.cpp"))
             Build-Part unit $name $dependencies @((Join-Path $out "unit/$name.exe"))
         } else {
-            $fixtures=@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot "game/$name") -File | Where-Object Extension -in '.cpp','.h','.inc' | ForEach-Object FullName)
+            $fixtures=@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot "game/$name") -File | Where-Object Extension -in '.c','.cpp','.h','.inc' | ForEach-Object FullName)
             $sharedHeaders=@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'game') -File | Where-Object Extension -in '.h','.inc' | ForEach-Object FullName)
-            Build-Part game $name ($source+$headers+$lua+$assets+$fixtures+$sharedHeaders) @((Join-Path $out "$name/Starfall.dll"))
+            $outputs=@((Join-Path $out "$name/Starfall.dll"))
+            if($name -eq 'research-grant') {$outputs+=Join-Path $out "$name/ResearchApiClient.dll"}
+            Build-Part game $name ($source+$headers+$lua+$assets+$fixtures+$sharedHeaders) $outputs
         }
     }
 } finally {$lock.Dispose()}

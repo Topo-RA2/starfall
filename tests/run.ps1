@@ -12,6 +12,7 @@ param(
     [switch]$CopyGameAssets,
     [switch]$KeepGameAssets,
     [switch]$Standalone,
+    [switch]$ModernSpawner,
     [switch]$ContinueOnFailure
 )
 $ErrorActionPreference='Stop'
@@ -53,6 +54,7 @@ if(@($selected | Where-Object {$_ -ne 'unit'}).Count) {
     foreach($file in 'gamemd.exe','Syringe.exe') {if(!(Test-Path -LiteralPath (Join-Path $GameDirectory $file))) {throw "Missing $file. Supply -GameDirectory or tests/local/environment.json."}}
 }
 if('multiplayer' -in $selected -and (!$PhobosPackageDirectory -or !$StandaloneSpawner)) {throw 'Network tests require -PhobosPackageDirectory and -StandaloneSpawner.'}
+if($ModernSpawner -and (!$StandaloneSpawner -or $Standalone)) {throw '-ModernSpawner requires a spawner path and the regular extension profile.'}
 if($Standalone) {
     if(!$StandaloneSpawner -or 'multiplayer' -in $selected) {throw '-Standalone requires a spawner and single-client cases.'}
     foreach($name in $selected) {if($name -ne 'unit' -and !(Get-TestCase $name).Standalone) {throw "$name does not support the standalone profile."}}
@@ -75,6 +77,7 @@ try {
                 $caseArgs=@{Case=$name;GameDirectory=$GameDirectory;Rebuild=$Rebuild;CopyGameAssets=$CopyGameAssets;KeepGameAssets=$KeepGameAssets;ReportPath=$detail}
                 if($Standalone) {$caseArgs.StandaloneSpawner=$StandaloneSpawner}
                 elseif($PhobosPackageDirectory) {$caseArgs.PhobosPackageDirectory=$PhobosPackageDirectory}
+                if($ModernSpawner) {$caseArgs.SpawnerOverride=$StandaloneSpawner}
                 & (Join-Path $PSScriptRoot 'run-game.ps1') @caseArgs *> $log
             }
             $results+=[pscustomobject]@{Case=$name;Result='PASS';Seconds=[math]::Round($caseWatch.Elapsed.TotalSeconds,3);Log=$log;Detail=$detail}

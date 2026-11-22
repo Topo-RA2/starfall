@@ -36,6 +36,10 @@ if /i "%~1"=="unit" goto unit
 exit /b 2
 :game
 set "other=%shared%\ResearchUI.obj"
+if /i "%~2"=="research-grant" (
+    cl /nologo /TC /O2 /MT /LD /utf-8 /Fo%out%\ApiClient.obj /Fe%out%\ResearchApiClient.dll tests\game\research-grant\ApiClient.c /link /INCREMENTAL:NO
+    if errorlevel 1 exit /b 1
+)
 if /i "%~2"=="hex-icons" set "other=%shared%\Starfall.obj"
 @rem Retain hook-only modules as well as modules referenced by C++ symbols.
 cl /nologo /std:c++20 /EHsc /O2 /MT /LD /utf-8 /DSYR_VER=2 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /Isrc /Ireferences\Phobos\YRpp /Fo%out%\ /Fe%out%\Starfall.dll tests\game\%~2\Probe.cpp "%other%" "%shared%\modules.lib" "%shared%\lua\lua.lib" "%shared%\research.res" /link /WHOLEARCHIVE:"%shared%\modules.lib" /INCREMENTAL:NO /OPT:REF /OPT:NOICF

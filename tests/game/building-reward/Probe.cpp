@@ -1,11 +1,63 @@
 #include "../../../src/Starfall.cpp"
 #include <MessageListClass.h>
+#include <Drawing.h>
+#include "ResearchAudio.h"
+#include "../WindowMouse.h"
 EXPORT_FUNC(SF_ResearchCommand);
+EXPORT_FUNC(SF_ResearchDraw);
 namespace {
 DWORD actualId=0;
 void check(bool ok,const char* label) {
     std::ofstream("building-reward.log",std::ios::app)<<(ok?"PASS ":"FAIL ")<<label<<"\n";
     if(!ok) TerminateProcess(GetCurrentProcess(),2);
+}
+void click(Point2D point) {
+    check(WindowMouse::button(point,1) && WindowMouse::button(point,4),"research button captures mouse");
+}
+Point2D tabCenter() {
+    const auto& view=DSurface::ViewBounds;
+    return {view.X+view.Width-32,view.Y+48};
+}
+void checkBadge() {
+    auto at=tabCenter();
+    Point2D edge{at.X+22,at.Y-24};
+    SF_ResearchDraw(nullptr);
+    check(DSurface::Composite->GetPixel(&edge)==Drawing::RGB_To_Int(100,216,255),"free count badge on research tab");
+}
+bool freeFocusVisible() {
+    auto center=tabCenter();
+    const auto& view=DSurface::ViewBounds;
+    RectangleStruct area{center.X-view.Width/2,center.Y+view.Height/20,view.Width/4,view.Height/3};
+    auto surface=DSurface::Composite;
+    surface->FillRect(&area,0);
+    SF_ResearchDraw(nullptr);
+    const int pitch=surface->GetPitch();
+    auto base=static_cast<const BYTE*>(surface->Lock(area.X,area.Y));
+    check(base!=nullptr,"free notification sample readable");
+    bool lit=false;
+    for(int y=0;y<area.Height && !lit;++y) {
+        auto row=reinterpret_cast<const WORD*>(base+y*pitch);
+        lit=std::any_of(row,row+area.Width,[](WORD pixel){return pixel!=0;});
+    }
+    surface->Unlock();
+    return lit;
+}
+void checkSwitching(int house) {
+    const auto rewards=Research::pendingBuildingRewards(house);
+    Research::award(house,Research::price);
+    click(tabCenter());
+    const auto& view=DSurface::ViewBounds;
+    for(auto id:rewards) {
+        check(Research::expanded && Research::rewardPanel==id,"free tab cycles through independent building pools");
+        int count=static_cast<int>(Research::buildingOptions(id,house).size());
+        int width=std::min({244,(view.Width-24-(count-1)*(view.Width>=720?16:8))/count,(view.Height-94)*2/3});
+        int panelHeight=38+width*3/2+34;
+        click({view.X+view.Width/2,view.Y+(view.Height-panelHeight)/2+panelHeight-14});
+    }
+    check(Research::expanded && !Research::rewardPanel && Research::balance(house)==Research::price,
+        "ordinary research accessible while free rewards are pending");
+    click(tabCenter());
+    Research::points[house]=0;
 }
 BuildingClass* place(const char* id,HouseClass* house,CellStruct site) {
     auto type=BuildingTypeClass::Find(id);
@@ -51,6 +103,26 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
         check(Research::buildingOptions(engBuilding->UniqueID,house->ArrayIndex).empty(),"engineer only excludes spy");
         authorizeBuildingReward(spy,spyBuilding,Research::BuildingRewardSource::Spy);
         check(!Research::buildingOptions(spyBuilding->UniqueID,house->ArrayIndex).empty(),"spy enabled");
+        auto board=Research::buildingOptions(spyBuilding->UniqueID,house->ArrayIndex);
+        check(board.size()==3 && std::set<int>(board.begin(),board.end()).size()==3 &&
+            std::all_of(board.begin(),board.end(),[](int i){return Research::options[i].rarity==Research::Rarity::Rare;}),
+            "large pool offers three distinct positive-weight cards");
+        int outside=3;while(std::find(board.begin(),board.end(),outside)!=board.end()) ++outside;
+        check(!Research::claimBuilding(spyBuilding->UniqueID,house->ArrayIndex,outside),"unoffered configured project rejected");
+        checkBadge();
+        check(ResearchAudio::sampleCache().contains("builtin:available"),"free authorization plays the available cue at zero points");
+        Sleep(160);
+        check(freeFocusVisible(),"new free entitlement animates the research button");
+        Sleep(620);
+        authorizeBuildingReward(spy,spyBuilding,Research::BuildingRewardSource::Spy);
+        SF_ResearchDraw(nullptr);Sleep(160);
+        check(!freeFocusVisible(),"repeated authorization does not replay the animation");
+        click(tabCenter());
+        check(Research::balance(house->ArrayIndex)==0 && Research::expanded && Research::rewardPanel==spyBuilding->UniqueID,
+            "zero-point tab opens free research");
+        click(tabCenter());click(tabCenter());
+        check(Research::buildingOptions(Research::rewardPanel,house->ArrayIndex)==board,"reopening preserves weighted board");
+        click(tabCenter());
         check(spyTransfer->SetOwningHouse(house,false),"spy building transfer");tickBuildings();
         authorizeBuildingReward(engineer,spyTransfer,Research::BuildingRewardSource::Engineer);
         check(Research::buildingOptions(spyTransfer->UniqueID,house->ArrayIndex).empty(),"independent flags");
@@ -66,6 +138,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
         authorizeBuildingReward(engineer,claimed,Research::BuildingRewardSource::Engineer);
         auto choices=Research::buildingOptions(claimed->UniqueID,house->ArrayIndex);
         check(!choices.empty(),"free research offers");
+        check(choices==vector<int>{0,1,2} && Research::pendingBuildingRewards(house->ArrayIndex).size()==3,
+            "three building rewards counted and fixed lists retain order");
+        checkSwitching(house->ArrayIndex);
         const int option=choices.front();
         const auto id=claimed->UniqueID;
         EventClass selection(house->ArrayIndex,EventType::SpecialPlace,-0x100000-option,
@@ -73,6 +148,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
         REGISTERS regs{};regs.ESI(&selection);
         SF_ResearchCommand(&regs);SF_ResearchCommand(&regs);
         check(Research::owns(house->ArrayIndex,Research::options[option].id),"claim reward");
+        check(Research::pendingBuildingRewards(house->ArrayIndex).size()==2 && Research::balance(house->ArrayIndex)==0,
+            "one claim consumes one free reward at zero points");
+        check(Research::completedRounds.empty(),"free research does not advance ordinary rounds");
         const auto notice=std::wstring(house->UIName)+L" 已研究「"+Research::options[option].name+L"」。";
         int messages=0;
         for(const auto& text:MessageListClass::Instance.MessageBuffers) if(notice==text) ++messages;
@@ -96,18 +174,56 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
         BuildingClass* real=nullptr;for(auto b:BuildingClass::Array) if(b && b->UniqueID==actualId) real=b;
         if(real && real->Owner==house && Research::buildingRewards.at(actualId).source==Research::BuildingRewardSource::Engineer) {
             check(!Research::buildingOptions(actualId,house->ArrayIndex).empty(),"native engineer capture");
+            std::ifstream ids("building-reward.ids");DWORD eng,spy;ids>>eng>>spy;
+            std::ofstream expected("building-reward.board");
+            for(int index:Research::buildingOptions(spy,house->ArrayIndex)) expected<<Research::options[index].id<<'\n';
+            expected.close();
             check(ScenarioClass::SaveGame("Saved Games\\BuildingReward.sav",L"Building Reward"),"saved");
             TerminateProcess(GetCurrentProcess(),0);
         }
         if(frame>=620){check(false,"native engineer capture");}
     } else if(loading && frame>=35) {
+        // The first resumed simulation tick can precede the local HUD/viewport setup.
+        static const int resumed=frame;
+        if(frame<resumed+5) return 0;
+        static int sent=-1;
+        static std::string picked;
+        if(sent>=0) {
+            if(frame<sent+15) return 0;
+            check(Research::owns(house->ArrayIndex,picked) && Research::pendingBuildingRewards(house->ArrayIndex).size()==2 &&
+                Research::balance(house->ArrayIndex)==0,"card click grants one free research through the command queue");
+            check(ResearchAudio::sampleCache().contains("builtin:select"),"free selection plays the confirmation cue");
+            Sleep(720);SF_ResearchDraw(nullptr);
+            check(!Research::expanded,"free selection animation completes");
+            TerminateProcess(GetCurrentProcess(),0);return 0;
+        }
         DWORD eng=0,spy=0,claimed=0,real=0;std::ifstream("building-reward.ids")>>eng>>spy>>claimed>>real;
         check(Research::buildingRewards.contains(eng) && Research::buildingRewards.at(eng).source==Research::BuildingRewardSource::Engineer &&
               Research::buildingRewards.contains(spy) && Research::buildingRewards.at(spy).source==Research::BuildingRewardSource::Spy &&
               !Research::buildingOptions(eng,house->ArrayIndex).empty() && !Research::buildingOptions(spy,house->ArrayIndex).empty(),"saved permissions");
         check(Research::buildingRewards.contains(claimed) && Research::buildingRewards.at(claimed).claimed,"saved claimed");
+        check(Research::completedRounds.empty(),"free research round zero survives load");
         check(Research::buildingOptions(claimed,house->ArrayIndex).empty(),"loaded no duplicate");
-        TerminateProcess(GetCurrentProcess(),0);
+        vector<string> restored,expected;string option;
+        for(int i:Research::buildingOptions(spy,house->ArrayIndex)) restored.push_back(Research::options[i].id);
+        std::ifstream saved("building-reward.board");while(saved>>option) expected.push_back(option);
+        check(restored.size()==3 && restored==expected && Research::pendingBuildingRewards(house->ArrayIndex).size()==3,
+            "weighted board and free count survive load");
+        check(HouseClass::CurrentPlayer==house && !house->Defeated && !house->IsObserver() &&
+            !ScenarioClass::Instance->UserInputLocked,"restored player HUD is interactive");
+        checkBadge();
+        check(!ResearchAudio::sampleCache().contains("builtin:available"),"restored free rewards do not replay the cue");
+        click(tabCenter());
+        auto cards=Research::buildingOptions(Research::rewardPanel,house->ArrayIndex);
+        check(!cards.empty(),"free panel accessible after load");
+        const int slot=static_cast<int>(cards.size())/2;
+        picked=Research::options[cards[slot]].id;
+        const auto& view=DSurface::ViewBounds;
+        int count=static_cast<int>(cards.size()),gap=view.Width>=720?16:8;
+        int width=std::min({244,(view.Width-24-(count-1)*gap)/count,(view.Height-94)*2/3});
+        int left=view.X+(view.Width-count*width-(count-1)*gap)/2;
+        click({left+slot*(width+gap)+width/2,view.Y+view.Height/2});
+        sent=frame;
     }
     return 0;
 }

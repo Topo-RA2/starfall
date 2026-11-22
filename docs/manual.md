@@ -1,7 +1,7 @@
 # Starfall Lab: Configuration and Lua Reference
 
 Document language: English. Audience: mod authors, AI assistants, and maintainers.
-Applies to: Starfall Lab 0.37, as implemented in this repository on 2026-11-19.
+Applies to: Starfall Lab 0.38, as implemented in this repository on 2026-11-21.
 Runtime: a 32-bit DLL extension for Command & Conquer: Yuri's Revenge.
 
 This is a reference for the implemented interfaces, not a proposal for future features. Field names in code font are literal configuration keys. `required` means that omission makes the described configuration invalid. Defaults apply when a field is omitted, subject to configuration inheritance. Native game fields such as `Spawns`, `Locomotor`, and `SuperWeapon` belong to the game or another extension; Starfall does not redefine them.
@@ -146,6 +146,8 @@ Each tank counts its own qualifying kills. Every third kill attempts to heal tha
 | `OnPassiveGained` | This passive becomes newly available on the holder. | None. |
 | `OnPassengerConsumed` | Holder's direct passenger is consumed by Starfall's action. | Consumed passenger's saved information. |
 | `OnBuildingUpgrade` | A native building upgrade is successfully installed. | Host building; `Self` is also the host. Bind this passive to the **upgrade type**, not merely the host type. |
+| `OnBuilt` | A factory-produced standalone building is successfully placed, before its buildup finishes. Human and AI factory paths are supported. | Newly placed building as `Self`; no counterpart. |
+| `OnBombDetonate` | An armed Ivan bomb actually detonates; callbacks were captured when planted. | Independent Lua context: `ctx.point`, `ctx.owner`, `ctx.damage`; `ctx.self` is nil. |
 | `OnSignal` | A queued signal matching `Signal` is delivered. | Optional unit attached to the signal; sender is separate. |
 | `OnInterval` | Holder's positive `Interval` elapses while eligible and on-map. | Current aimed unit or ground target at that time. |
 | `WhileState` | Continuous evaluation while eligible. | Current target, where a formula needs it. No action list. |
@@ -153,9 +155,15 @@ Each tank counts its own qualifying kills. Every third kill attempts to heal tha
 
 Use `Active`, not the internal name `OnCast`. `OnSuperWeapon`, `OnMapTrigger`, and `OnScheduled` are internal execution contexts, not ordinary `Trigger` values to register.
 
+An already captured `OnKill` still executes owner/location effects if its holder is removed before queued dispatch (for example, a terror drone exiting a destroyed vehicle). Live-unit actions still require a valid target. Casterless Starfall detonations retain the captured house for native damage filtering and passive grants.
+
 Newly created veteran/elite units and rank restored from a save do not count as promotions. Renewing a passive, overlapping sources, reapplying stacks, or loading a save does not repeat acquisition events. Completely losing the passive and later acquiring it can trigger acquisition again.
 
 `OnBuildingUpgrade` obtains its skill list from the installed upgrade type's bindings, then executes against the host. Its event stack snapshot is 1. Failed installations do not emit this event. It does not grant the upgrade's entire passive list permanently to the host.
+
+`OnBombDetonate` accepts only `Trigger`, `Action=RunScript`, `Action.Script`, `Action.Function`, and `Script.Param.*`; the passive ID must be at most 121 bytes. It does not use normal holder filters, count, chance, cooldown or maximum-trigger fields. The callback is tied to the bomb, with no live planter handle. It runs after the main damage/animation step and may schedule independent callbacks. `ctx.damage` is the main area damage before victim armor, including the firepower captured at planting; store it in task data if later callbacks need it. `ctx.point` is the detonation cell, so moving targets use their current explosion position. No callback is emitted on disarm or a harmless/off-map bomb. Research acquired after planting does not change an existing bomb.
+
+`OnBuilt` fires once on successful factory placement, not when the production timer completes. It does not fire for failed placement, preplaced buildings, captures, `SpawnBuilding`, transformations, upgrade attachments, walls/pavement, or loading a save. Bind it to the produced building type, or grant it through research. Research acquired after placement does not award previous construction. Actions run through the normal synchronized event queue; nearby gifts use `SpawnBuilding`'s normal deterministic placement and can fail when no valid space exists.
 
 ### Target names
 
@@ -170,9 +178,9 @@ Newly created veteran/elite units and rank restored from a save do not count as 
 
 For deploy, promotion, and passive-acquisition actions, `Target` resolves to `Self`, although their event counterpart for filtering/formulas is absent. Building-upgrade events explicitly use the host as both holder and counterpart.
 
-Default `Action.Target` is `Target` for `StealPassive` and `OnBeforeDealDamage`; otherwise it is `Self`. `SelfDestruct` and `ReplaceWeapon` require `Self`. Damage-interception targeting is more restrictive than ordinary targeting.
+Default `Action.Target` is `Target` for `ConsumeTarget`, `StealPassive` and `OnBeforeDealDamage`; otherwise it is `Self`. `SelfDestruct` and `ReplaceWeapon` require `Self`. Damage-interception targeting is more restrictive than ordinary targeting.
 
-The positional actions are exactly `FireWeapon`, `DetonateWarhead`, `SpawnUnit`, `SpawnBuilding`, `SpawnCrate`, `SpawnPickup`, `PlayAnim`, `PlaySound`, `ShakeScreen`, and `SpawnParticleSystem`. They accept `VictimLocation`; Lua can supply a point table as their `Target`. A missing/dead unit does not become a valid heal or transformation target merely because its old position is known.
+The positional actions are exactly `FireWeapon`, `DetonateWarhead`, `SpawnUnit`, `SpawnBuilding`, `SpawnCrate`, `SpawnPickup`, `RemovePickup`, `PlayAnim`, `PlaySound`, `ShakeScreen`, and `SpawnParticleSystem`. They accept `VictimLocation`; Lua can supply a point table as their `Target`. A missing/dead unit does not become a valid heal or transformation target merely because its old position is known.
 
 ### Event pipeline and snapshots
 
@@ -247,6 +255,7 @@ The first qualifying replacement is considered. If it cannot fire at the target,
 | `Condition.Nearby.Range` | none | Required when using nearby conditions; integer `1..32` cells. |
 | `Condition.Nearby.Houses` | `All` | List: `All,Self,Allies,Enemies,Neutral`. |
 | `Condition.Nearby.Kinds` | `All` | List: `All,Infantry,Vehicle,Aircraft,Building`. |
+| `Condition.Nearby.Types` | `*` | Concrete unit IDs or research categories such as `@Infantry`; combined with house and kind filters. |
 | `Condition.Nearby.CountAtLeast` | `1`, or `0` if only an upper bound is supplied | Nonnegative inclusive bound. |
 | `Condition.Nearby.CountAtMost` | `2147483647` | Inclusive bound, at least the lower bound. |
 | `Condition.Nearby.ScanInterval` | `10` | Positive frames; staggered sampling, cached between scans. Before first sample, condition is false. |
@@ -271,7 +280,7 @@ All following fields belong to a `WhileState` passive. Omitted numeric multiplie
 | `Modifier.WeaponRangeMultiplier` | Number or formula, `0 < value <= 100` | Standard maximum weapon range. |
 | `Modifier.FireRateMultiplier` | Number or formula, `0 < value <= 100` | Divide standard volley rearm delay by this value; does not rewrite intra-burst delays. |
 | `Modifier.PowerMultiplier` | Number or formula, `0 <= value <= 100` | This building's supply or drain; zero is allowed. |
-| `Modifier.VisualScale` | Fixed number `0.01..2.00` | Mobile-unit drawing scale, not footprint. |
+| `Modifier.VisualScale` | Fixed number `0.01..2.00` | Unit/building drawing scale, not footprint. Building body, voxel turret and native owned animations follow the same scale. Set voxel turret offsets (`TurretAnimX`, `TurretAnimY`) in ordinary-size pixels. The renderer scales the mounting point and barrel with the body. Configure the foundation and fire offsets separately in art. |
 | `Modifier.ProjectileScale` | Fixed number `0.50..2.00` | Projectile, impact explosion, and existing `CellSpread` scale at launch. |
 | `MultiShot` or `Modifier.MultiShot` | Nonnegative integer, formula, `yes`, or `no` | Extra distinct targets; specify only one alias. `yes` means `$(This.Stack)`, `no` means zero. |
 | `Modifier.DisablePrimary` | `yes` / `no` | Disable standard primary slot. |
@@ -306,6 +315,8 @@ Permanent event bases are bounded by `[Starfall.PassiveLimits]`. Each upper/lowe
 For example, `[Starfall.PassiveLimits] Firepower=200%` caps accumulated event firepower at twice its base. Invalid limits are logged and replaced by defaults, with the default minimum reduced if necessary to fit the maximum.
 
 Weapon-slot disabling takes precedence over replacement. Multiple active replacements use the last in processing order; do not use registry numbering as an assumed ordering API. Native rank/deploy weapon changes are still resolved. `FireWeapon` uses its explicitly named weapon instead of the slot replacement.
+
+Ivan bombs snapshot the planter’s firepower and projectile scale at planting, applying the scale to the native explosion radius. Native rocket-locomotor impacts (including V3 missiles) also honor the missile’s firepower and projectile scale; their impact animations scale with the blast. The missile’s own VisualScale controls its body. Shared warhead radii are restored after each synchronous impact.
 
 Projectile scale is captured at launch; later state changes do not resize an already launched shot. Scaling an original `CellSpread=0` does not create an area. Multishot chooses nearest eligible extra enemies, at most one extra projectile per target; contributions add, fractional counts round down, and negative formula results contribute zero. Extra shots do not consume additional ammo or recursively emit `OnFire`. Native spawner and `LimboLaunch` weapons keep their own behavior.
 
@@ -376,6 +387,8 @@ The following table describes ordinary INI action sections. Context restrictions
 | `ApplyIronCurtain` | `Action.Duration`: positive frames. | Apply native iron curtain, preserving a longer existing duration; existing force shield takes precedence. |
 | `GiveCredits` | Same amount choice as `Heal`. | Add money to recipient's owner, or the explicit owner context in a sequence. |
 | `GiveResearchPoints` | Same amount choice as `Heal`. | Add research points; respects the research enable switch. |
+| `GrantFreeResearch` | Optional `Action.ResearchOptions` (comma-separated project IDs) and `Action.Rarity=All`. | Give the recipient’s owner one free choice through the research button. See [free research choices](#free-research-choices). |
+| `GrantRandomResearch` | Optional `Action.Rarity=All` (`All,Common,Rare,Epic,Insane`); no amount field. | Immediately acquire one free random project for the recipient's owner. See random research rewards below. |
 | `ChangeMaxHealth` | Nonzero signed integer `Action.Amount` **or** `Action.MaxHealthPercent=1%..10000%`. | Permanently change maximum health; percentage only increases it. |
 | `ChangeAmmo` | Nonzero signed integer `Action.Amount`. | Change finite ammo, clamped to magazine bounds. |
 | `ChangeSpeed` | Nonzero signed integer percentage points or formula in `Action.Percent`. | Permanently change speed base. |
@@ -390,8 +403,10 @@ The following table describes ordinary INI action sections. Context restrictions
 | `Transform` | `Action.UnitType` (also used for building IDs). | Convert a living object within its class. Buildings require exactly matching occupied foundation cells; see conversion restrictions. |
 | `ChangeOwner` | Optional `Action.Owner=Self`. | Transfer a living unit; skip if already owned by that house or under mind control. |
 | `SpawnPickup` | Required `Action.PickupType`, an ID registered in `[Starfall.PickupTypes]`. | Place a non-blocking ground pickup at the selected cell, searching outward up to 3 cells if necessary. |
+| `RemovePickup` | Optional `Action.Range=0` and `Action.PickupTypes=*` (comma-separated registered IDs or `*` alone). | Remove matching ground pickups without granting their rewards. `0` selects the exact cell, positive integers select an inclusive circular radius in cells, and `-1` selects the whole map without a center. Native crates are unaffected. |
 | `SpawnCrate` | Optional `Action.CrateType=Random`. | Place a crate near the target position. |
 | `SelfDestruct` | `Action.Target=Self` only. | Destroy the holder through the supported normal death path. |
+| `ConsumeTarget` | Defaults to `Action.Target=Target`. Accepts a live map unit or building, including an explicit Lua handle. | Remove the selected object directly. It produces no damage, death, kill or passenger-consumed event. |
 | `ConsumePassenger` | No `Action.Amount`. | Consume first direct passenger and its nested cargo; emit one direct-passenger event. |
 | `GrantPassive` | `Action.Passive`; optional `Action.Duration=-1`, `Action.StackOnReapply=no`. | Give one registered passive, permanently or for positive frame duration. |
 | `StealPassive` | `Action.Passive` list; optional positive integer `Action.Amount=1`. | Transfer at most that many layers per ID from recipient/donor to holder. |
@@ -408,8 +423,8 @@ The following table describes ordinary INI action sections. Context restrictions
 | `PlaySound` | `Action.Sound`. | Native sound ID or `wav:` followed by a PCM WAV path. |
 | `ShakeScreen` | `Action.ShakeX=0`, `Action.ShakeY=4`, `Action.ShakeLocal=yes`. | Native screen shake; axes `0..32`, at least one nonzero. |
 | `SpawnParticleSystem` | `Action.ParticleSystem`. | Create an existing particle-system type at or toward the target. |
-| `ForceMove` | `Action.ForceMove.*` fields below. | Schedule forced ground-unit movement/lift. |
-| `ChronoTeleport` | `Action.Destination=X,Y`; optional `Action.SearchRadius=3`. | Teleport a supported on-map ground mobile unit to an available cell. |
+| `ForceMove` | `Action.ForceMove.Duration` plus `Action.ForceMove.Mode` or `Action.ForceMove.Offset`. See [all 12 fields and example](#forcemove-fields). | Schedule forced ground-unit movement/lift. |
+| `ChronoTeleport` | `Action.Destination=X,Y`; optional `Action.SearchRadius=3`, `Action.Instant=no`. | Teleport a supported on-map ground mobile unit to an available cell. |
 
 For signed integer amounts, `+10` and `-10` are valid; zero is invalid where the table says nonzero. Percent-of-damage amounts round down. Fixed event percentage changes accumulate in percentage points: two `+10%` actions produce 120% from a 100% base, not 121%.
 
@@ -422,6 +437,8 @@ Maximum-health increases also add the increase to current health; decreases only
 ### Custom ground pickups
 
 Register each type in `[Starfall.PickupTypes]`. Its section accepts `Image` (optional theater unit-palette SHP, transparent index 0, one animation frame per four game frames), `Lifetime` (positive game frames, default `-1` for permanent), and one of `Action`, `Actions`, or `RandomActions` with the usual action parameters. The default art is used when the custom image is omitted or unavailable. Native crate limits and expiration are independent. Pickups skip native crate overlays. Targeted native crates whose final cell contains a pickup search within three cells for a legal alternative, failing if none exists. Random crate refreshes skip occupied cells through the normal retry path.
+
+To clear all remaining wave tokens, use `Action=RemovePickup`, `Action.Range=-1`, and `Action.PickupTypes=SF_WaveToken`. Range uses the actual landing cell. Unknown IDs invalidate the action. Lua accepts the same fields, for example `ctx:action("RemovePickup", {Target=ctx.point, Range=5, PickupTypes={"SF_MedKit","SF_SupplyBox"}})`. It returns true if at least one pickup was removed.
 
 A ground infantry or vehicle on the cell collects it once, regardless of owner. Self and Target resolve to the collector, VictimLocation to the pickup cell. If several units occupy the same cell, the lowest object ID wins. A full-health collector still consumes a healing pickup. Ground pickups persist in saves.
 
@@ -538,6 +555,8 @@ Action.Amount=100
 
 `Actions` preserves order and duplicate section IDs. The parent cannot also contain `Action` or `Action.*`; child sections contain only one `Action` and its fields, with no nested `Actions`. Empty items, missing sections, unknown action fields, or invalid steps reject the passive. All steps share one count/chance/cooldown decision. One successful step is enough for success; a failed heal does not prevent the money step. No transactional rollback is promised for already executed steps.
 
+For a fusion script, call `ctx:action("ConsumeTarget", {Target=material})` for a selected unit and check its boolean result. Targets must be on the map and outside a transport. A target with passengers, garrison occupants, a bunker link or an attached parasite cannot be consumed. Its handle becomes invalid on success. A failed consumption stops the rest of an ordered INI action list or Lua `ctx:actions` call. Earlier successful actions remain applied.
+
 `ConsumePassenger` has a deliberate exception: failure stops the remaining steps in that INI `Actions` list or Lua `ctx:actions` call. Previous steps are not rolled back. Success replaces the following steps' counterpart snapshot with the consumed passenger, so a live-target action does not accidentally fall back to the original enemy. The direct passenger's recorded layers are shared with its queued consumption event and can only be transferred once. Nested cargo is removed without emitting a separate consumption event for every nested unit. This interface operates on passenger lists, not a building's separate garrison list, and does not synthesize ordinary passenger kill/death passive events.
 
 ### ForceMove fields
@@ -587,6 +606,8 @@ Action.ForceMove.BlowWeight=5
 
 `ChronoTeleport` is a separate action. Its `Action.Destination` uses integer cells `0..511`; `Action.SearchRadius` is an integer `0..32`, default 3. It tries the center then the nearest valid cell in the circular search, avoiding reserved teleport destinations. Zero radius only tries the exact cell. Failure leaves the unit in place.
 
+`Action.Instant=yes` uses the same landing validation but relocates immediately, without native chronosphere freezing or warp-weapon triggers. It clears current movement/orders, updates cell occupancy, threat/sensor registration, and resumes Guard with the same unit identity, health and effects. Incompatible borrowed locomotion and parasite victims are rejected. Default `no` preserves native `ChronoWarpTo` behavior. Lua uses `Instant=true`. Do not relocate inside synchronous damage interception; schedule it for a later frame.
+
 ### Signals
 
 | Field | Default | Constraint / meaning |
@@ -619,7 +640,7 @@ Formulas are a small expression language, not Lua. Wrap the complete expression 
 | `MultiShot` / `Modifier.MultiShot` | Extra-target count, floored; negative contributes zero. |
 | `Action.Signal.Value` | Finite numeric payload. |
 
-Operators: unary `+ -`, arithmetic `+ - * /`, parentheses, comparisons `> >= < <= == !=`. Functions: `min(a,b)`, `max(a,b)`, `clamp(x,low,high)`, and `if(condition,thenValue,elseValue)`. Names are case-insensitive. Decimal literals and percentage literals are supported; `1.5%` is `0.015`.
+Operators: unary `+ -`, arithmetic `+ - * /`, parentheses, comparisons `> >= < <= == !=`. Functions: `min(a,b)`, `max(a,b)`, `clamp(x,low,high)`, `floor(x)` (round toward negative infinity), and `if(condition,thenValue,elseValue)`. Names are case-insensitive. Decimal literals and percentage literals are supported; `1.5%` is `0.015`.
 
 Comparisons bind less tightly than arithmetic and return 0 or 1. Chained comparisons such as `1 < x < 5` are invalid. Combine comparisons explicitly, for example `$( (Self.Ammo >= 1) * (Self.Ammo <= 3) )`. There are no `&&`, `||`, Lua `and/or`, arbitrary functions, or arbitrary unit properties.
 
@@ -631,6 +652,9 @@ Comparisons bind less tightly than arithmetic and return 0 or 1. Chained compari
 | `Self.Cost` | Holder type's base Cost, before country/factory/research discounts. |
 | `Self.Ammo` | Ammo count; unlimited ammo is `-1`. |
 | `Self.Passengers` | Direct passenger count. |
+| `Self.Rank` | Current rank: 0 rookie, 1 veteran, 2 elite. **WhileState only.** |
+| `Self.GattlingStage`, `Self.MaxGattlingStage` | **WhileState only.** Current weapon stage (1 through `WeaponStages`) and stage count. An uncharged Gattling starts at 1. Both values are 0 for units without configured Gattling stages. Reevaluated at each state tick, including while idle. |
+| `Owner.PowerOutput`, `Owner.PowerDrain`, `Owner.PowerSurplus` | Current owning house's total supply, total drain, and supply minus drain (may be negative). **WhileState only.** Recomputed with continuous states after native power-grid updates; no local-player data or RNG. |
 | `Target.Health`, `Target.MaxHealth`, `Target.Cost` | Counterpart snapshot/current target values, not Action.Target's values. A real unit is required. |
 | `This.Stack` | Executing passive's stack snapshot/current effective count. |
 | `Event.Damage` | Actual lost health for OnDealDamage/OnTakeDamage; current pending loss for the two before-damage events. Restricted to those damage triggers. |
@@ -646,6 +670,7 @@ Examples:
 ; Separate fragments: merge a line only into a compatible definition.
 Condition.Formula=$(Self.Health <= Self.MaxHealth * 50%)
 Modifier.FirepowerMultiplier=$(1 + This.Stack * 10%)
+Modifier.FireRateMultiplier=$(1 + clamp(floor(Owner.PowerSurplus / 500), 0, 5) * 10%)
 Action.Amount=$(min(Event.Damage * 25%, 100))
 Action.Percent=$(5%)
 ```
@@ -654,7 +679,65 @@ The amount example requires a supported damage event. A constant formula does no
 
 ## Research projects
 
-On the Tab diplomacy screen, select Research beside a player to see that house's completed projects in acquisition order, including free building research. Hover over an icon for its name, rarity and effect details. Use the arrows to page through longer rows.
+On the Tab diplomacy screen, select Research beside a player to see that house's completed projects in acquisition order, including free research rewards. Hover over an icon for its name, rarity and effect details. Use the arrows to page through longer rows.
+
+The six ordnance/unlock projects are: Cloning Center (Epic, Allied/Soviet NACLON license), Grand Cannon (Rare, every non-French country including Yuri, combines with giant defense), Ivan Boom (Common, planted bomb damage and blast radius x2), Armed Miner (Epic, each HARV permanently rolls an equally likely TankBolt / 120mmx / AKM family and uses its elite variant at elite rank), Big Rocket (Epic, V3ROCKET health/damage/visual size/blast radius x2), and Fireworks (Rare, 8 real secondary blasts at 3-frame intervals within 2 cells, each 20% of the main bomb's base damage, including its captured firepower modifier). Copy `examples/HexBrawl.lua` to the game root for Fireworks. Disarming a bomb produces no extra blasts. The planter may die before or during the sequence. Pending bombs, Lua tasks and their random stream survive save/load. Install the updated DLL and merge the new companion warhead.
+
+Forked Current (Epic, Soviet) gives Tesla Troopers, Tesla Tanks and ordinary or giant Tesla Coils one extra eligible target. Scavenger (Common) uses HexBrawl.lua to select one surviving friendly Brute within three cells of a Brute death, add 50 maximum HP and 10 size percentage points, and heal to the new maximum. Brain Disruption (Common) gives a damaged Mastermind a 40% chance to berserk its mobile attacker for 45 frames. Psychic Reinforcement (Epic) grants friendly infantry within five cells of a Mastermind 50% armor and 20% fire rate, with one bonus across overlapping auras. Big Dog (Common) gives both attack dog types 20% armor and grants the killing dog 30 maximum HP and 20 size percentage points per enemy kill.
+
+The HexBrawl example contains 85 projects. Gatling Downpour (Rare, Yuri) grants Gattling Tanks and ordinary or giant Gattling Cannons 80% firepower while their current stage is the highest for that type. Set `Condition.Formula=$(Self.GattlingStage == max(1, Self.MaxGattlingStage))` and `Modifier.FirepowerMultiplier=1.80` under `Trigger=WhileState`. The bonus ends when the stage drops. Armor Piercing (Rare, Allied) lets a Guardian GI mark enemy vehicles and aircraft on a damaging hit. Further ordinary hits deal 30% more damage for 30 frames. Smoke Shell (Rare, Soviet) lets Flak Troopers, Flak Tracks and ordinary or giant Flak Cannons reduce a damaged enemy's firepower to 80% and range to 75% for 30 frames. Reapplying either mark refreshes its timer. Tesla Lunge (Common, Soviet) grants Tesla Troopers 1.30× speed, 1.75× firepower and 0.70× weapon range.
+
+The five economy and combat projects are Buy One Get One (Common, successful Tesla/Flak placement grants an ordinary Sentry Gun within 5 cells), Power Turbine (Common, GAPOWR output x1.5), Trash to Treasure (Rare, TELE enemy kill credit creates a native random-reward crate at the victim, using the current game rules for rewards), Power Surplus (Common, consuming conventional defenses gain 10% fire rate per full 500 spare power, capped at 50%), and Prism GI (Epic, E1 cost x2 and armor x1.5, deployed damage 32 and range 7; elite range 8). Both defense projects include matching giant variants. Gift placement can fail if the surrounding area is full. Prism GI keeps the Expedition original ROF and single-shot cadence; its ordinary/mobile weapon is unchanged. Merge the two new WeaponTypes and weapon sections from `HexBrawl.rules.ini`, install the current DLL, and choose either the PNG or PCX configuration. The example uses Ares WeaponTypes registration for its custom weapons (including Prism GI and Shrink Ray); those projects are unavailable without the weapon loader.
+
+The five tactics projects are Chain Reaction (Rare, DRON enemy vehicle kill detonates 90 base damage within 1.5 cells, applies 15-frame EMP to enemy vehicles only, KTSTLEXP elite-Kirov animation), Battlefield Recovery (Rare, all owned @GroundVehicle deaths refund floor(base Cost * 0.30); sale, transformation, consumption and nonfatal disposal do not award), Maglev Acceleration (Common, ROBO speed/fire rate x1.3), Red Conviction (Epic, BORIS armor x1.5, nonstacking self/friendly/allied aura within 4 cells grants firepower x1.3 and protection against new mind control), and Agile Reflexes (Epic, TANY independently dodges 70% of enemy damage hits with no dodge cooldown). Successful dodges schedule relocation one frame later, after the damage stack unwinds. Tanya prefers the attacking detectable enemy ground vehicle within 12 cells, otherwise the nearest such vehicle, and searches up to 2 cells around it for an empty landing. This uses Instant=true, avoiding native chronosphere freezing. Only successful relocation starts a 45-frame cooldown; no target/space still preserves the dodge. The saved Lua state tracks cooldown and pending relocation. Install the current DLL and merge the companion rules; copy HexBrawl.lua to the game root.
+
+### Free research choices
+
+Use `Action=GrantFreeResearch` to let the target unit's owner choose one technology from the top-right research button. Each successful grant adds one to the badge and plays the configured free-research notification. Map scripts and ActionSequence superweapons can give the choice to their owner. Lua accepts, for example, `ctx:action("GrantFreeResearch", {ResearchOptions={"SF_HX_SmokeShell","SF_HX_TeslaLunge"}})`.
+
+| Scope | Cards offered |
+| --- | --- |
+| Omit `Action.ResearchOptions` | Draw up to three distinct registered projects using the global rarity weights. |
+| Set 1–3 distinct project IDs | Show eligible listed projects in configuration order, including zero-weight rarities. |
+| Set 4 or more distinct IDs | Draw up to three distinct listed projects. Each slot draws a nonempty rarity by global weight, then a project from that rarity. |
+| Set `Action.Rarity` to `Common`, `Rare`, `Epic` or `Insane` | Restrict either pool to that rarity, including a rarity with zero global weight. |
+
+All choices respect the recipient's country, prerequisites and existing ownership. An empty eligible pool gives no choice. Multiple grants can wait independently. If the player acquires another project, pending offers are recalculated within their original scope. Reopening the panel and loading a save preserve the offer for the same ownership state. Claiming costs zero points and preserves the ordinary purchase round and used refresh slots.
+
+```ini
+[SF_SovietResearchReward]
+Trigger=OnKill
+MaxTriggers=1
+Action=GrantFreeResearch
+Action.ResearchOptions=SF_HX_SmokeShell,SF_HX_TeslaLunge
+```
+
+A research project or a section referenced by its `Effects` list can also grant one choice. Set `Effect=GrantFreeResearch` and optionally `Reward.ResearchOptions` and `Reward.Rarity` (default `Any`). Its reward becomes available after the project itself is acquired.
+
+### Random research rewards
+
+External game extensions can read the resulting ownership through the [native research query](#native-research-query).
+
+`Action=GrantRandomResearch` awards exactly one registered project to the target unit's owner (`Action.Target=Self` by default). It also supports the owner context of map scripts and ActionSequence superweapons, and Lua `ctx:action("GrantRandomResearch", {Rarity="Epic"})`. For a research project's own reward, use the separate `Effect=GrantRandomResearch` described below.
+
+Research effects accept `Reward.Rarity=Any` (default; also `Common`, `Rare`, `Epic`, `Insane`) and `Reward.Count=1` (default, range 1..256). These fields work both directly on a project and in an `Effects` entry. The source is recorded as owned before drawing rewards, excluding itself and every other owned project. Other reward projects may be drawn and enqueue their own rewards; each project's direct draws finish before queued chains are processed. The whole chain is synchronous, deterministic and saved through the resulting ownership and RNG state. Loading a save or creating a unit never awards these rewards again. Only the original ordinary purchase costs points and advances its round. Empty specified tiers never fall back; a partially exhausted pool awards only the remaining eligible projects. A reward-only cycle with no usable terminal project cannot be selected.
+
+The infantry/reward additions are Super Body Armor (Epic, all owned infantry armor x3 and speed x0.85), Hua Tuo Scroll (Rare, all owned on-map infantry heal 25 HP every 30 frames, capped at maximum), Chaos Destiny (Epic, 2 random projects of any rarity), Epic Transmutation (Rare, 1 Epic project), and Rare Transmutation (Common, 1 Rare project). Both infantry bonuses cover existing and future infantry and follow current ownership. Install the updated DLL with either icon configuration; these five projects do not require Lua.
+
+`Action.Rarity=Common`, `Rare`, `Epic`, or `Insane` restricts the draw to that rarity. Omit the field or set `All` to draw uniformly from all eligible projects across all rarities. `RarityWeight.*` only controls ordinary offers and is not used by this reward; a zero-weight tier can still be awarded. A specified empty tier fails without falling back to another rarity. The pool excludes owned projects, wrong-country projects, unmet/invalid prerequisite chains, invalid effects, and projects whose effects cannot currently apply. No eligible project means no award and no RNG draw; Lua reports `false`. Otherwise the draw uses the saved, synchronized extension RNG shared with Lua random calls; it does not advance the native game RNG. The project's normal effects execute before ownership and acquisition order are recorded.
+
+This result respects `Enabled` and `AnnounceSelection`, costs no points, and does not advance `SharedRaritySequence` or ordinary purchase counts. After an award, ordinary offers are rebuilt on every peer to exclude acquired projects; already-used refresh slots remain used. Ownership and effects persist through saves like other acquired research. `AllowAIResearch` controls autonomous purchases only and does not prevent this explicit reward for an AI house.
+
+```ini
+[SF_RandomEpicReward]
+Trigger=OnKill
+MaxTriggers=1
+Action=GrantRandomResearch
+Action.Target=Self
+Action.Rarity=Epic
+```
+
+Register this passive in `[Starfall.PassiveTypes]` and bind/grant it to a unit as usual. Use `Action.Rarity=All` for unrestricted rarity. `MaxTriggers=1` in this example is per unit, not a once-per-house limit; binding the passive to many units can award many projects.
 
 ### Project schema
 
@@ -663,6 +746,7 @@ Register every project in `[Starfall.ResearchTypes]`. Ordinary purchase costs ex
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `Name` | Project ID, except built-in legacy defaults | Display name. |
+| `TargetLabel` | derived from the effects and their target types | Text after the dot in this project's card subtitle. Set it on the project section, including projects with `Effects`. Omit it or leave it blank to use the automatic label. |
 | `Summary` | empty, except legacy defaults | Short card description. |
 | `Detail` | generated where supported | Hover description; supported placeholders below. |
 | `Icon` | built-in fallback | PNG or engine-loadable PCX path. |
@@ -675,7 +759,7 @@ Register every project in `[Starfall.ResearchTypes]`. Ordinary purchase costs ex
 | `TargetTypes` | required where specified below | Recipient or production-type list, depending on effect. |
 | `Credits` | `0` | GiveCredits amount; must be positive for that effect. |
 | `Technology` | none | UnlockTech's existing techno type ID. |
-| `FromType`, `ToType` | none | Conversion source/destination IDs. |
+| `FromType`, `ToType` | none | Conversion or production-replacement source/destination IDs. |
 | `CostModifier`, `Category` | none | Cost effect parameters. |
 
 Unknown prerequisites, cycles, and chains depending on invalid references block affected projects. Country restrictions and prerequisites are evaluated separately from immediate target availability. A valid conversion project may be visible while temporarily having no eligible conversion targets.
@@ -687,14 +771,21 @@ Unknown prerequisites, cycles, and chains depending on invalid references block 
 | `GrantPassive` | `Passive`, `TargetTypes` | Current and future matching units of purchaser receive the passive; ownership changes use the new owner's research. |
 | `GiveCredits` | Positive integer `Credits` | One-time money award. |
 | `UnlockTech` | `Technology` | Purchaser gains production permission for one existing type. Factory compatibility, funds, and build limits still apply. |
+| `GrantFreeResearch` | Optional `Reward.ResearchOptions` and `Reward.Rarity=Any`. | Queue one [free research choice](#free-research-choices) after the source project is acquired. |
+| `GrantRandomResearch` | Optional `Reward.Rarity=Any` and `Reward.Count=1` (1..256). | Acquire free random projects after source ownership commits; see random research rewards. |
+| `ReplaceProduction` | Different registered `FromType`, `ToType` of the same object class (buildings also require the same `BuildCat`). | Purchaser stops producing the source and instead produces the destination, retaining the source's country, technology, prerequisite and factory checks. The destination's own build limits also apply. Existing objects remain unchanged; unplaced source orders are cancelled and paid credits refunded. Destination types are hidden from other houses, including AI, unless explicitly licensed by `UnlockTech`. Use a separate destination with `TechLevel=-1`. |
 | `ConvertInfantry` | Different valid infantry `FromType`, `ToType` | Convert currently eligible owned infantry; future production is unchanged. |
 | `ConvertVehicle` | Different valid vehicle `FromType`, `ToType` | Convert currently eligible owned vehicles, including supported ships; future production is unchanged. |
 | `ModifyTypeCost` | Concrete type IDs in `TargetTypes`; nonzero signed integer `CostModifier`, optionally `%` | Permanent per-house production price change for those types. |
 | `ModifyCategoryCost` | `Category`; nonzero signed percentage `CostModifier` | Permanent price change for one sidebar category. |
 
-GrantPassive `TargetTypes` accepts concrete IDs, `*`, `@Infantry`, `@Vehicle`, `@Aircraft`, and `@Building`; lists may mix them. Unknown `@` categories are invalid. These selectors are not universally supported by other fields with the same name. Cost targeting requires real type IDs.
+GrantPassive `TargetTypes` accepts concrete IDs, `*`, `@Infantry`, `@Vehicle`, `@GroundVehicle`, `@Aircraft`, and `@Building`; lists may mix them. Unknown `@` categories are invalid. These selectors are not universally supported by other fields with the same name. Cost targeting requires real type IDs. `@GroundVehicle` selects Unit-class types excluding Naval, JumpJet, BalloonHover, ConsideredAircraft, Winged speed and Fly movement zone. It includes harvesters, transports, MCVs and custom ground types, and remains applicable when a ground vehicle is temporarily knocked airborne. Research, aura, nearby conditions, Lua queries and warhead grant filters share this selector.
 
 Cost categories: `Building` means ordinary buildings; `Defense` means `BuildCat=Combat` buildings; `Infantry` means infantry; `Vehicle` includes ground vehicles, ships, and aircraft. After native country/factory modifiers, add all research percentage deltas, then fixed credit deltas, round to nearest integer, and clamp at zero. A native quote of 700 with `-20%` and `-100` becomes 460. Production orders lock their price when started; cancellation refunds the paid amount.
+
+Production replacements are derived from saved research ownership, with no extra save payload. Keep source and destination IDs unique across active replacements; replacement chains are not supported. Replacement effects affect production only and do not use building `Transform`, which still requires identical occupied foundations. Other research that lists concrete source types must also list the replacement types if both should benefit.
+
+The HexBrawl **Super Defense** epic project replaces nine conventional armed defenses: NALASR, NASAM, TESLA, ATESLA, GTGCAN, GAPILL, NAFLAK, YAGGUN and YAPSYT. It excludes battle/tank bunkers and walls. Merge `examples/HexBrawl.rules.ini` into rules/map rules and `examples/HexBrawl.art.ini` into the existing artmd.ini; never replace the full art file with this fragment. Footprint width and height each double (area x4; Grand Cannon 2x2 becomes 4x4); native price and health double. Type-bound passives provide x2 visual/projectile scale, x2 outgoing damage and x1.5 weapon range. Projectile scaling retains its normal impact-explosion/CellSpread semantics; invisible projectiles have no visible sprite to enlarge. Existing source towers remain unchanged. Mind-control weapon capacity still follows its weapon rules. Other HexBrawl tower research includes the giant IDs. Each giant art section also sets `Starfall.PlacementPreviewScale=2.00` (default 1.0, allowed 0.01..2.00) for the Phobos placement ghost; this does not change the actual foundation. The companion rules explicitly enable giant prism forwarding and mixed ordinary/giant networks following the [Ares prism forwarding rules](https://ares-developers.github.io/Ares-docs/new/buildings/prismforwarding.html).
 
 Effects lists deduplicate repeated effect section IDs while preserving first occurrence. Each effect section must explicitly define its `Effect`; it does not inherit the parent project's fields. Any invalid effect makes the project unavailable. At purchase time, temporarily inapplicable effects are skipped; at least one successful effect is needed to charge points and record ownership. Executed effects are not rolled back if a later effect fails, and skipped instant effects are not granted later.
 
@@ -706,18 +797,26 @@ Candidates exclude owned, invalid, wrong-country, and unmet-prerequisite project
 
 Refresh requires a balance of at least 100, but is free. Each card slot may refresh once per offer round, only to an eligible unseen project of the same rarity. No alternative means no refresh allowance is consumed. Closing/reopening retains the board. Purchasing starts the next round.
 
+With `SharedRaritySequence=yes`, every house uses the same weighted rarity sequence for ordinary research: the first purchase uses sequence entry 1, the second uses entry 2, etc. The sequence depends on the match seed and the house's completed ordinary purchase count, never on its country, house index, selected project IDs, panel opening order, or other players' progress. All cards in a round share that rarity; individual projects remain country/prerequisite/ownership-filtered and are drawn separately for each house. AI research follows the same rule. The sequence is random according to `RarityWeight.*`; it does not force an Epic-first or Rare-second order.
+
+If a house has no eligible project at the designated rarity, it draws from its own remaining nonempty, positive-weight tiers instead. This exception can differ from other houses, but does not skip sequence entries or change anyone else's sequence. Zero-weight tiers remain excluded. A refresh, failed/duplicate purchase, or a free research choice does not advance the counter. Successful ordinary purchases advance exactly once, even while the switch is off. The sequence seed, counter and current board survive saves, including saves before the first purchase. Older saves without this data use the current match seed and resume after the total number of owned projects (including free rewards, which those saves cannot distinguish). For predictable initial boards, configure the switch before starting the match; already saved eligible boards are retained when reloading configuration.
+
 Fields in `[Starfall.Research]`:
 
 | Field | Default | Constraint / behavior |
 | --- | --- | --- |
-| `Enabled` | `yes` | `yes,true,1` enable; `no,false,0` disable research UI, point awards, purchases, and free building research. Stored ownership/points are retained. |
-| `AnnounceSelection` | `yes` | Show the player and project name to everyone after a successful ordinary or free building research choice. Set to `no` to turn off these messages. |
+| `Enabled` | `yes` | `yes,true,1` enable; `no,false,0` disable research UI, point awards, purchases, and free research rewards. Stored ownership/points are retained. |
+| `ShowAvailableAnimation` | `yes` | Five blue trails converge on the research button when an ordinary purchase becomes available or the player receives a free choice. Each free entitlement triggers one local notification. |
+| `AllowAIResearch` | `no` | Enable computer-controlled houses to claim action-granted free choices and buy ordinary research. Every 15 simulation frames each AI first tries to claim one applicable free choice. Otherwise, an AI with at least 100 points randomly chooses an applicable card from its ordinary offer. A successful purchase costs 100 points and follows `AnnounceSelection`. If no card can take effect, the AI keeps its points. |
+| `SharedRaritySequence` | `no` | All houses share the weighted rarity sequence by ordinary purchase number. Specific projects remain independent; an unavailable tier falls back to other eligible positive-weight tiers. Free building research does not advance it. |
+| `AnnounceSelection` | `yes` | Show the player and project name to everyone after a successful ordinary or free research choice. Set to `no` to turn off these messages. |
 | `AllowCardRefresh` | `yes` | Same boolean forms; controls ordinary card refresh. |
 | `Title` | Built-in Chinese text meaning “Choose an upgrade” | Set explicitly for an English interface. |
 | `InitialPoints` | `0` | Nonnegative integer initial points per participating house. |
 | `PeriodicPoints` | `0` | Nonnegative integer award each period. |
 | `PeriodicIntervalSeconds` | `0` | Nonnegative integer game seconds, at most `INT_MAX/15`; both amount and interval must be positive to enable. |
 | `RarityWeight.Common` | `5` | Nonnegative integer. |
+| `RarityName.Common`, `RarityName.Rare`, `RarityName.Epic`, `RarityName.Insane` | 普通, 稀有, 史诗, 疯狂 | Global display name for each tier. Omitted or blank names use that tier's default. Project `Rarity` and reward filters still take the tier IDs. |
 | `RarityWeight.Rare` | `4` | Nonnegative integer. |
 | `RarityWeight.Epic` | `1` | Nonnegative integer. |
 | `RarityWeight.Insane` | `0` | Nonnegative integer; zero disables this rarity. |
@@ -743,12 +842,14 @@ Action.Amount=50
 
 [Starfall.Research]
 Title=Choose an upgrade
+RarityName.Common=Standard
 InitialPoints=100
 PeriodicPoints=10
 PeriodicIntervalSeconds=30
 
 [SF_FieldRepair]
 Name=Field Repair
+TargetLabel=Grizzly Tanks
 Summary=Owned tanks heal after a kill.
 Rarity=Common
 Effect=GrantPassive
@@ -772,17 +873,57 @@ CostModifier=-10%
 
 Do not also bind `SF_ResearchRepair` to `MTNK` if the intended design requires research first.
 
+### Native research query
+
+A 32-bit C or C++ extension can resolve `Starfall_GetOwnedResearch` from the loaded `Starfall.dll`. Call it on the game thread during a match, after initialization or save restoration. Pass the player's `HouseClass::ArrayIndex`. The result includes purchased projects, building rewards and random grants, sorted by normalized INI project ID. For example, `SF_HX_EnergySurge` is returned as `sf_hx_energysurge`. [Public C header](../src/StarfallAPI.h)
+
+The return value is the required buffer size in bytes. A missing house returns `0`. A valid house with no research returns `2` and writes two NUL bytes when space permits. Each ID ends in NUL, followed by one extra NUL at the end of the list. A null or undersized buffer receives no data. The caller owns the copied bytes and can retain them across game frames.
+
+```cpp
+#include "StarfallAPI.h"
+#include <windows.h>
+#include <cstring>
+#include <optional>
+#include <string>
+#include <vector>
+
+std::optional<std::vector<std::string>> ownedResearch(int32_t houseIndex) {
+    HMODULE module = GetModuleHandleW(L"Starfall.dll");
+    if (!module) return std::nullopt;
+    auto query = reinterpret_cast<Starfall_GetOwnedResearchFn>(
+        GetProcAddress(module, "Starfall_GetOwnedResearch"));
+    if (!query) return std::nullopt;
+
+    std::vector<char> buffer;
+    uint32_t bytes = query(houseIndex, nullptr, 0);
+    while (bytes > buffer.size()) {
+        buffer.resize(bytes);
+        bytes = query(houseIndex, buffer.data(), bytes);
+    }
+    if (!bytes) return std::nullopt;
+
+    std::vector<std::string> ids;
+    for (const char* id = buffer.data(); *id; id += std::strlen(id) + 1)
+        ids.emplace_back(id);
+    return ids;
+}
+```
+
 ### Buildings and free research
 
 | Building-type field | Default | Behavior |
 | --- | --- | --- |
 | `Starfall.ResearchPoints` | `0` | Positive points per completed building interval. |
 | `Starfall.ResearchInterval` | `150` | Positive frames; both fields must be positive. |
-| `Starfall.ResearchOptions` | empty | One to three registered project IDs; more than three invalidates the reward list. |
+| `Starfall.ResearchOptions` | empty | Comma-separated project IDs. Up to three distinct IDs use the configured order. Longer lists use the global rarity weights to draw up to three different projects. |
 | `Starfall.ResearchOptions.AllowEngineerCapture` | `no` | Permit reward authorization after successful engineer capture. |
 | `Starfall.ResearchOptions.AllowSpyInfiltration` | `no` | Permit authorization for the spy's owner after successful infiltration. |
 
 Each working building has its own income clock. EMP, offline power, or chrono removal pauses it; construction, sale, or leaving the map clears progress. Ownership change restarts the clock for the new owner.
+
+Open the top-right research button to claim a free choice at any point balance. Its badge counts pending building rewards and choices granted by `GrantFreeResearch`, including building rewards outside the viewport. Free choices open first. Use the button below the cards to cycle through pending rewards and, with sufficient points, return to ordinary research.
+
+In a list of more than three distinct IDs, each slot draws a nonempty rarity tier using `RarityWeight.*`, then picks a project uniformly from that tier without replacement. Invalid, owned and zero-weight candidates are excluded. The board may mix rarities and has fewer than three cards when the pool runs out. It is stable across reopening and save/load with the same configuration and ownership. A building’s fixed list of up to three IDs can explicitly offer zero-weight tiers.
 
 Each physical reward building can be claimed once. Ownership change invalidates old authorization; generic ownership transfer is not a substitute for an authorized capture/infiltration. Claiming is free and ignores project country/prerequisite restrictions, but still requires a valid unowned project and applicable effect. Existing claimed state persists. Older unclaimed authorization without a recorded acquisition source is cleared on load. The building must separately support native capture/infiltration mechanics.
 
@@ -796,6 +937,7 @@ Each physical reward building can be claimed once. Ownership change invalidates 
 | `Starfall.GrantPassives.Duration` | `-1` | Permanent, or positive frames. |
 | `Starfall.GrantPassives.StackOnReapply` | `no` | `yes` / `no`; existing ownership adds one manual layer when enabled. |
 | `Starfall.GrantPassives.Houses` | `All` | List: `All,Self,Allies,Enemies,Neutral`, relative to firing owner and constrained by warhead ownership flags. |
+| `Starfall.GrantPassives.TargetTypes` | `*` | Concrete type IDs or research categories; filters passive grants only, not the warhead's damage. |
 
 `CellSpread=0` grants only to a directly hit unit, not an empty ground point. Positive spread tests eligible recipients around impact; buildings use occupied cells. Zero-damage support hits can grant. Dead/off-map/iron-curtained recipients and zero-verses armor matches are excluded. A single detonation grants each passive at most once to each unit; independent detonations in the same frame remain independent. It does not make an otherwise untargetable unit targetable by the support weapon.
 
@@ -969,6 +1111,7 @@ Legacy Lua metadata (`id`, `trigger`, `callback`, `units`, `cooldown`, `interval
 | `ctx.stack` | Executing passive's event/current task stack value. |
 | `ctx.event.selfHealth`, `ctx.event.selfMaxHealth` | Snapshot values. |
 | `ctx.event.targetHealth`, `ctx.event.targetMaxHealth` | Present when a counterpart health snapshot exists. |
+| `ctx.event.selfPoint` | Recorded death cell on `OnDeath`; usable after the holder is removed. |
 | `ctx.event.targetPoint` | Recorded target cell for supported OnFire events, including ground fire. |
 | `ctx.params` | Read parameters described above. |
 | `ctx.frame` | Current simulation frame. |
@@ -1010,7 +1153,7 @@ All unit methods use `:`. `unit:id()` returns its stable ID; `unit:alive()` chec
 | `ctx:actions(list)` | Ordered array of tables containing `Action` and action fields; returns true if any succeeds. Shared action context supports consume-then-steal. |
 | `ctx:runAction(section, overrides)` | Execute an existing INI single-action section. Overrides are limited to Target, Destination, and ForceMove-specific fields for a ForceMove section. |
 
-Nearby filters use exact Lua keys `houses`, `types`, `includeSelf`. Houses defaults to `All`; types defaults to `*`; both accept a comma-separated string or array of strings. Types accepts research-style `@Category` selectors. A unit center is excluded unless `includeSelf=true`; for a point center there is no center unit to exclude. Relationships are relative to the executing owner. This query is a simulation query, not a general local visibility filter.
+Nearby filters use exact Lua keys `houses`, `types`, `includeSelf`, `visibleOnly`. Houses defaults to `All`; types defaults to `*`; both accept a comma-separated string or array of strings. Types accepts research-style `@Category` selectors. A unit center is excluded unless `includeSelf=true`; for a point center there is no center unit to exclude. Relationships are relative to the executing owner. `visibleOnly=true` excludes hostile undetected cloak/disguise using synchronized owner detection; default false preserves simulation queries. It does not test local UI visibility or fog of war.
 
 Action argument keys are case-insensitive. Prefer `Amount`, `Target`, `Passive`, etc. without the `Action.` prefix. Lua boolean fields map to yes/no. `Target` can be a unit handle, a valid symbolic name for the context, or a point for positional actions. `Destination` can be an integer point for ChronoTeleport. ForceMove accepts shorthand `Offset,Mode,Center,Distance,Height,AirborneHeight,Duration,Tilt,Easing,IgnoreCollision,BlowWeight,AffectsIronCurtain`.
 
@@ -1170,7 +1313,7 @@ PNG alpha is preserved by active button artwork (including cooldown dimming) and
 
 For generated single-passive research details, supported placeholders include `{amount}`, `{percent}`, `{count}`, `{chance}`, `{cooldown}`. A multi-action passive's custom amount/percent placeholders refer to its first action. GiveCredits supports `{credits}`. Add a literal percent sign yourself, such as `{percent}%`. Custom WhileState details and a combined research project's custom Detail are displayed literally rather than expanded per child effect.
 
-Fields in `[Starfall.ResearchSounds]`: `Button`, `Cards`, `Refresh`, `Select`, `Available`. Each defaults to empty. Accepted built-ins are `builtin:cards`, `builtin:select`, and `builtin:available`, or an external WAV path. Empty Button uses native click audio; other empty fields are silent. Failed Button audio falls back to native click audio.
+Fields in `[Starfall.ResearchSounds]`: `Button`, `Cards`, `Refresh`, `Select`, `Available`. When a building or `GrantFreeResearch` grants a free choice, an omitted `Available` uses `builtin:available`. An explicit empty value in `Starfall.ini` silences the cue. Other uses default to empty. Accepted built-ins are `builtin:cards`, `builtin:select`, and `builtin:available`, or an external WAV path. Empty Button uses native click audio; other empty fields are silent. Failed Button audio falls back to native click audio.
 
 External WAV: uncompressed PCM, 8/16-bit, mono/stereo, `8000..48000` Hz, at most 16 MiB. Paths can be absolute or relative to the game root. Action PlaySound instead uses a native sound ID or `wav:<path>`. Custom action WAV plays only for a local visible/unshrouded position, at the configured effects volume; missing local audio must not control gameplay. Local shake respects the viewport and applicable `HideShakeEffects` setting. Fire/railgun particle systems require distinct source and destination positions.
 
@@ -1196,7 +1339,7 @@ The Tornado example uses the native `PIFF` animation as a placeholder. Replace `
 
 ### Save/load contract
 
-Starfall stores extension data in the `Starfall.Passives` stream. The current marker is `0x66504653`, which adds active cloaking-capability IDs. The previous `0x65504653` layout remains readable. Saves written with the new marker require this implementation or a compatible newer reader. This document is not a full binary save-format specification; use the Writer/Reader/saveState/loadState implementation before editing save code.
+Starfall stores extension data in the `Starfall.Passives` stream. The latest supported marker is `0x6B504653`, which preserves map-level native `Passengers.BySize` overrides used by transformation capacity checks. It is emitted when such overrides exist; other matches use the newest layout needed by their state. Marker `0x6A504653` stores ordinary research rounds and the shared rarity seed; earlier supported layouts remain readable. A newer marker requires a compatible reader. This document is not a full binary save-format specification; use the Writer/Reader/saveState/loadState implementation before editing save code.
 
 The stream covers relevant passive counts/cooldowns/stacks and snapshots, grants and remaining durations, continuous state progress, extended health/stat changes, research ownership/points/offers/refreshes/building rewards, supported motion/animations, sequence/map context, Lua timers/state/RNG, and associated identifiers. Not every cache is serialized; derived presentation and lookup caches are rebuilt or cleared.
 
@@ -1216,7 +1359,7 @@ For mobile units, Starfall uses its native conversion path without Phobos. With 
 
 Mobile conversion requires different source/destination types of the same supported object class and matching Locomotor. It preserves identity, ownership, rank, passive state, proportional health, and extra maximum-health contribution where supported. A research conversion affects only current eligible infantry/vehicles, never buildings or future production. At least one successful conversion is required for a conversion-only purchase.
 
-The native fallback rejects unsupported spawner/slave/manager combinations and incompatible mind-control/parasite/chrono states. Cargo must fit the destination's passenger capacity and size constraints; occupied transports require compatible open-topped/gunner behavior. Units must be alive, on-map, and valid for their destination terrain/state. Third-party type-attached data is not automatically compatible with every native conversion.
+The native fallback rejects unsupported spawner/slave/manager combinations and incompatible mind-control/parasite/chrono states. Cargo must fit the destination's passenger capacity and size constraints; occupied transports require compatible open-topped/gunner behavior. With Ares or Phobos loaded, destination `Passengers.BySize=no` counts each direct passenger as one slot; the default `yes` sums passenger sizes. `SizeLimit` applies to each passenger in either mode. Native map overrides are preserved in saves. Units must be alive, on-map, and valid for their destination terrain/state. Third-party type-attached data is not automatically compatible with every native conversion.
 
 Mind-control immunity includes the supported native controller paths and the adapted Ares 3.0p1 permanent-control path. Unsupported entrypoints/versions are logged; this is not blanket compatibility with every Ares/Phobos build. Consult the current review records and test the exact loader/extensions used by a mod.
 
@@ -1312,7 +1455,7 @@ Implementation index:
 | [ResourceCache.h](../src/ResourceCache.h), [ResearchAudio.h](../src/ResearchAudio.h), [ResearchText.h](../src/ResearchText.h) | Bounded presentation caches and audio/text helpers. |
 | [module-sources.cmd](../tools/module-sources.cmd) | Shared separately compiled module list. |
 
-Architecture and verification records: [module boundaries](architecture.md), [initial review](reviews/2026-11-14.md), [fixes](reviews/2026-11-14-fixes.md), [multiplayer](reviews/2026-11-14-multiplayer.md), [cache work](reviews/2026-11-14-cache.md), [module extraction](reviews/2026-11-14-modules.md). These dated records describe measured coverage and remaining limits; they are not promises about untested environments.
+See [module boundaries](architecture.md) for implementation responsibilities and the [test guide](../tests/README.md) for reproducible verification.
 
 Examples: [Lua configuration](../examples/Lua/Starfall.ini), [AreaBarrage.lua](../examples/Lua/AreaBarrage.lua), [Tornado configuration](../examples/Tornado/Starfall.ini), [Tornado.lua](../examples/Tornado/Tornado.lua), [research example](../examples/Starfall.HexBrawl.ini).
 

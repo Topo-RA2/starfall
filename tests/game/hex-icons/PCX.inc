@@ -1,14 +1,17 @@
 namespace {
 void testHexPCX() {
     auto surface=DSurface::Composite;
-    RectangleStruct sheet{8,8,7*64,6*64};int background=color(14,23,35);
+    const int columns=10,rows=(static_cast<int>(Research::options.size())+columns-1)/columns;
+    RectangleStruct sheet{8,8,columns*64,rows*64};int background=color(14,23,35);
     surface->FillRect(&sheet,background);
-    check(Research::options.size()==42,"complete HexBrawl icon set");
+    check(Research::options.size()==85,"complete HexBrawl icon set");
     for(size_t i=0;i<Research::options.size();++i) {
         const auto& option=Research::options[i];
         auto source=imageFor(option.icon,0,Research::Rarity::Common,true);
         auto path=Resources::pathKey("hx_"+option.icon.substr(option.icon.find_last_of("\\/")+1));
         path.replace(path.size()-4,4,".pcx");
+        // Start with a mixed-case lookup before this PCX can populate the Starfall cache.
+        if(i==0) path.front()='H';
         // Bypass all fallbacks: every actual PCX must load through the native engine.
         auto converted=imageFor(path,0,Research::Rarity::Common,false);
         check(!source->pixels.empty() && !converted->pixels.empty(),"PNG and PCX both loaded");
@@ -17,7 +20,7 @@ void testHexPCX() {
         for(size_t p=3;p<source->pixels.size();p+=4)
             check(converted->pixels[p]==(source->pixels[p]>=128?255:0),"native PCX preserves transparent silhouette without opaque holes");
         auto pcxOption=option;pcxOption.icon=path;
-        RectangleStruct tile{sheet.X+static_cast<int>(i%7)*64,sheet.Y+static_cast<int>(i/7)*64,64,64};
+        RectangleStruct tile{sheet.X+static_cast<int>(i%columns)*64,sheet.Y+static_cast<int>(i/columns)*64,64,64};
         drawProjectIcon(pcxOption,tile);
         auto pixels=snapshot(tile);
         check(pixels.front()==background && std::any_of(pixels.begin(),pixels.end(),[&](WORD p){return p!=background;}),
