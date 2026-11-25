@@ -31,7 +31,7 @@ bool showAvailableAnimation=true;
 bool sharedRaritySequence=false;
 bool announceSelection=true;
 std::map<int,unsigned> refreshedSlots;
-Unlocks unlocked;
+Unlocks unlocked, retired;
 std::map<int,unsigned> completedRounds;
 std::optional<unsigned> raritySequenceSeed;
 std::map<int,std::vector<std::string>> unlockOrder;
@@ -60,6 +60,49 @@ bool owns(int house,const std::string& id) {
     auto it=unlocked.find(house);
     return it!=unlocked.end() && it->second.contains(id);
 }
+static bool excludedByOwnership(int house,const Option& project) {
+    auto removed=retired.find(house);
+    if(removed!=retired.end() && removed->second.contains(project.id)) return true;
+    return std::any_of(project.excludes.begin(),project.excludes.end(),
+        [house](const auto& id){return owns(house,id);});
+}
+bool meetsCountryOrTech(int house,const Option& option,const string& country,int source) {
+    if(option.countries.empty() && option.unlockWithTech.empty()) return true;
+    if(includes(option.countries,"*") || includes(option.countries,country)) return true;
+    for(const auto& provider:option.techProviders) {
+        if(source>=0) {
+            const auto& grant=options[source];
+            if(grant.id==provider) return true;
+            if(includes(grant.replaces,provider)) continue;
+        }
+        if(owns(house,provider)) return true;
+    }
+    return false;
+}
+static bool eligibleAfterSource(int house,const Option& candidate,int source) {
+    if(!candidate.validChain || (source<0 && excludedByOwnership(house,candidate))) return false;
+    if(source<0) return std::all_of(candidate.prerequisites.begin(),candidate.prerequisites.end(),
+        [house](const auto& id){return owns(house,id);});
+    const auto& grant=options[source];
+    const auto removed=retired.find(house);
+    if((removed!=retired.end() && removed->second.contains(candidate.id)) || includes(grant.replaces,candidate.id)) return false;
+    auto willOwn=[&](const auto& id){return id==grant.id || (owns(house,id) && !includes(grant.replaces,id));};
+    return std::none_of(candidate.excludes.begin(),candidate.excludes.end(),willOwn) &&
+        std::all_of(candidate.prerequisites.begin(),candidate.prerequisites.end(),willOwn);
+}
+void Detail::recordAcquisition(int house,int option) {
+    const auto& project=options[option];
+    auto& active=unlocked[house];
+    auto& order=unlockOrder[house];
+    for(const auto& id:project.replaces) {
+        if(active.erase(id)) {
+            retired[house].insert(id);
+            std::erase(order,id);
+        }
+    }
+    active.insert(project.id);
+    order.push_back(project.id);
+}
 std::vector<int> completedProjects(int house) {
     Research::ensureReady();
     std::vector<int> result;
@@ -81,8 +124,7 @@ bool purchase(int house,int option,const char* country) {
     const auto& eligible=offers(house,country);
     if(std::find(eligible.begin(),eligible.end(),option)==eligible.end()) return false;
     if(!executeEffect(house,option)) return false;
-    unlocked[house].insert(options[option].id);
-    unlockOrder[house].push_back(options[option].id);
+    Detail::recordAcquisition(house,option);
     ++completedRounds[house];
     points[house]-=price;
     savedOffers.erase(house); seenOffers.erase(house); refreshedSlots.erase(house); clearOfferCache();
@@ -99,27 +141,38 @@ int purchaseForAI(int house,const char* country,unsigned frame) {
     for(int option:candidates) if(purchase(house,option,country)) return option;
     return -1;
 }
+static int grantSelected(int house,const char* country,int option) {
+    if(!executeEffect(house,option)) return -1;
+    Detail::recordAcquisition(house,option);
+    savedOffers.erase(house);seenOffers.erase(house);clearOfferCache();
+    offers(house,country);
+    grantProjectRewards(house,option,country);
+    return option;
+}
+int grantNamed(int house,const char* country,const std::string& id) {
+    if(house<0 || !isEnabled()) return -1;
+    const auto countryId=lower(country?country:"");
+    for(int i=0;i<static_cast<int>(options.size());++i) {
+        const auto& o=options[i];
+        if(o.id==id && !owns(house,id) && available(i) && meetsPrerequisites(house,i) && canApply(house,i) &&
+            meetsCountryOrTech(house,o,countryId))
+            return grantSelected(house,country,i);
+    }
+    return -1;
+}
 int grantRandom(int house,const char* country,std::optional<Rarity> rarity) {
     if(house<0 || !isEnabled() || (rarity && (*rarity<Rarity::Common || *rarity>=Rarity::Invalid))) return -1;
     const auto countryId=lower(country?country:"");
     vector<int> candidates;
     for(int i=0;i<static_cast<int>(options.size());++i) {
         const auto& option=options[i];
-        if((!rarity || option.rarity==*rarity) && !owns(house,option.id) && available(i) && meetsPrerequisites(house,i) &&
-            (option.countries.empty() || includes(option.countries,"*") || includes(option.countries,countryId)) && canApply(house,i))
+        if(!option.grantOnly && (!rarity || option.rarity==*rarity) && !owns(house,option.id) && available(i) && meetsPrerequisites(house,i) &&
+            meetsCountryOrTech(house,option,countryId) && canApply(house,i))
             candidates.push_back(i);
     }
     if(candidates.empty()) return -1;
     const int option=candidates.size()==1?candidates.front():candidates[Detail::randomIndex(static_cast<int>(candidates.size()))];
-    if(!executeEffect(house,option)) return -1;
-    unlocked[house].insert(options[option].id);
-    unlockOrder[house].push_back(options[option].id);
-    // Local panels may have populated different lazy boards before this event.
-    // Rebuild on every peer, keeping the synchronized per-slot refresh allowance.
-    savedOffers.erase(house);seenOffers.erase(house);clearOfferCache();
-    offers(house,country);
-    grantProjectRewards(house,option,country);
-    return option;
+    return grantSelected(house,country,option);
 }
 bool canGrantRandom(int house,int source,const char* country,std::optional<Rarity> rarity) {
     // Ignore ancestors while checking chains, so a cycle without a real reward
@@ -137,9 +190,9 @@ bool canGrantRandom(int house,int source,const char* country,std::optional<Rarit
     const auto countryId=lower(country?country:"");
     for(int i=0;i<static_cast<int>(options.size());++i) {
         const auto& candidate=options[i];
-        if(!checking.contains({house,i}) && (!rarity || candidate.rarity==*rarity) &&
-           !owns(house,candidate.id) && available(i) && meetsPrerequisites(house,i) &&
-           (candidate.countries.empty() || includes(candidate.countries,"*") || includes(candidate.countries,countryId)) && canApply(house,i)) return true;
+        if(!candidate.grantOnly && !checking.contains({house,i}) && (!rarity || candidate.rarity==*rarity) &&
+           !owns(house,candidate.id) && available(i) && eligibleAfterSource(house,candidate,source) &&
+           meetsCountryOrTech(house,candidate,countryId,source) && canApply(house,i)) return true;
     }
     return false;
 }
@@ -176,7 +229,7 @@ void reset() {
     globalIncome={};
     raritySequenceSeed.reset();
     freeTickets.clear();lastTicket=0;
-    unlocked.clear(); unlockOrder.clear(); completedRounds.clear(); points.clear(); producers.clear(); buildingRewards.clear(); rewardPanel=0; savedOffers.clear(); clearOfferCache();
+    unlocked.clear(); retired.clear(); unlockOrder.clear(); completedRounds.clear(); points.clear(); producers.clear(); buildingRewards.clear(); rewardPanel=0; savedOffers.clear(); clearOfferCache();
     seenOffers.clear(); refreshedSlots.clear(); options.clear(); expanded=false; pressed=pressedOption=-1; badgePageIndex=0;
 }
 }
@@ -184,8 +237,7 @@ void reset() {
 bool Research::isEnabled() { ensureReady();return enabled; }
 bool Research::meetsPrerequisites(int house,int option) {
     const auto& project=options[option];
-    return project.validChain && std::all_of(project.prerequisites.begin(),project.prerequisites.end(),
-        [house](const auto& id){return owns(house,id);});
+    return eligibleAfterSource(house,project,-1);
 }
 // Opening the local UI must not consume the simulation RNG. Use the shared match
 // seed plus the owner's index, and persist the chosen IDs rather than registry positions.
@@ -236,11 +288,10 @@ vector<int> ticketCandidates(int house,const string& country,const vector<string
     const bool fixed=!projects.empty() && projects.size()<=choices;
     auto add=[&](int i) {
         const auto& o=options[i];
-        if(i==source || !o.validChain || o.rarity==Rarity::Invalid || owns(house,o.id) ||
+        if(o.grantOnly || i==source || !o.validChain || o.rarity==Rarity::Invalid || owns(house,o.id) ||
+           !eligibleAfterSource(house,o,source) ||
            (rarity && o.rarity!=*rarity) || (!rarity && !fixed && rarityWeights[static_cast<int>(o.rarity)]<=0) ||
-           (!o.countries.empty() && !includes(o.countries,"*") && !includes(o.countries,country))) return;
-        for(const auto& key:o.prerequisites)
-            if(!owns(house,key) && (source<0 || key!=options[source].id)) return;
+           !meetsCountryOrTech(house,o,country,source)) return;
         if(available(i)) rows.push_back(i);
     };
     if(projects.empty()) {
@@ -265,9 +316,11 @@ const vector<int>& Research::Detail::buildingOfferRows(unsigned long id,int hous
     std::array<vector<int>,rarityCount> pools;
     for(const auto& key:configured) {
         auto it=std::find_if(options.begin(),options.end(),[&](const Option& option){return option.id==key;});
-        if(it==options.end() || it->rarity==Rarity::Invalid) continue;
+        if(it==options.end() || it->grantOnly || it->rarity==Rarity::Invalid) continue;
         int index=static_cast<int>(it-options.begin());
-        if(owns(house,key) || !available(index)) continue;
+        if(!it->replaces.empty() && (!it->validChain || !std::all_of(it->replaces.begin(),it->replaces.end(),
+            [house](const auto& id){return owns(house,id);}))) continue;
+        if(owns(house,key) || excludedByOwnership(house,*it) || !available(index)) continue;
         if(configured.size()<=choices) board.order.push_back(index);
         else pools[static_cast<int>(it->rarity)].push_back(index);
     }
@@ -323,9 +376,8 @@ const vector<int>& Research::offers(int house,const char* country) {
     result.pool.clear();
     std::array<vector<int>,rarityCount> pools;
     for(int i=0;i<static_cast<int>(options.size());++i) {
-        const auto& allowed=options[i].countries;
         int rarity=static_cast<int>(options[i].rarity);
-        if(rarity>=0 && rarity<rarityCount && rarityWeights[rarity]>0 && !owns(house,options[i].id) && available(i) && meetsPrerequisites(house,i) && (allowed.empty() || includes(allowed,"*") || includes(allowed,countryId))) pools[rarity].push_back(i);
+        if(!options[i].grantOnly && rarity>=0 && rarity<rarityCount && rarityWeights[rarity]>0 && !owns(house,options[i].id) && available(i) && meetsPrerequisites(house,i) && meetsCountryOrTech(house,options[i],countryId)) pools[rarity].push_back(i);
     }
     auto& ids=savedOffers[house];
     int chosen=-1;

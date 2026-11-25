@@ -1,2 +1,2 @@
 @rem Shared separately compiled modules; callers select the runtime/UI probe entry.
-@set "starfallModules=src\ConfigText.cpp src\Research.cpp src\ResearchAPI.cpp src\ResearchConfig.cpp src\ResearchEffects.cpp src\DiplomacyResearch.cpp src\VisualScale.cpp src\BuildingSpawn.cpp src\BuildingTransform.cpp"
+@set "starfallModules=src\ConfigText.cpp src\PassiveRules.cpp src\ResearchDescription.cpp src\BuildingResearch.cpp src\ForceMove.cpp src\Research.cpp src\ResearchAPI.cpp src\ResearchConfig.cpp src\ResearchEffects.cpp src\DiplomacyResearch.cpp src\VisualScale.cpp src\SonicRipple.cpp src\BuildingSpawn.cpp src\BuildingTransform.cpp src\CarrierConversion.cpp"

@@ -43,6 +43,11 @@ DEFINE_HOOK(0x55B4EB,SF_TestBeforeDamage,5) {
         check(Research::balance(human->ArrayIndex)==points+1,"unblocked damage event");
         grantToUnit(half,PassiveGrant{{"halfdamage"},-1});
         check(hit(half,enemy,80)==baseline/2,"formula after armor");
+        int beforeReducedHit=half->Health;
+        UnitHealth::heal(half,baseline-1);
+        check(hit(half,enemy,80)==baseline/2 && half->Health==baseline-1-baseline/2,
+            "damage reduction can make an otherwise lethal hit survivable");
+        UnitHealth::heal(half,beforeReducedHit);
         grantToUnit(chain,PassiveGrant{{"damagechain"},-1});
         check(hit(chain,enemy,80)==baseline/2+7,"formula chain");
         grantToUnit(counted,PassiveGrant{{"countedblock"},-1});

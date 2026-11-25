@@ -1,4 +1,7 @@
 #include "../../../src/Starfall.cpp"
+#include <WWMouseClass.h>
+#include <CCToolTip.h>
+#include <BitFont.h>
 namespace {
 void check(bool ok,const char* label) {
     std::ofstream("stacks.log",std::ios::app)<<(ok?"PASS ":"FAIL ")<<label<<"\n";
@@ -7,12 +10,53 @@ void check(bool ok,const char* label) {
 void trigger(const char* name,TechnoClass* unit,TechnoClass* other) {
     capture(name,unit,other,unit,other,0);dispatch();
 }
+bool nativeHoverMatches(TechnoClass* unit,const std::wstring& expected) {
+    auto tactical=TacticalClass::Instance;
+    const auto camera=tactical->TacticalPos;
+    const auto mouse=WWMouseClass::Instance->XY1;
+    const auto view=DSurface::ViewBounds;
+    auto location=unit->GetCoords();
+    tactical->SetTacticalPosition(&location);
+    // The engine builds the mouse hit list while drawing, including after a load.
+    MapClass::Instance.MarkNeedsRedraw(2);
+    GScreenClass::Instance.Render();
+    const auto point=tactical->CoordsToClient(location).first;
+    bool found=false;
+    for(int y : {0,-6,-12,6}) {
+        auto cursor=Point2D{view.X+point.X,view.Y+point.Y+y};
+        WWMouseClass::Instance->XY1=cursor;
+        const auto tip=MouseClass::Instance.GetToolTip(500);
+        if(!tip || tip!=expected) continue;
+        auto manager=CCToolTip::Instance;
+        auto previous=manager->CurrentToolTip;
+        auto data=manager->CurrentToolTipData;
+        auto position=manager->CurrentMousePosition;
+        ToolTip gadget;
+        gadget.GadgetID=500;gadget.Text=nullptr;gadget.Bounds=view;
+        manager->CurrentToolTip=&gadget;
+        manager->CurrentMousePosition=cursor;
+        bool processed=manager->Process();
+        int width=0,height=0,nameHeight=0;
+        BitFont::Instance->GetTextDimension(unit->GetUIName(),&width,&nameHeight,view.Width);
+        BitFont::Instance->GetTextDimension(manager->CurrentToolTipData.HelpText,&width,&height,view.Width);
+        found=processed && expected==manager->CurrentToolTipData.HelpText &&
+              (expected.find(L'\n')==expected.npos || height>nameHeight);
+        manager->CurrentToolTip=previous;
+        manager->CurrentMousePosition=position;
+        manager->CurrentToolTipData=data;
+        break;
+    }
+    auto restore=camera;
+    tactical->SetTacticalPosition(&restore);
+    WWMouseClass::Instance->XY1=mouse;
+    return found;
+}
 }
 DEFINE_HOOK(0x55B4EB,SF_TestPassiveStacks,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
     int frame=Unsorted::CurrentFrame;
     bool loading=GetFileAttributesA("reload.flag")!=INVALID_FILE_ATTRIBUTES;
-    if(frame!=20 && frame!=25 && frame!=28 && frame!=31 && frame!=46) return 0;
+    if(frame!=20 && frame!=25 && frame!=28 && frame!=31 && frame!=46 && frame!=120 && frame!=172) return 0;
     if(loading && frame<=28) return 0;
     auto house=HouseClass::FindByPlayerAt(HouseClass::PlayerAtA);
     auto foe=HouseClass::FindByPlayerAt(HouseClass::PlayerAtB);
@@ -36,6 +80,22 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveStacks,5) {
             !formula.compile("$(self.stack)"),"stack formula namespace");
         check(skills.contains("stackbuff") && !skills.contains("badstackmax") && !skills.contains("badstacktarget") && !skills.contains("badstackamount"),"configuration validation");
         Research::unlocked[h].insert("stackresearch");
+        check(skills.contains("hoverrange") && skills.contains("hoverbonus") && !skills.contains("badhover"),"tooltip config validation");
+        grantToUnit(unit,PassiveGrant{{"hoverrange"},150});
+        changeStacks(id,"hoverrange",5,10);
+        tickStates();
+        const std::wstring name=unit->GetUIName();
+        check(nativeHoverMatches(unit,name+L"\n射程+5"),"native hover five stacks");
+        check(nativeHoverMatches(peer,peer->GetUIName()),"native hover peer unchanged");
+        changeStacks(id,"hoverrange",-5,10);
+        tickStates();
+        check(nativeHoverMatches(unit,name),"native hover inactive condition");
+        changeStacks(id,"hoverrange",3,10);
+        grantToUnit(unit,PassiveGrant{{"hoverbonus"},5});
+        tickStates();
+        std::wstring text=unitHoverText(unit,name.c_str());
+        check(text.starts_with(name+L"\n") && text.find(L"\n射程+3")!=text.npos &&
+              text.find(L"\nBonus 100.00% / 0.50")!=text.npos && nativeHoverMatches(unit,text),"native hover combined formulas");
         grantToUnit(unit,PassiveGrant{{"stackbuff"},20});
         grantToUnit(unit,PassiveGrant{{"stackgain","stackvictim","stackreduce","stackstrip","selfgrowth"},-1});
         grantToUnit(peer,PassiveGrant{{"stackgain"},-1});
@@ -119,6 +179,13 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveStacks,5) {
         check(stackCount(id,"stackbuff")==0,"explicit removal clears");
         grantToUnit(unit,PassiveGrant{{"stackbuff"},5});
         check(stackCount(id,"stackbuff")==0,"explicit reacquire starts zero");
+    }
+    if(frame==120) {
+        // The native tooltip is suppressed during the initial load-screen transition.
+        check(nativeHoverMatches(unit,std::wstring(unit->GetUIName())+L"\n射程+3"),"native hover retained");
+    }
+    if(frame==172) {
+        check(nativeHoverMatches(unit,unit->GetUIName()),"native hover expired");
         TerminateProcess(GetCurrentProcess(),0);
     }
     return 0;

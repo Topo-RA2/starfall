@@ -19,6 +19,7 @@ bool validateEffect(const EffectSpec& effect,const EffectWarning& warn={});
 bool hasProductionLicense(const HouseClass* house,TechnoTypeClass* type);
 void installProductionCheck();
 void clearEffectCaches();
+void recordAcquisition(int house,int option);
 unsigned matchSeed();
 int randomIndex(int count);
 const std::vector<int>& buildingOfferRows(unsigned long id,int house,const std::vector<std::string>& configured);
@@ -29,8 +30,7 @@ void announceReward(int house,int option);
 namespace Runtime {
 bool hasPassive(const std::string& id);
 bool eligibleHouse(HouseClass* house);
-bool conversionAvailable();
-bool nativeConversionTypesSafe(const TechnoTypeClass* from,const TechnoTypeClass* to);
+bool conversionSupportsTypes(const TechnoTypeClass* from,const TechnoTypeClass* to);
 bool canTransformUnit(TechnoClass* unit,TechnoTypeClass* to);
 bool transformUnit(TechnoClass* unit,TechnoTypeClass* to);
 }

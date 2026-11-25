@@ -9,7 +9,7 @@ if(Test-Path -LiteralPath $runs) {
     foreach($run in Get-ChildItem -LiteralPath $runs -Directory) {
         $null=Assert-TestPath $run.FullName $runs
         $directories=@($run)
-        if($run.Name -like 'multiplayer-*') {$directories=@(Get-ChildItem -LiteralPath $run.FullName -Directory | Where-Object Name -in 'peer0','peer1')}
+        if($run.Name -like 'multiplayer-*') {$directories=@(Get-ChildItem -LiteralPath $run.FullName -Directory | Where-Object Name -in 'peer0','peer1','peer2')}
         foreach($directory in $directories) {
             $null=Assert-TestPath $directory.FullName $runs
             if(!(Test-Path -LiteralPath (Join-Path $directory.FullName 'Starfall.test') -PathType Leaf)) {continue}

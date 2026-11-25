@@ -19,6 +19,8 @@ void validateResearchChains(const ResearchWarning& warn) {
     vector<size_t> remaining(options.size()), roots;
     for(size_t i=0;i<options.size();++i) {
         auto& option=options[i];
+        for(const auto& id:option.excludes)
+            if(!index.contains(id)) warn(option.id,"Excludes","未注册科研项目 ["+id+"]，忽略此互斥项");
         option.validChain=false;
         remaining[i]=option.prerequisites.size();
         if(remaining[i]==0) roots.push_back(i);
@@ -257,7 +259,18 @@ void Research::readConfiguration(const char* configPath) {
         o.passive=lower(field(id,"Passive",o.passive));
         o.icon=field(id,"Icon");
         o.countries=split(field(id,"Countries"));
+        o.unlockWithTech=split(field(id,"UnlockWithTech"));
+        for(const auto& tech:o.unlockWithTech)
+            if(!TechnoTypeClass::Find(tech.c_str())) warn(id,"UnlockWithTech","未注册的科技类型 ["+tech+"] 无法解锁此项目");
         o.prerequisites=split(field(id,"Prerequisites"));
+        o.excludes=split(field(id,"Excludes"));
+        auto grantOnly=lower(trim(field(id,"GrantOnly","no")));
+        o.grantOnly=!includes({"no","false","0"},grantOnly);
+        if(o.grantOnly && !includes({"yes","true","1"},grantOnly))
+            warn(id,"GrantOnly","无效开关值，按 yes 处理");
+        o.replaces=split(field(id,"Replaces"));
+        for(const auto& key:o.replaces)
+            if(!includes(o.prerequisites,key)) o.prerequisites.push_back(key);
         auto rarity=lower(field(id,"Rarity","Common"));
         o.rarity=rarity=="common"?Research::Rarity::Common:rarity=="rare"?Research::Rarity::Rare:
             rarity=="epic"?Research::Rarity::Epic:rarity=="insane"?Research::Rarity::Insane:Research::Rarity::Invalid;
@@ -269,7 +282,7 @@ void Research::readConfiguration(const char* configPath) {
             for(int i=0;i<ini->GetKeyCount(rulesSection(id));++i)
                 if(!_stricmp(ini->GetKeyName(rulesSection(id),i),"Effects")) {hasList=true;break;}
         }
-        static const std::set<string> projectKeys={"name","summary","detail","targetlabel","icon","countries","prerequisites","rarity","effects","effect",
+        static const std::set<string> projectKeys={"name","summary","detail","targetlabel","icon","countries","unlockwithtech","prerequisites","excludes","replaces","grantonly","rarity","effects","effect",
             "costmodifier","category","credits","technology","fromtype","totype","passive","targettypes","reward.rarity","reward.count","reward.researchoptions"};
         if(hasList && !Runtime::hasPassive(id) && !TechnoTypeClass::Find(id.c_str())) warnUnknown(id,projectKeys);
         auto auditEffect=[&](const string& sec,const Research::EffectSpec& spec) {
@@ -303,6 +316,21 @@ void Research::readConfiguration(const char* configPath) {
         if(!brief.empty()) o.summary=displayText(brief);
         if(!detail.empty()) o.detail=displayText(detail);
         Research::options.emplace_back(std::move(o));
+    }
+    // Resolve license sources once. Ownership checks then also work when a reward
+    // previews the house's state after acquiring or replacing a project.
+    std::map<string,vector<string>> providers;
+    for(const auto& project:options) {
+        auto index=[&](const auto& effect) {
+            if(effect.effect==Effect::Technology) providers[effect.technology].push_back(project.id);
+        };
+        if(project.effectList) {for(const auto& effect:project.effects) index(effect);}
+        else index(project);
+    }
+    for(auto& project:options) for(const auto& tech:project.unlockWithTech) {
+        auto it=providers.find(tech);
+        if(it!=providers.end() && TechnoTypeClass::Find(tech.c_str()))
+            project.techProviders.insert(project.techProviders.end(),it->second.begin(),it->second.end());
     }
     validateResearchChains(warn);
     Research::clearOfferCache();

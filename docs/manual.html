@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="流火实验室 0.38 离线 INI 配置手册，含被动、科研、地图动作和小队脚本的字段与实例。"><link rel="icon" type="image/png" href="../assets/brand/starfall-lab-comet-fragments.png"><title>流火实验室 INI 规则手册</title><style>*{box-sizing:border-box}:root{color-scheme:light;--paper:#fcfbf8;--ink:#222d31;--dim:#576469;--line:#dadbd3;--hot:#a33622;--pale:#f4e6dc;--head:#202e32;--sans:Inter,"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",sans-serif;--mono:"IBM Plex Mono",Consolas,"Microsoft YaHei",monospace}html{scroll-padding-top:84px}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.85 var(--sans)}a{color:var(--hot);text-underline-offset:3px}button,input{font:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible,pre:focus-visible{outline:3px solid #cc754e;outline-offset:3px}[hidden]{display:none!important}.skip{position:fixed;top:-60px;z-index:10;background:white;padding:6px 15px}.skip:focus{top:5px}.top{position:sticky;top:0;z-index:5;background:var(--head);color:white;border-bottom:3px solid #c95737}.bar{max-width:1410px;margin:auto;padding:0 36px;height:62px;display:flex;align-items:center;gap:17px}.brand{color:white;text-decoration:none;display:flex;align-items:center;gap:12px;font-weight:750;font-size:20px;letter-spacing:-.45px}.emblem{width:30px;height:30px;object-fit:contain}.brand span:last-child{font-weight:560;letter-spacing:.03em}.version{color:#dcdfd9;border-left:1px solid #5a686a;padding-left:16px;font:13px var(--mono)}.tools{margin-left:auto;display:flex;align-items:center;gap:18px}.tools a,.tools button{color:#e7ecea;background:transparent;border:0;font-size:13px;text-decoration:none}.tools a:hover,.tools button:hover{text-decoration:underline}.searchbox{display:flex;align-items:center;gap:10px;background:#354448;border:1px solid #617072;border-radius:5px;padding:3px 10px}.searchbox:focus-within{outline:2px solid #efaa89}.lens{width:12px;height:12px;border:1.6px solid #c2ceca;border-radius:50%;position:relative}.lens:after{content:"";position:absolute;right:-4px;bottom:-2px;background:#c2ceca;width:5px;height:1.5px;transform:rotate(45deg)}.searchbox input{width:190px;min-width:0;background:transparent;border:0;color:white;line-height:27px;font-size:14px}.searchbox input::placeholder{color:#e2e6e4}.searchbox input:focus{outline:none}kbd{border:1px solid #829090;border-radius:3px;padding:0 5px;color:#e4e9e6;font:11px/19px var(--mono)}.frame{max-width:1320px;margin:auto;display:grid;grid-template-columns:231px minmax(0,1fr);gap:clamp(28px,4.5vw,76px);padding:0 32px 0 24px}.sidebar{align-self:start;position:sticky;top:65px;height:calc(100vh - 65px);overflow-y:auto;border-right:1px solid var(--line);padding:27px 20px 34px 2px;scrollbar-width:thin}.nav-group+.nav-group{margin-top:15px}.group{font-size:12px;font-weight:700;color:var(--dim);padding:0 10px;margin-bottom:3px}.sidebar a{display:block;font-size:14px;text-decoration:none;color:#394549;padding:3px 9px;border-left:3px solid transparent;border-radius:0 4px 4px 0;line-height:1.75}.sidebar a:hover{background:#f0f0e9}.sidebar a[aria-current=page]{background:var(--pale);color:#8d301f;border-color:#bd4d31;font-weight:700}main{min-width:0;padding:36px 0 56px;max-width:960px;outline:none}article{margin-bottom:48px}.crumb{font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.05em}.crumb span{padding:0 6px;color:#adb1a9}h1,h2,h3{line-height:1.35}h1,h2{margin:13px 0 20px;font-size:clamp(30px,3vw,44px);letter-spacing:-.045em}h2{font-size:clamp(27px,2.5vw,37px)}h3{margin:32px 0 12px;font-size:20px;letter-spacing:-.02em}p{margin:13px 0}p.lead{color:var(--dim);margin-top:-10px}.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:23px 0 30px}.card{display:grid;align-content:start;background:#fff;border:1px solid var(--line);border-top:3px solid #b34d34;border-radius:4px;padding:19px 20px;color:var(--ink);text-decoration:none;gap:5px}.card:nth-child(2){border-top-color:#4c7276}.card:hover{border-color:#a95339;background:#fffaf5}.sig{font:12px var(--mono);color:var(--dim)}.card strong{display:flex;justify-content:space-between;font-size:19px}.card i{font:19px sans-serif;color:var(--hot)}.card span:last-child{color:var(--dim);font-size:14px}.table-wrap{margin:14px 0 22px;overflow:auto;border:1px solid var(--line);border-radius:4px;background:white}table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.7}th,td{text-align:left;padding:11px 14px;vertical-align:top}thead{background:#eaece6;color:#485451}thead th{font-weight:650;font-size:13px}tbody tr+tr{border-top:1px solid #e5e6df}tbody th{width:23%;font-weight:600}tbody tr:hover{background:#fcfaf5}code{font-family:var(--mono);font-size:.92em;background:#eeeee8;color:#394c4f;border-radius:3px;padding:1px 4px;overflow-wrap:anywhere}th code{font-weight:600;color:#8c3d2b;background:transparent;padding:0}figure{margin:18px 0 25px;background:#1f2d31;color:#edf0e8;border-radius:6px;overflow:hidden}figcaption{display:flex;align-items:center;justify-content:space-between;padding:7px 15px;background:#2b3a3e;color:#cfdbd6;font:12px/1.5 var(--mono);gap:8px}figcaption b{color:#ffac86;letter-spacing:.06em;margin-right:8px}.copy{background:transparent;color:#e6eae7;border:1px solid #647275;border-radius:4px;padding:2px 9px;font:12px var(--sans);min-height:25px}.copy:hover{background:#43565a}pre{margin:0;padding:15px 18px 17px;overflow:auto;font:14px/1.7 var(--mono);tab-size:4}pre code{padding:0;background:none;color:#edf0e8;overflow-wrap:normal;font:inherit}.key{color:#b8d9d1}.section-name{color:#ffc098}.comment{color:#acbcb7}.pager{display:flex;justify-content:space-between;margin:36px 0 0;padding-top:15px;border-top:1px solid var(--line);gap:12px}.pager a{text-decoration:none;font-weight:650}.pager small{display:block;color:var(--dim);font-weight:400;font-size:12px}.pager a:last-child{text-align:right}.results a{display:block;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line);padding:12px 6px}.results a:hover{background:#f3f1ea}.results small,.results span{display:block;color:var(--dim)}.results strong{color:var(--hot);overflow-wrap:anywhere}.results span{font-size:14px}.results a:focus{outline:2px solid #c77953}.menu{display:none}.hit{outline:2px solid #be6541;outline-offset:-2px;background:#fcf1df}.js article{display:none}.js article.active{display:block}html:not(.js) .interactive,html:not(.js) .copy,html:not(.js) .pager{display:none}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="流火实验室 0.39 离线 INI 配置手册，含被动、科研、地图动作和小队脚本的字段与实例。"><link rel="icon" type="image/png" href="../assets/brand/starfall-lab-comet-fragments.png"><title>流火实验室 INI 规则手册</title><style>*{box-sizing:border-box}:root{color-scheme:light;--paper:#fcfbf8;--ink:#222d31;--dim:#576469;--line:#dadbd3;--hot:#a33622;--pale:#f4e6dc;--head:#202e32;--sans:Inter,"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",sans-serif;--mono:"IBM Plex Mono",Consolas,"Microsoft YaHei",monospace}html{scroll-padding-top:84px}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.85 var(--sans)}a{color:var(--hot);text-underline-offset:3px}button,input{font:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible,pre:focus-visible{outline:3px solid #cc754e;outline-offset:3px}[hidden]{display:none!important}.skip{position:fixed;top:-60px;z-index:10;background:white;padding:6px 15px}.skip:focus{top:5px}.top{position:sticky;top:0;z-index:5;background:var(--head);color:white;border-bottom:3px solid #c95737}.bar{max-width:1410px;margin:auto;padding:0 36px;height:62px;display:flex;align-items:center;gap:17px}.brand{color:white;text-decoration:none;display:flex;align-items:center;gap:12px;font-weight:750;font-size:20px;letter-spacing:-.45px}.emblem{width:30px;height:30px;object-fit:contain}.brand span:last-child{font-weight:560;letter-spacing:.03em}.version{color:#dcdfd9;border-left:1px solid #5a686a;padding-left:16px;font:13px var(--mono)}.tools{margin-left:auto;display:flex;align-items:center;gap:18px}.tools a,.tools button{color:#e7ecea;background:transparent;border:0;font-size:13px;text-decoration:none}.tools a:hover,.tools button:hover{text-decoration:underline}.searchbox{display:flex;align-items:center;gap:10px;background:#354448;border:1px solid #617072;border-radius:5px;padding:3px 10px}.searchbox:focus-within{outline:2px solid #efaa89}.lens{width:12px;height:12px;border:1.6px solid #c2ceca;border-radius:50%;position:relative}.lens:after{content:"";position:absolute;right:-4px;bottom:-2px;background:#c2ceca;width:5px;height:1.5px;transform:rotate(45deg)}.searchbox input{width:190px;min-width:0;background:transparent;border:0;color:white;line-height:27px;font-size:14px}.searchbox input::placeholder{color:#e2e6e4}.searchbox input:focus{outline:none}kbd{border:1px solid #829090;border-radius:3px;padding:0 5px;color:#e4e9e6;font:11px/19px var(--mono)}.frame{max-width:1320px;margin:auto;display:grid;grid-template-columns:231px minmax(0,1fr);gap:clamp(28px,4.5vw,76px);padding:0 32px 0 24px}.sidebar{align-self:start;position:sticky;top:65px;height:calc(100vh - 65px);overflow-y:auto;border-right:1px solid var(--line);padding:27px 20px 34px 2px;scrollbar-width:thin}.nav-group+.nav-group{margin-top:15px}.group{font-size:12px;font-weight:700;color:var(--dim);padding:0 10px;margin-bottom:3px}.sidebar a{display:block;font-size:14px;text-decoration:none;color:#394549;padding:3px 9px;border-left:3px solid transparent;border-radius:0 4px 4px 0;line-height:1.75}.sidebar a:hover{background:#f0f0e9}.sidebar a[aria-current=page]{background:var(--pale);color:#8d301f;border-color:#bd4d31;font-weight:700}main{min-width:0;padding:36px 0 56px;max-width:960px;outline:none}article{margin-bottom:48px}.crumb{font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.05em}.crumb span{padding:0 6px;color:#adb1a9}h1,h2,h3{line-height:1.35}h1,h2{margin:13px 0 20px;font-size:clamp(30px,3vw,44px);letter-spacing:-.045em}h2{font-size:clamp(27px,2.5vw,37px)}h3{margin:32px 0 12px;font-size:20px;letter-spacing:-.02em}p{margin:13px 0}p.lead{color:var(--dim);margin-top:-10px}.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:23px 0 30px}.card{display:grid;align-content:start;background:#fff;border:1px solid var(--line);border-top:3px solid #b34d34;border-radius:4px;padding:19px 20px;color:var(--ink);text-decoration:none;gap:5px}.card:nth-child(2){border-top-color:#4c7276}.card:hover{border-color:#a95339;background:#fffaf5}.sig{font:12px var(--mono);color:var(--dim)}.card strong{display:flex;justify-content:space-between;font-size:19px}.card i{font:19px sans-serif;color:var(--hot)}.card span:last-child{color:var(--dim);font-size:14px}.table-wrap{margin:14px 0 22px;overflow:auto;border:1px solid var(--line);border-radius:4px;background:white}table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.7}th,td{text-align:left;padding:11px 14px;vertical-align:top}thead{background:#eaece6;color:#485451}thead th{font-weight:650;font-size:13px}tbody tr+tr{border-top:1px solid #e5e6df}tbody th{width:23%;font-weight:600}tbody tr:hover{background:#fcfaf5}code{font-family:var(--mono);font-size:.92em;background:#eeeee8;color:#394c4f;border-radius:3px;padding:1px 4px;overflow-wrap:anywhere}th code{font-weight:600;color:#8c3d2b;background:transparent;padding:0}figure{margin:18px 0 25px;background:#1f2d31;color:#edf0e8;border-radius:6px;overflow:hidden}figcaption{display:flex;align-items:center;justify-content:space-between;padding:7px 15px;background:#2b3a3e;color:#cfdbd6;font:12px/1.5 var(--mono);gap:8px}figcaption b{color:#ffac86;letter-spacing:.06em;margin-right:8px}.copy{background:transparent;color:#e6eae7;border:1px solid #647275;border-radius:4px;padding:2px 9px;font:12px var(--sans);min-height:25px}.copy:hover{background:#43565a}pre{margin:0;padding:15px 18px 17px;overflow:auto;font:14px/1.7 var(--mono);tab-size:4}pre code{padding:0;background:none;color:#edf0e8;overflow-wrap:normal;font:inherit}.key{color:#b8d9d1}.section-name{color:#ffc098}.comment{color:#acbcb7}.pager{display:flex;justify-content:space-between;margin:36px 0 0;padding-top:15px;border-top:1px solid var(--line);gap:12px}.pager a{text-decoration:none;font-weight:650}.pager small{display:block;color:var(--dim);font-weight:400;font-size:12px}.pager a:last-child{text-align:right}.results a{display:block;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line);padding:12px 6px}.results a:hover{background:#f3f1ea}.results small,.results span{display:block;color:var(--dim)}.results strong{color:var(--hot);overflow-wrap:anywhere}.results span{font-size:14px}.results a:focus{outline:2px solid #c77953}.menu{display:none}.hit{outline:2px solid #be6541;outline-offset:-2px;background:#fcf1df}.js article{display:none}.js article.active{display:block}html:not(.js) .interactive,html:not(.js) .copy,html:not(.js) .pager{display:none}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .named-table tbody th{width:7em;min-width:6em}.named-table tbody td:nth-child(2) code{color:#8c3d2b;background:transparent;padding:0}
 @media(max-width:850px){.bar{padding:0 18px;gap:10px}.frame{padding:0 18px;gap:22px;grid-template-columns:188px minmax(0,1fr)}.sidebar{padding-right:11px}.tools{gap:10px}.card{padding:13px}.searchbox input{width:160px}}
 @media(max-width:680px){html{scroll-padding-top:110px}.bar{height:auto;min-height:96px;flex-wrap:wrap;gap:6px 12px;padding:7px 16px}.brand{font-size:17px}.emblem{width:22px;height:22px}.version{font-size:12px}.menu{margin-left:auto;display:block;border:1px solid #6a7778;border-radius:4px;background:transparent;color:white;font-size:13px;padding:2px 9px}.tools{width:100%;margin:0}.searchbox{flex:1}.searchbox input{width:100%}.frame{display:block;padding:0 16px}.js .sidebar{display:none}.js .sidebar.open{display:block;position:fixed;z-index:4;left:0;right:0;top:99px;max-height:calc(100dvh - 99px);height:auto;background:var(--paper);padding:14px 20px 20px;box-shadow:0 8px 18px #0002}.sidebar{position:static;height:auto}.sidebar a{padding:6px 9px}main{padding-top:23px}h1{font-size:29px}.cards{gap:9px}.card{padding:12px}.card strong{font-size:16px}.sig{font-size:10px}.card span:last-child{font-size:12px}th,td{padding:8px}table{font-size:13px}.table-wrap table{min-width:460px}.table-wrap{max-width:100%}.pager{font-size:13px}}
@@ -10,14 +10,16 @@ p kbd{color:var(--ink);border-color:#b8c1bc;padding:1px 5px}
 .table-wrap tr:has(td:nth-child(3)) td:before{content:attr(data-label) "　";font-size:12px;font-weight:650;color:var(--dim)}
 }
 @media print{html,body{background:white;color:black;font-size:10pt}.top,.sidebar,.pager,.copy,.skip,.results,.cards,.crumb,.interactive{display:none!important}.frame,main{display:block;max-width:none;padding:0}.js article,article{display:block!important;margin:0 0 20pt}article+article{break-before:page}h1,h2,h3,figcaption{break-after:avoid}figure,.table-wrap{overflow:visible}pre{overflow:visible;white-space:pre-wrap;overflow-wrap:anywhere}.table-wrap table{min-width:0}table,th,td{font-size:9pt}tr,figure{break-inside:avoid}a{color:inherit}figure,figcaption{background:white;color:black;border:1px solid #bbb}.key,.section-name,.comment,figcaption b{color:black}body .hit{outline:none}thead{display:table-header-group}}</style></head>
-<body><a class="skip" href="#main">跳到正文</a><header class="top"><div class="bar"><a class="brand" href="#start"><img class="emblem" src="../assets/brand/starfall-lab-comet-fragments.png" alt=""><span>Starfall Lab 流火实验室</span></a><span class="version">v0.38</span><button type="button" aria-controls="contents" aria-expanded="false" class="menu interactive">目录</button><div class="tools"><label class="searchbox interactive"><span class="lens" aria-hidden="true"></span><input id="query" type="search" placeholder="搜索字段、效果或编号" aria-label="搜索整本手册" autocomplete="off"><kbd aria-hidden="true">/</kbd></label><button type="button" id="print" class="interactive">打印全册</button></div></div></header>
+<body><a class="skip" href="#main">跳到正文</a><header class="top"><div class="bar"><a class="brand" href="#start"><img class="emblem" src="../assets/brand/starfall-lab-comet-fragments.png" alt=""><span>Starfall Lab 流火实验室</span></a><span class="version">v0.39</span><button type="button" aria-controls="contents" aria-expanded="false" class="menu interactive">目录</button><div class="tools"><label class="searchbox interactive"><span class="lens" aria-hidden="true"></span><input id="query" type="search" placeholder="搜索字段、效果或编号" aria-label="搜索整本手册" autocomplete="off"><kbd aria-hidden="true">/</kbd></label><button type="button" id="print" class="interactive">打印全册</button></div></div></header>
 <div class="frame"><nav class="sidebar" id="contents" aria-label="手册目录"><div class="nav-group"><div class="group">入门</div><a href="#start">项目简介与使用指南</a></div>
 <div class="nav-group"><div class="group">被动能力</div><a href="#passives">单位自带被动</a></div>
 <div class="nav-group"><div class="group">触发与条件</div><a href="#triggers">触发时机总览</a><a href="#conditions">持续的状态条件</a><a href="#timing-onkill">击杀时</a><a href="#timing-onbeforedealdamage">造成伤害前</a><a href="#timing-ondealdamage">造成伤害时</a><a href="#timing-ontakedamage">受到伤害时</a><a href="#timing-onbeforetakedamage">受到伤害前</a><a href="#timing-ondeath">死亡时</a><a href="#timing-onfire">实际开火时</a><a href="#timing-ondeploy">部署时</a><a href="#timing-onpromote">晋升时</a><a href="#timing-onpassivegained">获得被动时</a><a href="#timing-onpassengerconsumed">消耗乘客时</a><a href="#interval">定时触发</a><a href="#before-fire-weapon">开火前替换武器</a><a href="#timing-onsignal">自定义信号</a></div>
-<div class="nav-group"><div class="group">行为与结果</div><a href="#actions">一次性结果总表</a><a href="#states">持续性结果总表</a><a href="#multi">多结果</a><a href="#animations">动画与染色</a><a href="#health-formulas">数值公式</a><a href="#force-move">强制位移</a><a href="#chrono-teleport">超时空传送</a><a href="#transform-object">单位与建筑变形</a><a href="#consume-object">消耗与自毁</a><a href="#spawn-object">生成单位与建筑</a><a href="#passive-operations">被动授予、层数与移除</a><a href="#weapon-results">直接伤害、武器与弹头</a><a href="#permanent-growth">永久属性成长</a><a href="#area-support">附近检测与光环</a><a href="#transport-support">载员与运输单位</a><a href="#multi-shot">多重射击</a></div>
+<div class="nav-group"><div class="group">行为与结果</div><a href="#actions">一次性结果总表</a><a href="#states">持续性结果总表</a><a href="#multi">多结果</a><a href="#animations">动画与染色</a><a href="#health-formulas">数值公式</a><a href="#force-move">强制位移</a><a href="#chrono-teleport">超时空传送</a><a href="#transform-object">单位与建筑变形</a><a href="#consume-object">消耗与自毁</a><a href="#spawn-object">生成单位与建筑</a><a href="#passive-operations">被动授予、层数与移除</a><a href="#weapon-results">直接伤害、武器与弹头</a><a href="#permanent-growth">永久属性成长</a><a href="#area-support">附近检测与光环</a><a href="#transport-support">载员与运输单位</a><a href="#multi-shot">多重射击</a><a href="#attached-units">挂载子单位</a></div>
 <div class="nav-group"><div class="group">自定义拾取物</div><a href="#ground-pickups">拾取物配置与生成</a></div>
-<div class="nav-group"><div class="group">被动授予</div><a href="#warheads">弹头命中授予</a><a href="#script-grants">地图与小队授予</a></div>
-<div class="nav-group"><div class="group">科研三选一</div><a href="#research-overview">玩法简介</a><a href="#research">科研项目参数</a><a href="#research-effects">科研结果与组合升级</a><a href="#points">科研点与建筑产出</a><a href="#building">特殊建筑免费科研</a></div><div class="nav-group"><div class="group">全局设置</div><a href="#global-settings">全局配置</a></div><div class="nav-group"><div class="group">超级武器</div><a href="#super-action-sequence">自定义点选超武</a></div><div class="nav-group"><div class="group">Lua 脚本（进阶）</div><a href="#lua-skills">Lua 事件技能</a><a href="#lua-active">Lua 主动技能</a><a href="#lua-timers">Lua 定时任务与随机落点</a><a href="#lua-anim">Lua 可移动动画</a><a href="#lua-map-trigger">地图触发执行 Lua</a></div><div class="nav-group"><div class="group">关于项目</div><a href="#credits">制作与鸣谢</a></div></nav>
+<div class="nav-group"><div class="group">被动授予</div><a href="#warheads">弹头命中授予被动</a><a href="#script-grants">地图与小队授予</a></div>
+<div class="nav-group"><div class="group">科研三选一</div><a href="#research-overview">玩法简介</a><a href="#research">科研项目参数</a><a href="#research-effects">科研结果与组合升级</a><a href="#points">科研点与建筑产出</a><a href="#building">特殊建筑免费科研</a></div><div class="nav-group"><div class="group">全局设置</div><a href="#global-settings">全局配置</a></div><div class="nav-group"><div class="group">超级武器</div><a href="#super-action-sequence">自定义点选超武</a></div><div class="nav-group"><div class="group">Lua 脚本（进阶）</div><a href="#lua-skills">Lua 事件技能</a><a href="#lua-active">Lua 主动技能</a><a href="#lua-timers">Lua 定时任务与随机落点</a><a href="#lua-anim">Lua 可移动动画</a><a href="#lua-map-trigger">地图触发执行 Lua</a><a href="#weapon-fire-script">武器开火脚本</a><a href="#warheads-detonate-script">弹头引爆执行脚本</a></div>
+<div class="nav-group"><div class="group">特殊行为子模块</div><a href="#actsp">模块介绍与安装</a><a href="#actsp-drone-behavior">子机行为</a><a href="#better-garrison">高级驻军</a></div>
+<div class="nav-group"><div class="group">关于项目</div><a href="#credits">制作与鸣谢</a></div></nav>
 <main id="main" tabindex="-1"><section class="results" hidden><div class="crumb">规则手册 / 搜索</div><h2>搜索结果</h2><p role="status"></p><div class="list"></div></section>
 <article id="start" data-title="项目简介与使用指南" data-group="入门"><div class="crumb">规则手册 <span>/</span> 入门</div><h1>流火实验室 INI 规则手册</h1><p class="lead">《红色警戒 2：尤里的复仇》扩展配置参考</p><h3 id="introduction">项目简介</h3><p id="project-overview">流火实验室（Starfall Lab，简称流火）是《红色警戒 2：尤里的复仇》的 DLL 扩展。模组作者可以通过 INI 配置单位被动能力和战场中的三选一科研升级。</p><h3 id="getting-started">使用指南</h3><p id="start--1">第一次配置可以从单位被动或科研项目入手。已经知道字段名时，按 <kbd>/</kbd> 搜索整本手册。</p>
 <p id="config-diagnostics">科研卡没有出现或被动未生效时，查看游戏根目录的 <code>Starfall.log</code>。科研配置错误会列出段名、字段、读取到的值和原因；可定位到独立 <code>Starfall.ini</code> 的字段还会标出行号。来自 <code>rulesmd.ini</code>、地图或包含文件的字段按游戏合并后的规则检查。</p>
@@ -39,14 +41,13 @@ p kbd{color:var(--ink);border-color:#b8c1bc;padding:1px 5px}
 <h3 id="passives-params">参数列表和对应说明</h3>
 <h4 id="passive-parts">一个被动由哪些部分组成</h4>
 <p>普通事件可从 <code>Trigger</code> 和一项带所需参数的 <code>Action</code> 写起，再按玩法添加条件、次数和表现。</p>
-<div class="table-wrap"><table><thead><tr><th>组成</th><th>常用字段</th><th>什么时候填写</th></tr></thead><tbody><tr id="passive-part-1"><th scope="row">触发方式</th><td data-label="常用字段"><code>Trigger</code></td><td data-label="什么时候填写">单选：<code>OnKill</code>、<code>OnBeforeDealDamage</code>、<code>OnDealDamage</code>、<code>OnTakeDamage</code>、<code>OnBeforeTakeDamage</code>、<code>OnDeath</code>、<code>OnFire</code>、<code>OnBeforeFire</code>、<code>OnDeploy</code>、<code>OnPromote</code>、<code>OnPromoteVeteran</code>、<code>OnPromoteElite</code>、<code>OnPassiveGained</code>、<code>OnPassengerConsumed</code>、<code>OnBuilt</code>、<code>OnBombDetonate</code>、<code>OnInterval</code>、<code>WhileState</code>。定时触发还需填写 <code>Interval</code>。</td></tr>
-<tr id="passive-bomb-detonate"><th scope="row">炸弹引爆</th><td data-label="配置字段"><code>Trigger=OnBombDetonate</code></td><td data-label="什么时候填写">仅支持一个 RunScript 与 Script.Param.*，ID 最长 121 字节，不接受普通过滤、冷却或触发次数条件。安放时记录能力，引爆后提供 ctx.point、ctx.owner、ctx.damage，无存活施法者要求；ctx.self 为空。ctx.damage 是含安放时火力倍率、未计算目标装甲的主爆炸伤害。延迟回调需把伤害放入任务数据。可独立定时、存读档；拆弹不触发。</td></tr>
+<div class="table-wrap"><table><thead><tr><th>组成</th><th>常用字段</th><th>什么时候填写</th></tr></thead><tbody><tr id="passive-part-1"><th scope="row">触发方式</th><td data-label="常用字段"><code>Trigger</code></td><td data-label="什么时候填写">单选：<code>OnKill</code>、<code>OnBeforeDealDamage</code>、<code>OnDealDamage</code>、<code>OnTakeDamage</code>、<code>OnBeforeTakeDamage</code>、<code>OnDeath</code>、<code>OnFire</code>、<code>OnBeforeFire</code>、<code>OnDeploy</code>、<code>OnPromote</code>、<code>OnPromoteVeteran</code>、<code>OnPromoteElite</code>、<code>OnPassiveGained</code>、<code>OnPassengerConsumed</code>、<code>OnBuilt</code>、<code>OnInterval</code>、<code>WhileState</code>。定时触发还需填写 <code>Interval</code>。</td></tr>
 <tr id="passive-part-2"><th scope="row">事件对方</th><td data-label="常用字段"><code>Filter.TargetHouse</code> / <code>Filter.TargetKind</code></td><td data-label="什么时候填写">阵营可选 <code>All</code>、<code>Self</code>、<code>Allies</code>、<code>Enemies</code>、<code>Neutral</code>、<code>None</code>；类别可选 <code>All</code>、<code>Infantry</code>、<code>Vehicle</code>、<code>Aircraft</code>、<code>Building</code>、<code>Other</code>、<code>None</code>。每个字段可用英文逗号多选。</td></tr>
 <tr id="passive-part-3"><th scope="row">公式条件</th><td data-label="常用字段"><code>Condition.Formula</code></td><td data-label="什么时候填写">使用比较表达式判断层数、生命、弹药、乘客等。</td></tr>
 <tr id="passive-part-4"><th scope="row">次数、概率和冷却</th><td data-label="常用字段"><code>Condition.Count</code>、<code>Chance</code>、<code>Cooldown</code>、<code>MaxTriggers</code></td><td data-label="什么时候填写">分别控制合格事件数、成功概率、冷却帧数和成功触发次数上限。</td></tr>
 <tr id="passive-part-5"><th scope="row">事件结果</th><td data-label="常用字段"><code>Action</code> / <code>Actions</code></td><td data-label="什么时候填写"><code>Action</code> 单选：<code>PlayAnim</code>、<code>PlaySound</code>、<code>ShakeScreen</code>、<code>SpawnParticleSystem</code>、<code>Heal</code>、<code>Damage</code>、<code>SetDamage</code>、<code>BlockDamage</code>、<code>ApplyIronCurtain</code>、<code>GiveCredits</code>、<code>GiveResearchPoints</code>、<code>ChangeAmmo</code>、<code>ChangeMaxHealth</code>、<code>ChangeSpeed</code>、<code>ChangeFirepower</code>、<code>ChangeArmor</code>、<code>ChangeFireRate</code>、<code>ChangeWeaponRange</code>、<code>ChangeProjectileScale</code>、<code>ChangeScale</code>、<code>SpawnCrate</code>、<code>SpawnPickup</code>、<code>RemovePickup</code>、<code>SpawnUnit</code>、<code>SpawnBuilding</code>、<code>ChronoTeleport</code>、<code>ForceMove</code>、<code>ChangeOwner</code>、<code>Transform</code>、<code>SelfDestruct</code>、<code>ConsumeTarget</code>、<code>ConsumePassenger</code>、<code>Promote</code>、<code>RunScript</code>、<code>GrantPassive</code>、<code>StealPassive</code>、<code>RemovePassive</code>、<code>ChangePassiveStack</code>、<code>FireWeapon</code>、<code>DetonateWarhead</code>、<code>ReplaceWeapon</code>。<code>ReplaceWeapon</code> 仅用于 <code>OnBeforeFire</code>。组合多个普通事件结果时，用 <code>Actions</code> 引用结果段 ID。</td></tr>
 <tr id="passive-stacks"><th scope="row">被动层数</th><td data-label="常用字段"><code>Stack.Max</code></td><td data-label="什么时候填写">可选，填正整数限制层数上限。每个单位的每项被动从 0 层开始。用 <code>ChangePassiveStack</code> 增减手动层数，也可由开启叠加的乘客提供；公式用 <code>This.Stack</code> 读取总层数。</td></tr>
-<tr id="passive-part-6"><th scope="row">动画与染色</th><td data-label="常用字段"><code>Anim</code> / <code>Anim.Always</code> / <code>TriggerAnim</code> / <code>TriggerAnim.Target</code> / <a href="#tint-color"><code>Tint.Color</code></a></td><td data-label="什么时候填写">动画名取自游戏已注册的动画类型。<code>Anim.Always</code> 控制附着动画是否常驻；<code>TriggerAnim.Target</code> 单选 <code>Self</code> 或 <code>Target</code>，默认 <code>Self</code>。</td></tr></tbody></table></div>
+<tr id="passive-part-6"><th scope="row">动画与染色</th><td data-label="常用字段"><code>Anim</code> / <code>Anim.Always</code> / <code>TriggerAnim</code> / <code>TriggerAnim.Target</code> / <a href="#tint-color"><code>Tint.Color</code></a> / <a href="#tint-strength"><code>Tint.Strength</code></a></td><td data-label="什么时候填写">动画名取自游戏已注册的动画类型。<code>Anim.Always</code> 控制附着动画是否常驻；<code>TriggerAnim.Target</code> 单选 <code>Self</code> 或 <code>Target</code>，默认 <code>Self</code>。</td></tr></tbody></table></div>
 <h3 id="passives-examples">示例代码</h3>
 <h4 id="passives--1">完整示例：击杀回血</h4>
 <p id="passives--2"><code>Filter.TargetHouse</code> 筛选被击杀者，<code>Action.Target=Self</code> 把治疗给持有者。每辆灰熊分别累计击杀次数。</p>
@@ -341,8 +342,10 @@ Action.Amount=2</code></pre></figure>
 <p id="triggers--20"><code>Trigger=OnInterval</code> 必须填写正整数 <code>Interval</code>。单位在地图上拥有该技能后，先等满一个周期；不同单位、不同技能各自计时。到点时再检查血量、电力、目标筛选、次数、概率和冷却，本次未生效仍按原周期继续。没有攻击目标时可照常对自身执行动作，普通单位目标动作须有存活目标。离开地图或失去技能会重置计时，存读档保留进度。</p>
 <p id="triggers--22">示例中若加上 <code>Condition.Count=2</code>，则每两次合格的定时事件治疗一次。</p>
 <div class="pager"><a href="#timing-onpassengerconsumed"><small>上一节</small>← 消耗乘客时</a><a href="#before-fire-weapon"><small>下一节</small>开火前替换武器 →</a></div></article>
+
 <article id="before-fire-weapon" data-title="开火前替换武器" data-group="触发与条件"><div class="crumb">规则手册 <span>/</span> 触发与条件</div><h2>开火前替换武器</h2>
 <h3 id="before-fire-weapon-intro">简要介绍</h3>
+<p>若要用 Lua 编写整轮攻击，见<a href="#weapon-fire-script">武器开火脚本</a>。</p>
 <p>被动持有者开始一轮标准武器齐射时，在第一发射出前同步判定一次。同一轮连发沿用这次判定。</p>
 <h3 id="before-fire-weapon-params">参数列表和对应说明</h3>
 <div class="table-wrap"><table><thead><tr><th scope="col">参数</th><th scope="col">说明</th></tr></thead><tbody><tr><th scope="row"><code>Trigger=OnBeforeFire</code></th><td data-label="说明">在当前齐射开始时同步判定。</td></tr>
@@ -401,7 +404,8 @@ Action.Weapon=SupportWeapon</code></pre></figure>
 <div class="table-wrap"><table class="named-table"><thead><tr><th scope="col">名称</th><th scope="col"><code>Action</code></th><th scope="col">配套参数</th><th scope="col">适用目标</th><th scope="col">效果</th></tr></thead><tbody>
 <tr id="action-givecredits"><th scope="row">获得资金</th><td data-label="字段"><code>GiveCredits</code></td><td data-label="配套参数"><code>Action.Amount</code>（正整数或公式）与 <code>Action.PercentOfDamage</code>（实际伤害的正整数百分比）二选一</td><td data-label="适用目标">单位</td><td data-label="效果">给目标的所属方增加资金。</td></tr>
 <tr id="action-giveresearchpoints"><th scope="row">获得科研点</th><td data-label="字段"><code>GiveResearchPoints</code></td><td data-label="配套参数"><code>Action.Amount</code>（正整数或公式）与 <code>Action.PercentOfDamage</code>（实际伤害的正整数百分比）二选一</td><td data-label="适用目标">单位</td><td data-label="效果">给目标的所属方增加科研点。</td></tr>
-<tr id="action-grantfreeresearch"><th scope="row"><a href="#research-free-choice">获得一次免费科研</a></th><td data-label="字段"><code>GrantFreeResearch</code></td><td data-label="配套参数">可选 <code>Action.ResearchOptions</code>（逗号分隔科技 ID）和 <code>Action.Rarity</code>（默认 All，可选 Common、Rare、Epic、Insane）。</td><td data-label="适用目标">单位所属方、地图脚本或超武拥有者</td><td data-label="效果">右上角科研角标加一，播放提示音和动画，由获得方选一项。省略列表时使用全科技池；指定 1～3 项按填写顺序展示，更多时按全局稀有度权重逐张抽取，最多三张且不重复。指定稀有度时仅从该档抽取，即使其权重为零。筛选阵营、前置和已拥有科技；没有候选时不发放。例：<code>Action.ResearchOptions=SF_HX_SmokeShell,SF_HX_TeslaLunge</code>。</td></tr>
+<tr id="action-grantresearch"><th scope="row">直接授予指定科研</th><td data-label="字段"><code>GrantResearch</code></td><td data-label="配套参数"><code>Action.Research</code> 填一个已注册的科研项目 ID，例如 <code>Action.Research=Demo_MissionReward</code>。</td><td data-label="适用目标">目标单位所属方、地图脚本或超武拥有者</td><td data-label="效果">立即免费授予，可用于 <a href="#research-grantonly">GrantOnly=yes</a> 的项目。仍检查已拥有项目、国家、前置、互斥和效果可用性。地图脚本示例：<code>ctx:action("GrantResearch", {Target="Owner", Research="Demo_MissionReward"})</code>。</td></tr>
+<tr id="action-grantfreeresearch"><th scope="row"><a href="#research-free-choice">获得一次免费科研</a></th><td data-label="字段"><code>GrantFreeResearch</code></td><td data-label="配套参数">可选 <code>Action.ResearchOptions</code>（逗号分隔科技 ID）和 <code>Action.Rarity</code>（默认 All，可选 Common、Rare、Epic、Insane）。</td><td data-label="适用目标">单位所属方、地图脚本或超武拥有者</td><td data-label="效果">右上角科研角标加一，播放提示音和动画，由获得方选一项。省略列表时使用全科技池；指定 1～3 项按填写顺序展示，更多时按全局稀有度权重逐张抽取，最多三张且不重复。指定稀有度时仅从该档抽取，即使其权重为零。筛选阵营、前置和已拥有科技；没有候选时不发放。例：<code>Action.ResearchOptions=Demo_ReserveCash,Demo_GrizzlyDiscount</code>。</td></tr>
 <tr id="action-grantrandomresearch"><th scope="row"><a href="#research-effects">随机获得科技</a></th><td data-label="字段"><code>GrantRandomResearch</code></td><td data-label="配套参数">可选 <code>Action.Rarity=All</code>，支持 <code>Common</code>、<code>Rare</code>、<code>Epic</code>、<code>Insane</code>、<code>All</code>；不使用数量参数。</td><td data-label="适用目标">单位所属方；超武或地图脚本的拥有者</td><td data-label="效果">直接免费获得一项符合阵营、前置和生效条件且尚未拥有的科技。默认从所有稀有度的有效项目中等概率抽取，不受普通科研权重影响；指定档位没有候选时不补选。获得后执行科技效果并记录所有权，遵循科研总开关与公告设置，不扣科研点、不推进普通科研轮次。当前普通候选会重建，已使用的刷新次数保留；支持存档及联机。Lua 示例：<code>ctx:action("GrantRandomResearch", {Rarity="Epic"})</code>。</td></tr>
 <tr id="action-removepickup"><th scope="row"><a href="#pickup-removal">清除拾取物</a></th><td><code>RemovePickup</code></td><td><code>Action.Range</code>、<code>Action.PickupTypes</code></td><td>单位或位置；全图可省略中心</td><td>清除范围内匹配的自定义拾取物。<a href="#pickup-removal">参数与示例</a></td></tr>
 <tr id="action-spawnpickup"><th scope="row"><a href="#ground-pickups">生成拾取物</a></th><td><code>SpawnPickup</code></td><td><code>Action.PickupType</code>（已注册的拾取物 ID）</td><td>单位或位置</td><td>在指定位置生成，遇到已有拾取物、原版板条箱或建筑时，在周围三格内寻找落点。<a href="#ground-pickups">拾取物配置</a></td></tr>
@@ -450,6 +454,8 @@ Action.Weapon=SupportWeapon</code></pre></figure>
 <tr id="action-spawnbuilding"><th scope="row"><a href="#spawn-object">生成建筑</a></th><td data-label="字段"><code>SpawnBuilding</code></td><td data-label="配套参数"><code>Action.BuildingType</code>（建筑类型 ID）；可选 <code>Action.Owner</code>、<code>Action.SearchRadius</code></td><td data-label="适用目标">单位或落点</td><td data-label="效果">以目标格为建筑占地左上角，立即生成一座已建成的建筑；原位置不可用时选择搜索半径内最近的可用空地。完整占地（含 Bib）不得越界、重叠已有物体、位于桥上或高低不平；地形须通过原生建筑放置检查。找不到位置时失败，不移动或删除已有单位。</td></tr>
 <tr id="action-transform"><th scope="row"><a href="#transform-object">单位／建筑变形</a></th><td data-label="字段"><code>Transform</code></td><td data-label="配套参数"><code>Action.UnitType</code>（新形态 ID，建筑也使用此字段）</td><td data-label="适用目标">存活单位或建筑</td><td data-label="效果">原地永久变形，保留所属方和星级。移动单位须同属一类并使用相同的 <code>Locomotor</code>；建筑须逐格匹配实际占地区域，含 Bib，不搜索或移动落点。建筑详细限制与状态保留见下方说明。</td></tr>
 <tr id="action-changeowner"><th scope="row">转移所属方</th><td data-label="字段"><code>ChangeOwner</code></td><td data-label="配套参数">可选 <code>Action.Owner</code></td><td data-label="适用目标">单位</td><td data-label="效果">把存活目标移交给指定所属方。目标已属该方或正受心灵控制时跳过。</td></tr>
+<tr id="action-removeattachedunit"><th scope="row"><a href="#attached-units">移除挂载子单位</a></th><td data-label="字段"><code>RemoveAttachedUnit</code></td><td data-label="配套参数"><code>Action.Slot</code>、<code>Action.UnitType</code>、<code>Action.Count</code></td><td data-label="适用目标">拥有挂件的单位或建筑</td><td data-label="效果">按安装顺序从新到旧拆除，立即释放槽位。</td></tr>
+<tr id="action-attachunit"><th scope="row"><a href="#attached-units">挂载子单位</a></th><td data-label="字段"><code>AttachUnit</code></td><td data-label="配套参数"><code>Action.UnitType</code>、挂点、槽位、运输开火与继承排除参数</td><td data-label="适用目标">步兵、载具、飞行器、建筑</td><td data-label="效果">创建可独立开火的子单位，挂载到目标。</td></tr>
 <tr id="action-consumetarget"><th scope="row"><a href="#consume-object">消耗目标</a></th><td data-label="字段"><code>ConsumeTarget</code></td><td data-label="配套参数"><code>Action.Target</code> 默认为 <code>Target</code></td><td data-label="适用目标">地图上的单位或建筑</td><td data-label="效果">直接移除选定对象，不结算伤害、死亡或击杀。目标载客、驻军、关联地堡或被寄生时返回失败，顺序结果组停止。</td></tr>
 <tr id="action-consumepassenger"><th scope="row"><a href="#consume-object">消耗乘客</a></th><td data-label="字段"><code>ConsumePassenger</code></td><td data-label="配套参数">无</td><td data-label="适用目标">单位</td><td data-label="效果">消耗目标的首位乘客及其全部嵌套乘客；仅为直属乘客触发一次目标的 <code>OnPassengerConsumed</code>。</td></tr>
 <tr id="action-selfdestruct"><th scope="row"><a href="#consume-object">自毁</a></th><td data-label="字段"><code>SelfDestruct</code></td><td data-label="配套参数">无专用参数</td><td data-label="适用目标">仅自身</td><td data-label="效果">使持有者自毁，按正常死亡流程结算。</td></tr>
@@ -535,6 +541,14 @@ Action.Duration=75</code></pre></figure>
 <tr id="state-modifierimmunetomindcontrol"><th scope="row">免疫心控</th><td data-label="字段"><code>Modifier.ImmuneToMindControl</code></td><td data-label="可选值"><code>yes</code>、<code>no</code></td><td data-label="效果">免疫普通心控、心灵控制器及适配的 Ares 永久心控。已存在的心控继续有效。</td></tr>
 </tbody></table></div>
 <p>开关字段填 <code>yes</code> 表示启用，填 <code>no</code> 或省略表示该被动不提供此效果。</p>
+<h3 id="state-modifiertooltiptext">鼠标悬停单位时追加文本</h3>
+<p>在 <code>Trigger=WhileState</code> 被动中填写 <code>Modifier.TooltipText</code>。当鼠标指向持有者时，浮窗第一行显示游戏原有的单位名称，每个生效的被动可以在下方追加一行。文本里的 <code>$(...)</code> 按当前指向的单位计算，<code>This.Stack</code> 取这一个单位身上该被动的层数。</p>
+<figure><figcaption><span><b>INI</b> 犀牛坦克的叠层提示</span><button class="copy" type="button">复制</button></figcaption><pre tabindex="0"><code>[RhinoRange]
+Trigger=WhileState
+Condition.Formula=$(This.Stack &gt; 0)
+Modifier.TooltipText=射程+$(This.Stack)</code></pre></figure>
+<p>将上述字段加入犀牛坦克已有的叠层被动。五层时，名字下方显示“射程+5”，降到零层时该行消失。此字段只控制文案，实际射程需要另行配置。</p>
+<p>同一行可以包含多个公式，如 <code>Modifier.TooltipText=生命 $(Self.Health) / $(Self.MaxHealth)</code>。默认最多显示两位小数，去掉末尾的零。可选字段 <code>Modifier.TooltipDecimals</code> 接受 0 到 6 的整数，指定该行所有数字固定显示的小数位数。公式缺少所需数据时（例如没有当前攻击目标），跳过该被动的整行。整个浮窗含名字、换行最多容纳 255 个 UTF-16 代码单元。</p>
 <h3 id="states-grants">子机与光环的被动授予</h3>
 <div class="table-wrap"><table class="named-table"><thead><tr><th scope="col">名称</th><th scope="col">持续结果字段</th><th scope="col">可选值</th><th scope="col">效果</th></tr></thead><tbody>
 <tr id="state-modifierspawnpassives"><th scope="row">授予子机被动</th><td data-label="字段"><code>Modifier.SpawnPassives</code></td><td data-label="可选值">一个或多个已注册的被动 ID，以英文逗号分隔</td><td data-label="效果">授予母体的直属 <code>Spawns=</code> 子机，包括后来补充的子机。条件结束或子机脱离时撤回该来源。</td></tr>
@@ -644,7 +658,8 @@ Action.Amount=200</code></pre></figure><figure id="multi--3"><figcaption><span><
 <article id="animations" data-title="动画与染色" data-group="行为与结果"><div class="crumb">规则手册 <span>/</span> 行为与结果</div><h2>动画与染色</h2>
 <p id="multi--7">动画与染色字段写在注册的被动主段里。可与单结果 <code>Action=</code>、多结果 <code>Actions=</code> 或持续性 <code>Modifier.*</code> 同用。</p>
 <div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">行为</th></tr></thead><tbody><tr id="multi--8"><th scope="row"><code>Anim=动画ID</code></th><td data-label="行为">挂载一份随单位移动的循环动画，动画大小实时跟随单位体型比例。失去被动时移除；隐形或离开地图期间隐藏，返回后重新判断是否显示。</td></tr>
-<tr id="tint-color"><th scope="row"><code>Tint.Color</code></th><td data-label="行为">持有者满足自身状态条件时，为单位本体叠加颜色。依次填写红、绿、蓝三个整数（0～255），例如 <code>Tint.Color=160,0,0</code>。可单独使用。</td></tr>
+<tr id="tint-color"><th scope="row"><code>Tint.Color</code></th><td data-label="行为">单位本体的目标颜色。依次填写红、绿、蓝三个整数（0～255）。例如 <code>0,0,0</code> 为黑色，<code>255,255,255</code> 为白色。</td></tr>
+<tr id="tint-strength"><th scope="row"><code>Tint.Strength</code></th><td data-label="行为">原色向目标色的插值比例，须与 <code>Tint.Color</code> 同段使用。取值为 0%～100% 的整数，默认 50%。0% 保留原色，50% 取各通道中点，100% 显示目标色。最终颜色按游戏色深取整。</td></tr>
 <tr id="anim-always"><th scope="row"><code>Anim.Always</code></th><td data-label="行为"><code>no</code>（默认）时，满足自身状态条件才显示；<code>WhileState</code> 还需满足等待时间，条件不再满足时隐藏。<code>yes</code> 时，持有被动期间不受这些条件影响。未配置自身状态条件时，<code>no</code> 也会持续显示。事件的目标筛选、次数、概率和冷却不控制附着动画。</td></tr>
 <tr id="gain-animation"><th scope="row"><code>GainAnim=动画ID</code></th><td data-label="行为">首次在地图上获得被动时播放一次，不受触发条件限制。续期、来源重叠和读档不重复播放，完全失去后重新获得可再播放。运输中首次获得时等登场再播放。</td></tr>
 <tr id="multi--9"><th scope="row"><code>TriggerAnim=动画ID</code></th><td data-label="行为">事件通过筛选、计数、冷却和概率判定后播放一次，先于整组结果执行。即使满血使治疗无效，动画也照常播放。<code>WhileState</code> 在满足条件和等待时长后播放一次，退出再进入时可再次播放</td></tr>
@@ -661,9 +676,10 @@ Condition.Formula=$(Self.Health &lt;= Self.MaxHealth * 50%)
 Condition.StateDurationSeconds=1
 Anim=YURICNTL
 Anim.Always=no
-Tint.Color=160,0,0</code></pre></figure>
+Tint.Color=160,0,0
+Tint.Strength=30%</code></pre></figure>
 <p>生命值不高于 50% 持续 1 秒后显示附着动画，生命值恢复后隐藏；改为 <code>Anim.Always=yes</code> 则持有被动时持续显示。该动画随单位体型实时缩放，<code>TriggerAnim</code> 播放的一次性动画不受此设置影响。</p>
-<p>省略自身条件时，持有被动就显示颜色。使用 <code>WhileState</code> 时，染色遵循状态等待时间；条件结束或失去被动后恢复。多个染色同时有效时，红、绿、蓝分别取各自的最大值。真铁幕与力场护盾优先显示，隐形期间隐藏染色。染色只改变外观。</p>
+<p>省略自身条件时，持有被动就显示颜色。使用 <code>WhileState</code> 时，染色遵循状态等待时间；条件结束或失去被动后恢复。同时生效的染色以强度最高者为准。强度相同时，按被动 ID 的字母顺序取第一项（忽略大小写）。真铁幕与力场护盾优先显示，隐形期间隐藏染色。染色只改变外观。</p>
 <p id="multi--13">动画 ID 取自当前游戏已注册的动画类型。只需要始终显示的特效时，注册的被动段可以只写 <code>Anim=</code>；只需要有条件的附着特效时，可在 <code>WhileState</code> 中只配置条件与 <code>Anim=</code>。只需要事件特效时，可省略动作，由实际播放启动该技能配置的冷却。已有动作的技能仍按动作是否成功决定冷却。多个结果共用一次触发动画。存读档保留附着动画和状态进入记录。</p>
 <div class="pager"><a href="#multi"><small>上一节</small>← 多结果</a><a href="#health-formulas"><small>下一节</small>数值公式 →</a></div></article>
 <article id="health-formulas" data-title="数值公式" data-group="行为与结果"><div class="crumb">规则手册 <span>/</span> 行为与结果</div><h2>数值公式</h2><h3 id="formula-section-1">简要介绍</h3>
@@ -783,7 +799,7 @@ Action.SearchRadius=3</code></pre></figure><figure><figcaption><span><b>Lua</b> 
 Action=Transform
 Action.Target=Target
 Action.UnitType=APOC</code></pre></figure><div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">取值与默认值</th><th scope="col">用法</th></tr></thead><tbody><tr id="transform-object-action-target"><th scope="row"><code>Action.Target</code></th><td data-label="取值与默认值">默认 Self</td><td data-label="用法">选定要变形的存活对象。触发者给自己升级时用 Self。</td></tr>
-<tr id="transform-object-action-unittype"><th scope="row"><code>Action.UnitType</code></th><td data-label="取值与默认值">必填，已定义的目标类型 ID</td><td data-label="用法">单位和建筑都使用这个字段。目标类型必须不同于原类型。</td></tr></tbody></table></div><h3>移动单位</h3><p>步兵、载具、飞行器各自在同类内转换，原型与新型须使用相同的 Locomotor。保留所属方和星级。载员数量和尺寸须能装进新型号；新移动类型还须能通过当前所在的地形。变形条件不满足时，原单位留在原处。</p><h4 id="building-transform-example">同占地建筑变形</h4><p><code>Transform</code> 支持建筑转建筑：原、新类型的实际占地格集合必须完全一致，分别检查普通占地和含 Bib 的占地。Bib 设置及范围也须一致。只同宽高、同格数仍不足以通过；占地定义的枚举顺序不影响判定。原版 <code>GAPOWR</code> 与 <code>NAHAND</code> 都是 2×2，<code>NAPOWR</code> 则为 3×2；模组修改后应以实际 art 规则为准。</p><p>成功后保留位置、所属方、身份 ID、星级、生命比例和额外生命上限。流火的临时被动、层数、冷却、持续时间、Lua 句柄、<code>ctx.state</code>、已排队任务及数据、Lua 动画继续有效；变形不会重置剩余时间。铁幕剩余时间也保留。底层会创建新形态并衔接原身份，再移除旧对象，建筑计数、电力和生产能力按新类型重新登记。</p><p>建造／出售中、生产中、驻军或乘客未清空、已有建筑插件、停靠关联、心控／子机／奴隶／超时空管理器、C4、绑定地图触发器等关联状态会阻止转换。占地不一致或放置失败时返回失败，保留原建筑。其他扩展自行维护的附着效果不属于此状态保留约定。建筑路径不依赖仅支持移动单位的 Phobos 转换接口。</p><figure><figcaption><span><b>INI</b> 建筑变形结果</span><button class="copy" type="button">复制</button></figcaption><pre tabindex="0"><code>Action=Transform
+<tr id="transform-object-action-unittype"><th scope="row"><code>Action.UnitType</code></th><td data-label="取值与默认值">必填，已定义的目标类型 ID</td><td data-label="用法">单位和建筑都使用这个字段。目标类型必须不同于原类型。</td></tr></tbody></table></div><h3>移动单位</h3><p>步兵、载具、飞行器各自在同类内转换，原型与新型须使用相同的 Locomotor。保留所属方和星级。载员数量和尺寸须能装进新型号；新移动类型还须能通过当前所在的地形。变形条件不满足时，原单位留在原处。移动单位优先使用 Phobos 的公共转换接口，缺少接口时自动采用<a href="#research-effects--6">流火内置转换及其限制</a>。</p><h4 id="building-transform-example">同占地建筑变形</h4><p><code>Transform</code> 支持建筑转建筑：原、新类型的实际占地格集合必须完全一致，分别检查普通占地和含 Bib 的占地。Bib 设置及范围也须一致。只同宽高、同格数仍不足以通过；占地定义的枚举顺序不影响判定。原版 <code>GAPOWR</code> 与 <code>NAHAND</code> 都是 2×2，<code>NAPOWR</code> 则为 3×2；模组修改后应以实际 art 规则为准。</p><p>成功后保留位置、所属方、身份 ID、星级、生命比例和额外生命上限。流火的临时被动、层数、冷却、持续时间、Lua 句柄、<code>ctx.state</code>、已排队任务及数据、Lua 动画继续有效；变形不会重置剩余时间。铁幕剩余时间也保留。底层会创建新形态并衔接原身份，再移除旧对象，建筑计数、电力和生产能力按新类型重新登记。</p><p>建造／出售中、生产中、驻军或乘客未清空、已有建筑插件、停靠关联、心控／子机／奴隶／超时空管理器、C4、绑定地图触发器等关联状态会阻止转换。占地不一致或放置失败时返回失败，保留原建筑。其他扩展自行维护的附着效果不属于此状态保留约定。建筑路径不依赖仅支持移动单位的 Phobos 转换接口。</p><figure><figcaption><span><b>INI</b> 建筑变形结果</span><button class="copy" type="button">复制</button></figcaption><pre tabindex="0"><code>Action=Transform
 Action.Target=Self
 Action.UnitType=NAHAND</code></pre></figure><figure><figcaption><span><b>Lua</b> 转换指定建筑</span><button class="copy" type="button">复制</button></figcaption><pre tabindex="0"><code>local converted = ctx:action("Transform", {Target=building, UnitType="NAHAND"})</code></pre></figure>
 <p>两种占地的外框同为 2×2。下图右侧缺少右下格，转换会失败。还须按同样方法比较含 Bib 的占地。</p><figure><figcaption>建筑占地示意（■ 占用，· 空地）</figcaption><pre>原建筑    新建筑&#10;■ ■       ■ ■&#10;■ ■       ■ ·</pre></figure>
@@ -984,6 +1000,7 @@ Modifier.FireRateMultiplier=2</code></pre></figure>
 <div class="pager"><a href="#area-support"><small>上一节</small>← 附近检测与光环</a><a href="#multi-shot"><small>下一节</small>多重射击 →</a></div></article>
 
 <article id="multi-shot" data-title="多重射击" data-group="行为与结果"><div class="crumb">规则手册 <span>/</span> 行为与结果</div><h2>多重射击</h2>
+<p><code>MultiShot.PreferSameLayer=yes</code>（也可写 <code>Modifier.MultiShot.PreferSameLayer=yes</code>）让额外射击优先选择与主目标一样在空中或地面的敌人。攻击地格时按地面处理。同类不足时从另一类补选，各类内部按距离选取。默认值为 <code>no</code>。多个被动叠加时，只要开启此项的被动实际提供至少一个额外目标，本次齐射就采用此优先级。</p>
 <h4 id="multishot-example">击杀积累多重射击层数</h4><p>灰熊每击杀一名敌人增加一层，最多三层。两层时，若射程内只有主目标和另一名敌人，总共发射两发。</p><figure><figcaption><span><b>INI</b> 按层数追加目标</span><button class="copy" type="button">复制</button></figcaption><pre tabindex="0"><code>[Starfall.PassiveTypes]
 1=SF_MultiShot
 2=SF_GrowMultiShot
@@ -1002,9 +1019,71 @@ Trigger=OnKill
 Filter.TargetHouse=Enemies
 Action=ChangePassiveStack
 Action.Passive=SF_MultiShot
-Action.Amount=1</code></pre></figure><p>公式在开火时计算，<code>Target</code> 指本次射击的主目标。<code>MultiShot=$(1 + This.Stack)</code> 表示初始多打一名，每层再多打一名。每项结果舍去小数，负数按 0 处理，多项有效被动的结果相加。旧写法 <code>yes</code> 等同于 <code>$(This.Stack)</code>，<code>no</code> 等同于 <code>0</code>。</p><p>只有主目标时仍只发一弹。追加弹不额外扣弹药，也不重复触发 OnFire。多重射击适用于常规武器弹体，Spawner 和 LimboLaunch 武器沿用原行为。</p>
+Action.Amount=1</code></pre></figure><p>公式在开火时计算，<code>Target</code> 指本次射击的主目标。<code>MultiShot=$(1 + This.Stack)</code> 表示初始多打一名，每层再多打一名。每项结果舍去小数，负数按 0 处理，多项有效被动的结果相加。旧写法 <code>yes</code> 等同于 <code>$(This.Stack)</code>，<code>no</code> 等同于 <code>0</code>。</p><p>只有主目标时仍只发一弹。追加弹不额外扣弹药，也不重复触发 OnFire。电弧、激光、辐射光束及定向粒子会分别连向各自的命中目标。声波多重射击会从枪口向每个副目标发出三道依次推进的弧形折射波纹。标记为 <code>IsMagBeam=yes</code> 的磁力武器只攻击主目标，多重射击对该武器无效。多重射击适用于常规武器弹体，Spawner、LimboLaunch 和使用独立发射流程的飞碟激光沿用原行为。</p>
 <p><code>Modifier.MultiShot=1</code> 表示额外攻击至多一个目标。主目标仍按原武器射击，额外目标须在射程内且可被当前武器命中。只有一个敌人时，不会把额外一发重复打给主目标。需要随击杀成长时可用上例的层数公式。</p>
-<div class="pager"><a href="#transport-support"><small>上一节</small>← 载员与运输单位</a><a href="#ground-pickups"><small>下一节</small>拾取物配置与生成 →</a></div></article>
+<div class="pager"><a href="#transport-support"><small>上一节</small>← 载员与运输单位</a><a href="#attached-units"><small>下一节</small>挂载子单位 →</a></div></article>
+<article id="attached-units" data-title="挂载子单位" data-group="行为与结果"><div class="crumb">规则手册 <span>/</span> 行为与结果</div><h2>挂载子单位</h2>
+<p><code>Action=AttachUnit</code> 每次触发创建一个真实子单位。下面的同一个安装被动，装到战斗要塞时最多占两个槽，装到航母时最多占四个槽。将被动授予需要安装的父体即可。</p>
+<figure><figcaption><span><b>INI</b> 按父体类型自动选择空槽</span><button class="copy" type="button">复制</button></figcaption><pre tabindex="0"><code>[Starfall.PassiveTypes]
+0=InstallTurret
+
+[InstallTurret]
+Trigger=OnPassiveGained
+Action=AttachUnit
+Action.UnitType=MTNK
+Action.Slot=Auto
+Action.ExcludeParentPassives=Overdrive
+
+[BFRT]
+AttachSlots=Left,Right
+AttachNode.Left.FLH=24,96,120
+AttachNode.Right.FLH=24,-96,120
+
+[CARRIER]
+AttachSlots=BowLeft,BowRight,SternLeft,SternRight
+AttachNode.BowLeft.FLH=160,96,120
+AttachNode.BowRight.FLH=160,-96,120
+AttachNode.SternLeft.FLH=-160,96,120
+AttachNode.SternRight.FLH=-160,-96,120</code></pre></figure>
+<div class="table-wrap"><table><thead><tr><th scope="col">参数</th><th scope="col">配置与默认值</th></tr></thead><tbody>
+<tr><th scope="row"><code>Action.UnitType</code></th><td data-label="配置与默认值">必填。填已有步兵或载具 ID。</td></tr>
+<tr><th scope="row"><code>Action.Target</code></th><td data-label="配置与默认值">默认 Self。指定要安装子单位的父体，可选地图上的步兵、载具、飞行器或建筑。</td></tr>
+<tr><th scope="row"><code>Action.Slot</code></th><td data-label="配置与默认值">Auto 按父体 AttachSlots 的声明顺序选择第一个空槽。填其他名称可为自由位置预留一个独占槽。省略时自由位置可重复安装。</td></tr>
+<tr><th scope="row"><code>Action.Node</code></th><td data-label="配置与默认值">直接指定父体的一个节点，并占用同名槽。与 Action.Slot 二选一。</td></tr>
+<tr><th scope="row"><code>Action.Anchor</code></th><td data-label="配置与默认值">自由位置的朝向，默认 Body 跟随车身，Turret 跟随炮塔。命名节点使用 AttachNode.&lt;名称&gt;.Anchor。</td></tr>
+<tr><th scope="row"><code>Action.FLH</code></th><td data-label="配置与默认值">前、左、高三个有符号整数，默认 0,0,0。水平 256 单位为一格，每个分量允许 −8192 到 8192。在命名节点上使用时，与节点偏移相加。</td></tr>
+<tr><th scope="row"><code>Action.TransportFire</code></th><td data-label="配置与默认值">默认 FollowTransport。父体进入 OpenTopped=yes 的载具时，子单位从运输载具位置射击。Disabled 关闭这项能力。</td></tr>
+<tr><th scope="row"><code>Action.ExcludeParentPassives</code></th><td data-label="配置与默认值">逗号分隔的父体被动 ID，默认空。跳过这些被动提供的持续结果。父体当前拥有的伤害免疫仍然保护子单位。</td></tr>
+</tbody></table></div>
+<h3>建筑挂点</h3><p>沿用上面的安装被动，下面的盟军发电站会在建筑中心上方安装一个子单位。建筑 FLH 从游戏内的建筑中心计算。<code>Body</code> 固定朝地图北方。<code>Turret</code> 随建筑炮塔旋转，无炮塔时使用建筑本体朝向。建筑被占领时子单位一同易主。同占地变形保留已有挂件及其偏移，出售或摧毁建筑会移除挂件。</p>
+<figure><figcaption><span><b>INI</b> 发电站屋顶挂点</span><button class="copy" type="button">复制</button></figcaption><pre tabindex="0"><code>[GAPOWR]
+Starfall.Passives=InstallTurret
+AttachSlots=Roof
+AttachNode.Roof.FLH=0,0,128</code></pre></figure>
+<p>示例在首次获得被动时安装一个子单位。想在获得时连续安装两个，可把 <code>Action</code> 和 <code>Action.*</code> 移入独立的 <code>[InstallOne]</code> 段，在 <code>[InstallTurret]</code> 中写 <code>Actions=InstallOne,InstallOne</code>。</p>
+<p>声明过的空节点默认位于车身原点。自动装槽在所有槽都已占用时返回失败。指定节点不存在或槽已占用时也会失败。自由挂载可只写 <code>Action.Anchor=Turret</code> 和 <code>Action.FLH=100,0,64</code>，使子单位跟随炮塔转动。子单位不能再挂载其他单位。</p>
+<h3>移除子单位与原槽换装</h3><p><code>Action=RemoveAttachedUnit</code> 通过 <code>Action.Target</code> 指定父体，默认 <code>Self</code>。每拆除一个子单位，就立即腾出它的槽位。建筑和已进入运输载具的父体同样支持拆除，父体乘客席位保持原样。拆除忽略子单位的伤害免疫，直接移除对象，不触发伤害、死亡、击杀或消耗乘客事件。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">可选参数</th><th scope="col">用法</th></tr></thead><tbody>
+<tr><th scope="row"><code>Action.Slot</code></th><td data-label="用法">填实际槽名，包括自动安装时占用的槽名。省略时搜索所有位置，也能拆除无槽名的自由挂件。Auto 只用于安装。</td></tr>
+<tr><th scope="row"><code>Action.UnitType</code></th><td data-label="用法">按子单位的步兵或载具类型 ID 筛选。和槽名同时填写时，两项都要匹配。</td></tr>
+<tr><th scope="row"><code>Action.Count</code></th><td data-label="用法">默认 1。正整数表示最多拆几个，All 表示拆除全部匹配项。优先拆最后安装的，读档后顺序相同。</td></tr>
+</tbody></table></div><p>不填参数会拆掉最新的一个挂件。只写 <code>Action.Count=All</code> 会清空父体。拆到至少一个即成功。一个也没拆到时返回失败，当前顺序结果组或 Lua <code>ctx:actions</code> 停止。如果拆除成功但后续安装失败，原槽保持空闲。</p>
+<figure><figcaption><span><b>INI</b> 只在 Roof 槽里装有 MTNK 时将它换成 E1</span><button class="copy" type="button">复制</button></figcaption><pre tabindex="0"><code>[UpgradeRoof]
+Trigger=OnPassiveGained
+Actions=RemoveRoofGun,InstallRoofGun
+
+[RemoveRoofGun]
+Action=RemoveAttachedUnit
+Action.Slot=Roof
+Action.UnitType=MTNK
+
+[InstallRoofGun]
+Action=AttachUnit
+Action.Node=Roof
+Action.UnitType=E1</code></pre></figure>
+<h3>移动、攻击和运输</h3><p>子单位随父体移动、转向和变更所属方。平时自行索敌，父体收到玩家攻击指令时，优先攻击射程内能命中的指令目标。父体登车后，子单位隐藏并随行，在开放式运输载具内可跟随外层载具的攻击指令；只计算父体自身的载客占用。父体隐形或伪装期间子单位隐藏。单独消灭子单位会腾出槽位。父体被移除时会一并清理子单位。</p>
+<h3>持续状态与免疫</h3><p>子单位保留自身类型的被动，只有直属父体可以授予、移除或修改它的被动及层数。默认共享父体生效的火力、装甲、射速、射程、多重射击、体型、弹体大小、染色、武器槽禁用、瘫痪和狂暴。继承的公式与条件按父体计算，父子拥有同名被动时只算一次。移速、发电、替换武器、附着动画和对外授予被动由原持有者处理。</p><p>子单位始终免疫心控。父子任一方拥有伤害免疫，子单位就免伤。父体的免伤结束后，子单位自身的免伤继续按原持续时间生效。</p>
+<div class="pager"><a href="#multi-shot"><small>上一节</small>← 多重射击</a><a href="#ground-pickups"><small>下一节</small>拾取物配置与生成 →</a></div></article>
 <article id="ground-pickups" data-title="拾取物配置与生成" data-group="自定义拾取物"><div class="crumb">规则手册 <span>/</span> 自定义拾取物</div><h2>拾取物配置与生成</h2>
 <p id="pickup-registration">在 <code>[Starfall.PickupTypes]</code> 注册拾取物 ID。任何一方的地面步兵或载具占据该格时，拾取物消失并执行奖励。关闭原版升级箱后仍然可以生成，原版箱子的数量和刷新规则独立结算。两者生成时会互相避开。指定位置生成板条箱时，若原版选中的落点已有拾取物，会在周围三格内寻找可用格；没有空位则本次生成失败。原版随机刷新遇到拾取物时会按原有流程重选位置。</p>
 <div class="table-wrap"><table><thead><tr><th>拾取物参数</th><th>说明</th></tr></thead><tbody>
@@ -1045,9 +1124,10 @@ Action=RemovePickup
 Action.Range=-1
 Action.PickupTypes=SF_WaveToken</code></pre></figure>
 <p>Lua 示例：<code>ctx:action("RemovePickup", {Target=ctx.point, Range=5, PickupTypes={"SF_MedKit","SF_SupplyBox"}})</code>。清到至少一件返回 <code>true</code>，否则返回 <code>false</code>。</p>
-<div class="pager"><a href="#multi-shot"><small>上一节</small>← 多重射击</a><a href="#warheads"><small>下一节</small>弹头命中授予 →</a></div></article>
-<article id="warheads" data-title="弹头命中授予" data-group="被动授予"><div class="crumb">规则手册 <span>/</span> 被动授予</div><h2>弹头命中授予</h2>
+<div class="pager"><a href="#attached-units"><small>上一节</small>← 挂载子单位</a><a href="#warheads"><small>下一节</small>弹头命中授予被动 →</a></div></article>
+<article id="warheads" data-title="弹头命中授予被动" data-group="被动授予"><div class="crumb">规则手册 <span>/</span> 被动授予</div><h2>弹头命中授予被动</h2>
 <h3 id="warheads-intro">简要介绍</h3>
+<p>弹头可以在爆心执行一次 <a href="#warheads-detonate-script">Lua 脚本</a>，也可以为命中的单位授予被动。两项可单独或同时配置。</p>
 <p id="warheads--1">下例在 <code>rulesmd.ini</code> 中配置支援弹头，使直接命中的己方或盟友单位获得 150 帧的 <code>SF_KillHeal</code>。先注册并定义该被动，再为弹头选用空闲编号。</p>
 <h3 id="warheads-params">参数列表和对应说明</h3>
 <div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">用法</th></tr></thead><tbody><tr id="warheads--5"><th scope="row"><code>Starfall.GrantPassives</code></th><td data-label="用法">填一个已注册的被动 ID 或用英文逗号列出多个。一个 ID 无效时，整条授予配置停用，游戏根目录的 <code>Starfall.log</code> 会记录原因</td></tr>
@@ -1108,12 +1188,8 @@ Action.PickupTypes=SF_WaveToken</code></pre></figure>
 <span class="key">0</span>=9601,1</code></pre></figure>
 <h3 id="script-grants-notes">额外补充说明</h3>
 <p id="script-grants--15">地图和小队都只发给当前存活、在地图上的对象。方案编号未注册或没有符合条件的接收者时，后续动作照常执行。与弹头对同一单位授予同名被动时，共用一份计数和有效期，取较长的剩余时间，永久优先。已授予的被动随单位存读档。</p>
-<div class="pager"><a href="#warheads"><small>上一节</small>← 弹头命中授予</a><a href="#research-overview"><small>下一节</small>玩法简介 →</a></div></article>
+<div class="pager"><a href="#warheads"><small>上一节</small>← 弹头命中授予被动</a><a href="#research-overview"><small>下一节</small>玩法简介 →</a></div></article>
 <article id="research-overview" data-title="玩法简介" data-group="科研三选一"><div class="crumb">规则手册 <span>/</span> 科研三选一</div><h2>玩法简介</h2>
-<p id="hex-tactics-projects">新增五项战术海克斯：连锁反应（稀有，恐怖机器人击杀敌方载具时，在死者位置造成半径 1.5 格、90 点基础伤害的电磁爆炸，仅敌方载具瘫痪 15 帧，复用精英基洛夫 KTSTLEXP 特效）；战地回收（稀有，己方所有地面载具死亡返还基础价格 30%，含矿车、运输车和基地车，出售、变形、消耗不触发）；磁悬浮加速（普通，遥控坦克移速和射速 ×1.3）；红色信念（史诗，鲍里斯装甲 ×1.5，为自身及 4 格内己方、盟友提供伤害 ×1.3 与新心控免疫，光环不叠加）；敏捷身手（史诗，谭雅每次敌方攻击独立 70% 闪避，闪避无冷却；成功闪避后优先选择 12 格内攻击她的可识别敌方地面载具，否则选择最近一辆，传送至附近空地。瞬移不附带超时空冻结；仅成功瞬移有 45 帧冷却，无目标或空地时只闪避）。需同步更新 DLL、所选 INI、HexBrawl.rules.ini 与 HexBrawl.lua。</p>
-<p id="hex-support-projects">新增：超级防弹衣（史诗，所有己方步兵装甲 ×3、移速 ×0.85）；华佗秘卷（稀有，己方在场步兵每 30 帧恢复 25 生命，不超过上限）；混沌命运（史诗，随机获得 2 项全稀有度科技）；质变史诗级（稀有，随机获得 1 项史诗科技）；质变稀有级（普通，随机获得 1 项稀有科技）。现有和未来步兵均受益，易主后按新主人科研判断。随机奖励排除自己和已拥有项，允许其他奖励科技继续发奖，不额外扣科研点或推进普通轮次，存读档不会重复发奖。这五项无需 Lua；请同步更新 DLL 与配置。</p>
-<p id="hex-ordnance-projects">新增六项海克斯：复制中心（史诗，盟军与苏联解锁复制中心）；我也有巨炮（稀有，非法国国家解锁巨炮，可与超级防御塔组合）；咔！BOOM！（普通，伊文炸弹伤害与半径 ×2）；武装吧矿车（史诗，每辆武装采矿车终身固定一种随机高级武器，精英时沿用同类精英武器）；大火箭（史诗，V3 火箭生命、伤害、体型与爆炸半径 ×2）；放烟花（稀有，炸弹引爆后每 3 帧在 2 格内追加一次爆炸，共 8 次，每次为主爆炸基础伤害的 20%）。放烟花需要把 <code>HexBrawl.lua</code> 复制到游戏根目录；伊文阵亡不打断，拆弹不触发，定时任务可存读档。请同步更新 DLL、INI 与配套 rules。</p>
-<p id="hex-economy-projects">海克斯已增至 54 项，新增买一送一、动力涡轮、变废为宝、电力盈能、光棱大兵，提供相同玩法的 PNG / PCX 版。变废为宝掉落原生随机奖励箱；赠塔在附近 5 格内寻找空地，赠品为普通哨戒炮；光棱大兵部署伤害 32，射程 7 格、精英 8 格。需更新 DLL 并合并 HexBrawl.rules.ini；光棱大兵的 WeaponTypes 注册需要 Ares。</p>
 <p id="research-overview-1">科研三选一让玩家在对局中选择升级方向。每位玩家独立积累科研点，攒满 100 点即可打开科研面板，从本轮最多三张卡片中选购一项。科研点可以来自地图奖励、特殊建筑的持续产出或被动能力。</p>
 <p id="research-overview-2">普通科研会根据玩家的国家、前置研究和已购项目确定候选，再抽出同一稀有度的卡片。允许刷新时，每个卡位每轮可免费更换一次，本轮已经出现过的项目不会再次出现。选中一项后扣除 100 点，该项目对这名玩家生效。例如，玩家可以让自己的某类单位获得被动，也可以解锁科技或立即获得资金。</p>
 <p id="research-overview-3">有些地图还提供免费科研。占领或成功渗透指定建筑后，玩家可以从该建筑预设的项目中领取一项，每栋建筑只能领取一次。</p>
@@ -1128,9 +1204,13 @@ Action.PickupTypes=SF_WaveToken</code></pre></figure>
 <h4 id="research--3">单个项目段 <code>[项目ID]</code></h4>
 <p><code>Countries</code> 筛选能看到卡片的国家，<code>TargetTypes</code> 指定获得效果的单位。</p>
 <div class="table-wrap"><table><thead><tr><th>字段</th><th>用途</th></tr></thead><tbody><tr id="research--6"><th scope="row"><code>Name</code> / <code>Summary</code> / <code>Detail</code></th><td data-label="用途">项目名称、列表简述、悬浮详情。省略详情时按结果生成默认说明</td></tr>
-<tr id="research--7"><th scope="row"><code>Icon</code></th><td data-label="用途">图标文件名，支持游戏根目录下的 PNG（支持透明度）或游戏可加载的 PCX。省略、留空或加载失败时使用内置默认图标 <code>sfrdefault.png</code>。同名外部 PNG 可覆盖内置图片。可填写相对游戏根目录的 PNG 路径，如 <code>HexBrawlIcons\Focus.png</code>。建议卡片图标使用 96×96 像素。科研卡片和已研究列表中，<code>Rare</code> 图标显示为蓝紫色，<code>Epic</code> 显示为金色，<code>Insane</code> 显示为红色，<code>Common</code> 使用原图配色；变色保留透明镂空。</td></tr>
-<tr id="research--8"><th scope="row"><code>Countries</code></th><td data-label="用途">可填游戏 <code>[Countries]</code> 中的国家 ID，多个用英文逗号分隔。省略、留空或 <code>*</code> 表示不限国家。</td></tr>
+<tr id="research--7"><th scope="row"><code>Icon</code></th><td data-label="用途">图标文件名，支持游戏根目录下的 PNG（支持透明度）或游戏可加载的 PCX。省略、留空或加载失败时使用内置默认图标 <code>sfrdefault.png</code>。同名外部 PNG 可覆盖内置图片。可填写相对游戏根目录的 PNG 路径，如 <code>MyIcons\Focus.png</code>。建议卡片图标使用 96×96 像素。科研卡片和已研究列表中，<code>Rare</code> 图标显示为蓝紫色，<code>Epic</code> 显示为金色，<code>Insane</code> 显示为红色，<code>Common</code> 使用原图配色；变色保留透明镂空。</td></tr>
+<tr id="research--8"><th scope="row"><code>Countries</code></th><td data-label="用途">可填游戏 <code>[Countries]</code> 中的国家 ID，多个用英文逗号分隔。单填 <code>*</code> 表示所有国家；两个准入字段都省略时不限国家。</td></tr>
+<tr id="research-unlock-with-tech"><th scope="row"><code>UnlockWithTech</code></th><td data-label="用途">填单位或建筑的科技 ID，多个用英文逗号分隔。玩家的国家符合 <code>Countries</code>，或通过 <code>UnlockTech</code> 获得任一所列科技的生产许可，即可通过此项筛选。只填本字段时必须拥有许可。例如 <code>Countries=British</code> 配合 <code>UnlockWithTech=SNIPE</code>，英国和已解锁狙击手的其他国家均可抽取。前置与互斥仍生效。</td></tr>
 <tr id="research--9"><th scope="row"><code>Prerequisites</code></th><td data-label="用途">前置<strong>科研项目 ID</strong>，支持逗号分隔，须由购买者本人全部完成。省略或留空表示无前置；引用不存在的项目、循环依赖及依赖该坏链的项目不会进入候选</td></tr>
+<tr id="research-replaces"><th scope="row"><code>Replaces</code></th><td data-label="用途">升级项目要替换的科研 ID，用英文逗号分隔，默认留空。例如 <code>Replaces=ArmorI,EngineI</code> 要求本玩家当前同时拥有两项。获得升级后，两项旧科技退出已拥有列表，不能再抽取或充当前置。旧项目提供的被动、价格修正和生产权限停止；已发放的资金、已完成的转换和已经施加给单位的效果保留。升级项目应写全升级后的效果。</td></tr>
+<tr id="research-grantonly"><th scope="row"><code>GrantOnly</code></th><td data-label="用途">填写在科研项目自己的 <code>[项目ID]</code> 段。默认 <code>no</code>，项目按通常规则参与候选。设为 <code>yes</code> 时，只能按 ID 直接授予。玩家和 AI 的普通科研、刷新、随机科研奖励（全稀有度或指定稀有度）、免费三选一和建筑科研奖励都会跳过它，即使免费候选列表中写了该 ID。地图可用 <a href="#action-grantresearch">GrantResearch</a> 按 ID 授予这种项目。</td></tr>
+<tr id="research-excludes"><th scope="row"><code>Excludes</code></th><td data-label="用途">互斥科研项目 ID 列表。用英文逗号分隔，忽略大小写，默认留空。在 A 中填写 <code>Excludes=B,C</code> 后，本玩家只要已拥有 B 或 C，普通科研、刷新、随机授予、免费选择和建筑科研奖励都会排除 A。若也要在获得 A 后排除 B，请在 B 中填写 <code>Excludes=A</code>。</td></tr>
 <tr id="research-rarity"><th scope="row"><code>Rarity</code></th><td data-label="用途">本项目的稀有度，可填 Common（普通，默认）、Rare（稀有）、Epic（史诗）、Insane（疯狂）。无效值使项目退出候选。</td></tr>
 <tr id="research-target-label"><th scope="row"><code>TargetLabel</code></th><td data-label="用途">自定义卡片副标题中点号右侧的作用对象名称，例如 <code>TargetLabel=装甲部队</code>。写在科技项目段，组合多个效果时同样适用。省略或留空时，根据效果和实际目标自动显示。</td></tr>
 <tr id="research-effect-field"><th scope="row"><code>Effect</code></th><td data-label="用途">单选：<code>GrantPassive</code>、<code>GiveCredits</code>、<code>UnlockTech</code>、<code>ReplaceProduction</code>、<code>ConvertInfantry</code>、<code>ConvertVehicle</code>、<code>ModifyTypeCost</code>、<code>ModifyCategoryCost</code>。默认 <code>GrantPassive</code>；各项配套字段见科研结果表。</td></tr>
@@ -1149,7 +1229,6 @@ Action.PickupTypes=SF_WaveToken</code></pre></figure>
 <span class="key">Name</span>=伤害吸血
 <span class="key">Summary</span>=造成伤害时吸取生命
 <span class="key">Detail</span>=按实际伤害的 {percent}% 恢复生命
-<span class="key">Icon</span>=HexBrawlIcons\Vampirism.png
 <span class="key">Effect</span>=GrantPassive
 <span class="key">TargetTypes</span>=MTNK
 <span class="key">Passive</span>=SF_LifeSteal
@@ -1158,7 +1237,6 @@ Action.PickupTypes=SF_WaveToken</code></pre></figure>
 <span class="key">Name</span>=伤害吸血
 <span class="key">Summary</span>=造成伤害时吸取生命
 <span class="key">Detail</span>=按实际伤害的 {percent}% 恢复生命
-<span class="key">Icon</span>=HexBrawlIcons\Vampirism.png
 <span class="key">TargetTypes</span>=LTNK
 <span class="key">Passive</span>=SF_LifeSteal
 <span class="key">Prerequisites</span>=SF_Drain</code></pre></figure>
@@ -1166,7 +1244,7 @@ Action.PickupTypes=SF_WaveToken</code></pre></figure>
 <p id="research-target-categories">例如 <code>TargetTypes=@Infantry,@Building</code> 向研究者所属的所有步兵和建筑授予被动，<code>TargetTypes=@Infantry,MTNK</code> 则作用于全部己方步兵和灰熊坦克；载具类别包括船只。已拥有和之后获得的对象按当前所属方的研究记录判断。类别及 ID 不区分大小写，错误的 <code>@</code> 类别使项目无效。此语法用于科研 <code>GrantPassive</code>，地图授予方案的同名字段仍按其原有规则填写。</p>
 <p id="research--16">购买第一项后，自己的灰熊获得吸血。自己的狂风要等购买第二项才获得。盟友完成研究不会替你满足前置。若希望只花一次科研点就强化两种坦克，写一个项目并设置 <code>TargetTypes=MTNK,LTNK</code>。</p>
 <h3 id="research-native-api">外部 DLL 查询玩家已获得的科研</h3>
-<p>在对局初始化或读档完成后，32 位扩展可在游戏主线程调用 <code>Starfall_GetOwnedResearch</code>。传入玩家的 <code>HouseClass::ArrayIndex</code>，即可读取已购买或免费获得的科研。结果按项目 ID 排序，英文字母为小写，例如 <code>sf_hx_energysurge</code>。</p>
+<p>在对局初始化或读档完成后，32 位扩展可在游戏主线程调用 <code>Starfall_GetOwnedResearch</code>。传入玩家的 <code>HouseClass::ArrayIndex</code>，即可读取已购买或免费获得的科研。结果按项目 ID 排序，英文字母为小写，例如 <code>demo_infantrydiscount</code>。</p>
 <p>用 <code>GetProcAddress</code> 从已加载的 <code>Starfall.dll</code> 获取函数。先传入空指针和长度 0 查询所需字节数，再传入调用方分配的缓冲区。每个 ID 以 NUL 结尾，列表末尾再加一个 NUL。玩家编号无效时返回 0。有效玩家尚无科研时返回 2，对应两个 NUL。缓冲区不足时返回所需字节数，可扩容后重试。<a href="../src/StarfallAPI.h">公共头文件</a> · <a href="manual.md#native-research-query">C++ 调用示例</a></p>
 <div class="pager"><a href="#research-overview"><small>上一节</small>← 玩法简介</a><a href="#research-effects"><small>下一节</small>科研结果与组合升级 →</a></div></article>
 <article id="research-effects" data-title="科研结果与组合升级" data-group="科研三选一"><div class="crumb">规则手册 <span>/</span> 科研三选一</div><h2>科研结果与组合升级</h2>
@@ -1245,7 +1323,7 @@ CostModifier=-20%</code></pre></figure>
 <span class="key">ToType</span>=HTNK</code></pre></figure>
 <h3 id="research-effects-notes">额外补充说明</h3>
 <p id="research-pricing-stacking">先按国家和工业工厂等原有修正得出基准价，再合计科研百分比，最后加上固定金额。结果四舍五入，最低为 0。例如原价 700，同时获得 −20% 和 −100 后售价为 460。订单在开工时锁价，取消时退还已付金额。读档按玩家的已购项目恢复修正。</p>
-<p id="research-effects--6">单位转换不再要求 Ares。没有加载 Phobos 时，流火使用内置转换，保留单位身份、所属方、星级和被动状态，按原生命比例调整生命，并保留额外生命上限。加载 Phobos 时，流火使用其公开的 <code>ConvertToType_Phobos</code> 接口，让 Phobos 更新自己的单位数据。不同 Phobos 版本需要自行验证；未提供接口的版本（包括《远征》随附的 Dev Build #36）不支持转换，流火会在 <code>Starfall.log</code> 记录原因。</p><p>内置转换暂不支持带子机或奴隶的类型、目标类型具有心控、寄生或超时空武器的情况；受到心控、寄生或超时空攻击，正在部署，或带有子机、奴隶、心控、空袭管理器的单位也会跳过。乘客仍须符合目标类型的容量与体型限制。加载 Ares 或 Phobos 时，目标类型的 <code>Passengers.BySize=no</code> 按人数计算容量，默认 <code>yes</code> 按体型总和计算；两种模式都检查单个乘客的 <code>SizeLimit</code>。地图中的容量计算设置随存档保存。有乘客时，开放舱和炮手设置须一致。使用其他扩展时，其额外附着效果和类型相关状态需另行验证。</p><p>科研转换只处理地图上存活且满足类型、地形、乘客容量等条件的己方单位，其他单位跳过。接口不可用、类型无效或移动器 <code>Locomotor</code> 不同时，这类项目不进入候选。没有合适目标或全部转换失败时无法购买，不扣科研点；至少一个转换成功即购买成功。转换不影响之后生产的单位。被动结果 <code>Transform</code> 对移动单位采用同样的转换路径和限制；建筑采用上方的同占地转换路径，科研转换项目仍只处理步兵或载具。</p>
+<p id="research-effects--6">移动单位转换优先调用 Phobos 的 <code>ConvertToType_Phobos</code> 接口。未加载 Phobos、旧版缺少接口，或接口明确返回未实现时，自动使用流火内置转换。内置转换保留单位身份、所属方、星级和被动状态，按原生命比例调整生命，并保留额外生命上限。Phobos 返回参数错误等其他失败时，该次转换结束。</p><p>内置转换支持携带 <code>Spawns=</code> 的移动母体，包括 Ares 自定义飞行子机和 <code>Missile.Custom=yes</code> 导弹。新旧母体使用同一种子机时，保留共有槽位、现有子机、任务和已开始的计时。扩容的槽位按新类型的 <code>SpawnRegenRate</code> 补充，后续装填使用新类型的 <code>SpawnReloadRate</code>。缩容从末尾移除多余槽位及仍绑定的子机。更换子机型号时按新类型重新建立编队，失去携带能力时清除原槽位。已发射并脱离槽位的导弹继续飞行。</p><p>内置转换暂不支持带奴隶的类型、目标类型具有心控、寄生或超时空武器的情况；受到心控、寄生或超时空攻击，正在部署，或带有奴隶、心控、空袭管理器的单位也会跳过。乘客仍须符合目标类型的容量与体型限制。加载 Ares 或 Phobos 时，目标类型的 <code>Passengers.BySize=no</code> 按人数计算容量，默认 <code>yes</code> 按体型总和计算；两种模式都检查单个乘客的 <code>SizeLimit</code>。地图中的容量计算设置随存档保存。有乘客时，开放舱和炮手设置须一致。使用其他扩展时，其额外附着效果和类型相关状态需另行验证。</p><p>科研转换只处理地图上存活且满足类型、地形、乘客容量等条件的己方单位，其他单位跳过。使用内置转换时类型组合不受支持、类型无效或移动器 <code>Locomotor</code> 不同时，这类项目不进入候选。没有合适目标或全部转换失败时无法购买，不扣科研点；至少一个转换成功即购买成功。转换不影响之后生产的单位。被动结果 <code>Transform</code> 对移动单位采用同样的转换路径和限制；建筑采用上方的同占地转换路径，科研转换项目仍只处理步兵或载具。</p>
 <p id="research-effects--10">效果按首次出现的顺序执行，同一效果段 ID 重复填写时只执行一次。任何效果配置无效、缺失或依赖不可用时，整个项目不进入候选。购买时跳过暂时无法执行的效果（如没有可转换单位或科技已解锁），其余效果继续执行；至少一项成功才扣点并记录研究，已跳过的即时效果不会在以后补发。被动效果作用于购买者当前和未来符合类型的单位。效果之间不保证事务回滚。<code>Effects</code> 为空时项目无效；未填写 <code>Effects</code> 的旧式单效果配置保持兼容。</p>
 <p id="research-effects--11">列表项目省略 <code>Detail</code> 时，悬浮提示会按顺序显示效果；自定义 <code>Detail</code> 按原文显示，不替换各效果的数值占位符。</p>
 <p id="research-effects--15">悬浮 <code>Detail</code> 可随数值变化。事件被动支持 <code>{amount}</code>、<code>{percent}</code>、<code>{count}</code>、<code>{chance}</code> 和 <code>{cooldown}</code>。多结果被动省略详情时按顺序逐项显示，手写详情中的 <code>{amount}</code> 和 <code>{percent}</code> 取第一项结果的数值。资金项目使用 <code>{credits}</code>。百分比占位符只替换数字，要显示百分号请写 <code>{percent}%</code>。<code>WhileState</code> 可省略 <code>Detail</code> 以显示实际倍率，自定义持续效果详情按原文显示。</p>
@@ -1368,7 +1446,7 @@ Action.Owner=Owner
 Action=GiveCredits
 Action.Target=Owner
 Action.Amount=500</code></pre></figure>
-<p id="super-sequence-script">脚本放在 游戏根目录。超武脚本可读取 <code>ctx.point</code>（地图格）、<code>ctx.owner</code>（所属方索引）、<code>ctx.superWeapon</code>（超武标识符）和 <code>ctx.castId</code>（本次发动编号）。<code>ctx.self</code> 和初始 <code>ctx.target</code> 均为 <code>nil</code>。用 <code>ctx:nearbyUnits(ctx.point, radius, filter)</code> 取得单位，再向该单位执行伤害、位移等结果。<code>ctx:schedule</code> 的任务随存档保存，<code>ctx.state</code> 按本次发动隔离。</p><p>完整配置见 <a href="../examples/ActionSequence/Rules.ini">超武示例</a>和<a href="../examples/ActionSequence/GravityWell.lua">引力场脚本</a>。</p><div class="pager"><a href="#global-settings"><small>上一节</small>← 全局配置</a><a href="#lua-skills"><small>下一节</small>Lua 事件技能 →</a></div></article>
+<p id="super-sequence-script">脚本放在 游戏根目录。超武脚本可读取 <code>ctx.point</code>（地图格）、<code>ctx.owner</code>（所属方索引）、<code>ctx.superWeapon</code>（超武标识符）和 <code>ctx.castId</code>（本次发动编号）。<code>ctx.self</code> 和初始 <code>ctx.target</code> 均为 <code>nil</code>。用 <code>ctx:nearbyUnits(ctx.point, radius, filter)</code> 取得单位，再向该单位执行伤害、位移等结果。<code>ctx:schedule</code> 的任务随存档保存，<code>ctx.state</code> 按本次发动隔离。</p><div class="pager"><a href="#global-settings"><small>上一节</small>← 全局配置</a><a href="#lua-skills"><small>下一节</small>Lua 事件技能 →</a></div></article>
 <article id="lua-skills" data-title="Lua 事件技能" data-group="Lua 脚本（进阶）"><div class="crumb">规则手册 <span>/</span> Lua 脚本（进阶）</div><h2>Lua 事件技能</h2>
 <h3 id="lua-skills-intro">简介</h3>
 <p>事件技能在指定的游戏事件发生时调用 Lua 函数。先在 INI 注册技能并绑定兵种，再把返回函数表的 UTF-8 脚本放到游戏根目录。流火会在开局或读档时读取脚本。</p>
@@ -1382,12 +1460,65 @@ Action.Amount=500</code></pre></figure>
 <div class="table-wrap"><table><thead><tr><th>参数或接口</th><th>说明</th></tr></thead><tbody><tr id="lua-skills-row-1-1"><th scope="row"><code>ctx.self / ctx.target</code></th><td data-label="说明">技能持有者与原事件对方。无事件对方时 target 为 nil。单位可用 :alive() 检查当前是否存活。</td></tr>
 <tr id="lua-skills-row-1-2"><th scope="row"><code>ctx.damage / ctx.stack</code></th><td data-label="说明">事件伤害和触发被动的事件层数。扣血前回调中的 ctx.damage 会随成功的伤害动作更新。</td></tr>
 <tr id="lua-skills-row-1-3"><th scope="row"><code>ctx.event</code></th><td data-label="说明">事件快照含 selfHealth、selfMaxHealth，以及有单位对方时的 targetHealth、targetMaxHealth。</td></tr>
-<tr id="lua-skills-row-1-4"><th scope="row"><code>单位读取</code></th><td data-label="说明">id()、alive()、health()、maxHealth()、ammo()、passengers()、rank()、type()、kind()、cost()、owner()、trainable()、hasPassive(id)、stack(id)。使用冒号调用，读取当前实时状态；等级 0、1、2 对应新兵、老兵、精英。</td></tr>
+<tr id="lua-skills-row-1-4"><th scope="row"><a href="#lua-unit-access">单位读取</a></th><td data-label="说明"><code>unit:type()</code> 取兵种 ID，<code>unit:id()</code> 取场上实例编号。血量、坐标、所属方和被动等查询见<a href="#lua-unit-access">单位方法表与示例</a>。</td></tr>
+<tr><th scope="row"><a href="#lua-unit-orders">单位指令</a></th><td data-label="说明"><code>unit:moveTo(point)</code> 移动，<code>unit:attack(target)</code> 攻击单位或地面，<code>unit:deploy()</code> 部署。</td></tr>
 <tr id="lua-house"><th scope="row"><code>ctx:house(index)</code></th><td>返回所属方数据快照：<code>powerOutput</code> 供电、<code>powerDrain</code> 耗电、<code>powerBalance</code> 净电力、<code>credits</code> 可用资金、<code>researchPoints</code> 科研点、<code>index</code> 所属方索引。省略索引时读取技能持有者或超武发射方；可用 <code>ctx:house(ctx.target:owner())</code> 查询目标所属方。无效索引返回 <code>nil</code>；重新调用可获取最新值。</td></tr><tr id="lua-skills-row-1-5"><th scope="row"><code>ctx:nearbyUnits(center, radius, filters)</code></th><td data-label="说明">半径为 0～128 格，结果按单位 ID 排序。houses 可选 Self、Allies、Enemies、Neutral、All，默认 All；types 支持 *、@Infantry、@Vehicle、@Aircraft、@Building 和兵种 ID。中心可填单位或地图格坐标。按单位中心的水平距离判定，包含边界。默认排除中心单位，用 includeSelf=true 包含它。</td></tr>
 <tr id="lua-skills-row-1-6"><th scope="row"><code>ctx:action(name, args)</code></th><td data-label="说明">执行一个流火动作。字段名省略 Action.，例如 Amount、Passive、Levels。Target 可填单位或现有的目标名称。成功返回 true。</td></tr>
 <tr><th scope="row"><code>ctx:action("ForceMove", args)</code></th><td data-label="说明">Offset 填相对偏移，Height 用格，Duration 用帧，Easing 选择水平缓动曲线，Tilt=false 关闭车身倾斜，IgnoreCollision=false 启用途中碰撞。</td></tr>
 <tr id="lua-skills-row-1-7"><th scope="row"><code>ctx:runAction(section, overrides)</code></th><td data-label="说明">执行已有 INI 单结果段。overrides 可覆盖 Target，超时空传送可覆盖 Destination，强制位移可覆盖其位移参数。该段继续使用本技能触发时机的参数和公式规则。</td></tr>
 <tr id="lua-skills-row-1-8"><th scope="row"><code>ctx:actions(list)</code></th><td data-label="说明">按列表顺序执行，各项含 Action 和对应字段。共享该次动作上下文；ConsumePassenger 成功后，下一项的 Target="Target" 可以夺取被消耗载员的被动。至少一项成功时返回 true。</td></tr></tbody></table></div>
+<h3 id="lua-unit-access">Lua 对象访问 · 单位句柄</h3>
+<p>在单位技能回调中，<code>ctx.self</code> 是技能持有者，<code>ctx.target</code> 是本次事件的对方。例如开火时它是瞄准的单位，对地开火时可能为 <code>nil</code>。范围查询 <code>ctx:nearbyUnits(...)</code> 返回单位句柄列表，用 <code>ipairs</code> 遍历后，每个元素都能调用下表的方法。</p>
+<p>用点号取字段，如 <code>ctx.target</code>，用冒号调用单位方法，如 <code>unit:type()</code>。先用 <code>if unit and unit:alive() then</code> 确认能读取实时属性。已有句柄失效后，<code>id()</code> 仍返回原编号，<code>alive()</code> 返回 <code>false</code>，其余属性查询返回 <code>nil</code>，下达单位指令返回 <code>false</code>。</p>
+<p>判断“是不是灰熊”用 <code>unit:type() == "MTNK"</code>。判断“是不是刚才那一辆”可以直接比较两个句柄 <code>a == b</code>。后续回调还要操作同一个单位时，把句柄存进任务数据或 <code>ctx.state</code>，取出后再检查 <code>alive()</code>。</p>
+<div class="table-wrap"><table><thead><tr><th>方法</th><th>返回类型</th><th>含义与用法</th></tr></thead><tbody>
+<tr id="lua-unit-id"><th scope="row"><code>unit:id()</code></th><td data-label="返回类型">整数</td><td data-label="含义与用法">当前单位实例的编号。两辆灰熊坦克的编号各不相同。已有句柄失效后仍可读出编号。</td></tr>
+<tr id="lua-unit-type"><th scope="row"><code>unit:type()</code></th><td data-label="返回类型">字符串</td><td data-label="含义与用法">当前兵种在 rules 中的注册 ID。美国大兵为 <code>E1</code>，灰熊坦克为 <code>MTNK</code>，盟军发电厂为 <code>GAPOWR</code>。Lua 字符串比较区分大小写。</td></tr>
+<tr id="lua-unit-kind"><th scope="row"><code>unit:kind()</code></th><td data-label="返回类型">字符串</td><td data-label="含义与用法">引擎对象类别。步兵为 <code>infantry</code>，载具为 <code>vehicle</code>，飞行器为 <code>aircraft</code>，建筑为 <code>building</code>，其他类型为 <code>other</code>。例如灰熊的 <code>type()</code> 是 <code>"MTNK"</code>，<code>kind()</code> 是 <code>"vehicle"</code>。</td></tr>
+<tr id="lua-unit-alive"><th scope="row"><code>unit:alive()</code></th><td data-label="返回类型">布尔值</td><td data-label="含义与用法">当前回调还能取得这个存活单位时返回 <code>true</code>。目标被摧毁后，已有句柄返回 <code>false</code>。</td></tr>
+<tr id="lua-unit-position"><th scope="row"><code>unit:position()</code></th><td data-label="返回类型">坐标表或 nil</td><td data-label="含义与用法">在地图上时返回 <code>{x=列坐标, y=行坐标}</code>，两个值都是地图格整数，可作为 <code>ctx:nearbyUnits</code> 的中心。未在场或处于引擎的隐藏收纳状态（limbo）时返回 <code>nil</code>。</td></tr>
+<tr id="lua-unit-owner"><th scope="row"><code>unit:owner()</code></th><td data-label="返回类型">整数</td><td data-label="含义与用法">所属玩家的内部阵营索引，无所属方时为 <code>-1</code>。传给 <code>ctx:house(unit:owner())</code> 可读取该玩家的资金、电力和科研点。</td></tr>
+<tr id="lua-unit-health"><th scope="row"><code>unit:health()</code></th><td data-label="返回类型">整数</td><td data-label="含义与用法">当前生命值，包含流火扩展生命系统的换算。</td></tr>
+<tr id="lua-unit-maxhealth"><th scope="row"><code>unit:maxHealth()</code></th><td data-label="返回类型">整数</td><td data-label="含义与用法">当前生命上限，包含已生效的生命上限加成。例如 <code>unit:health() * 2 &lt;= unit:maxHealth()</code> 可判断是否在半血及以下。</td></tr>
+<tr id="lua-unit-ammo"><th scope="row"><code>unit:ammo()</code></th><td data-label="返回类型">整数</td><td data-label="含义与用法">有限弹药单位返回当前剩余弹数，<code>0</code> 表示弹药耗尽，<code>-1</code> 表示无限弹药。</td></tr>
+<tr id="lua-unit-passengers"><th scope="row"><code>unit:passengers()</code></th><td data-label="返回类型">整数</td><td data-label="含义与用法">直接装在该单位内的乘客数量。空载时返回 <code>0</code>。</td></tr>
+<tr id="lua-unit-rank"><th scope="row"><code>unit:rank()</code></th><td data-label="返回类型">整数</td><td data-label="含义与用法">当前军衔。<code>0</code> 为新兵，<code>1</code> 为老兵，<code>2</code> 为精英。</td></tr>
+<tr id="lua-unit-trainable"><th scope="row"><code>unit:trainable()</code></th><td data-label="返回类型">布尔值</td><td data-label="含义与用法">当前兵种的 <code>Trainable</code> 设置。判断能否继续晋升时可写 <code>unit:trainable() and unit:rank() &lt; 2</code>。</td></tr>
+<tr id="lua-unit-cost"><th scope="row"><code>unit:cost()</code></th><td data-label="返回类型">整数</td><td data-label="含义与用法">当前兵种在 rules 中配置的基础 <code>Cost</code>。按基础造价计算奖励时可直接使用。</td></tr>
+<tr id="lua-unit-haspassive"><th scope="row"><code>unit:hasPassive(passiveId)</code></th><td data-label="返回类型">布尔值</td><td data-label="含义与用法">是否持有指定被动。参数填被动注册 ID 字符串，如 <code>unit:hasPassive("SF_FieldCommander")</code>，匹配时忽略大小写。</td></tr>
+<tr id="lua-unit-stack"><th scope="row"><code>unit:stack(passiveId)</code></th><td data-label="返回类型">整数</td><td data-label="含义与用法">指定被动当前的有效层数，含可叠加的乘客贡献。未持有时返回 <code>0</code>，已持有的被动也可能为 <code>0</code> 层。判断是否持有请用 <code>hasPassive(passiveId)</code>。</td></tr>
+</tbody></table></div>
+<p>以上属性在调用时读取。需要触发瞬间的数值时，读 <code>ctx.event.selfHealth</code> 或 <code>ctx.event.targetHealth</code> 等事件快照。<code>OnDeath</code> 可从 <code>ctx.event.selfPoint</code> 取回死亡格，即使此时持有者的 <code>position()</code> 已返回 <code>nil</code>。</p>
+<figure id="lua-unit-example"><figcaption><span><b>LUA</b> 记录同一辆灰熊坦克在 30 帧内的血量变化</span><button type="button" class="copy">复制</button></figcaption><pre tabindex="0"><code>return {
+    mark = function(ctx)
+        local unit = ctx.target
+        if not unit or not unit:alive() or unit:type() ~= "MTNK" then
+            return
+        end
+        ctx:schedule(30, "measure", {unit = unit, hp = unit:health()})
+    end,
+
+    measure = function(ctx, data)
+        local unit = data.unit
+        if unit:alive() then
+            ctx.state.lastSample = {
+                id = unit:id(),
+                hpChange = unit:health() - data.hp,
+            }
+        end
+    end,
+}</code></pre></figure>
+<p>单位目标技能可将 <code>Action.Function</code> 设为 <code>mark</code>。命中筛选后，脚本保存目标句柄和首次血量。30 帧后若目标仍存活，<code>ctx.state.lastSample.id</code> 记录该车的实例编号，<code>hpChange</code> 为两次血量之差，负数表示掉血。</p>
+<h3 id="lua-unit-orders">给单位下指令</h3>
+<div class="table-wrap"><table><thead><tr><th>Lua 调用</th><th>效果</th></tr></thead><tbody>
+<tr><th scope="row"><code>unit:moveTo({x=56, y=69})</code></th><td>移动单位按原生寻路前往指定地图格，建筑无法移动。</td></tr>
+<tr><th scope="row"><a href="#actsp-guard-cell"><code>unit:setDroneGuardCell({x=84, y=71})</code></a></th><td>设置 ActSp 飞行子机或建筑地面守卫的警戒格。参数、返回值及集合点的用法见<a href="#actsp-guard-cell">设置警戒格</a>。</td></tr>
+<tr><th scope="row"><code>unit:attack(ctx.target)</code></th><td>攻击目标单位，按原生规则选择武器、接近目标并开火。请先确认 <code>ctx.target</code> 有值。</td></tr>
+<tr><th scope="row"><code>unit:attack({x=55, y=70})</code></th><td>使用适合的武器攻击指定地面格，可瞄准空地。</td></tr>
+<tr><th scope="row"><code>unit:deploy()</code></th><td>下达游戏的部署命令。例如美国大兵会切换部署姿态，效果取决于单位本身。</td></tr>
+</tbody></table></div>
+<p>四种调用均返回布尔值。<code>true</code> 表示已向游戏提交命令，单位将在后续帧行动。连续下令时后一个命令可以覆盖前一个；想让坦克先到位再开火，可在后续回调中检查 <code>unit:position()</code>。</p>
+<p>脚本可以给任意阵营的单位下令。失效句柄、运输中的载员、挂载子单位、正在强制位移或被 EMP 瘫痪的单位会返回 <code>false</code>。坐标须为可玩范围内的地图格整数。扣血前的两个回调应使用 <code>ctx:schedule</code> 将指令安排到后续帧。</p>
 <h3 id="lua-skills-examples">示例</h3>
 <p><strong>美国大兵部署时晋升附近友军</strong></p>
 <p>部署时扫描 5 格内可训练的己方和盟友单位，分别晋升一级。扫描半径和晋升级数都取自技能段。</p>
@@ -1563,7 +1694,6 @@ return skill</code></pre></figure>
 <h3 id="lua-timers-notes">额外补充说明</h3>
 <p>同一帧到期的任务按创建顺序执行。任务、传入的数据和随机进度随存档保存，读档后从上次进度继续。</p>
 <p>施法者被移除时，其任务和状态一并清理。施法者只失去技能时，已安排的任务继续执行。定时回调可重新查询单位句柄；待扣伤害和载员消耗记录仅在原动作结算期间有效。</p>
-<p>配套文件见<a href="../examples/Lua/Starfall.ini">示例 INI</a> 和 <a href="../examples/Lua/AreaBarrage.lua">AreaBarrage.lua</a>。</p>
 <div class="pager"><a href="#lua-active"><small>上一节</small>← Lua 主动技能</a><a href="#lua-anim"><small>下一节</small>Lua 可移动动画 →</a></div></article>
 <article id="lua-anim" data-title="Lua 可移动动画" data-group="Lua 脚本（进阶）"><div class="crumb">规则手册 <span>/</span> Lua 脚本（进阶）</div><h2>Lua 可移动动画</h2>
 <p>Lua 脚本可以创建动画，取得整数句柄后平滑移动或移除同一个动画。使用游戏或模组已注册且具有有效图片的原生动画类型。</p>
@@ -1591,7 +1721,7 @@ function skill.finish(ctx, data)
 end
 
 return skill</code></pre></figure>
-<p>动画仅影响画面，联机玩家须使用相同配置和资源。龙卷风示例使用原生 <code>PIFF</code> 动画占位，可将 <code>Script.Param.Anim</code> 替换为模组已注册的动画 ID。完整示例见 <a href="../examples/Tornado/Starfall.ini">示例 INI</a> 和 <a href="../examples/Tornado/Tornado.lua">Lua 脚本</a>。</p>
+<p>动画仅影响画面，联机玩家须使用相同配置和资源。</p>
 <div class="pager"><a href="#lua-timers"><small>上一节</small>← Lua 定时任务与随机落点</a><a href="#lua-map-trigger"><small>下一节</small>地图触发执行 Lua →</a></div></article>
 <article id="lua-map-trigger" data-title="地图触发执行 Lua" data-group="Lua 脚本（进阶）"><div class="crumb">规则手册 <span>/</span> Lua 脚本（进阶）</div><h2>地图触发执行 Lua</h2><p>地图触发动作 <code>9602</code> 按编号执行 Lua。配置可写在地图、rulesmd 或 Starfall.ini；脚本放在 游戏根目录。</p><figure><figcaption><span><b>INI</b> 地图触发配置</span><button type="button" class="copy">复制</button></figcaption><pre tabindex="0"><code>[Starfall.MapScripts]
 1=SF_MapWave
@@ -1610,8 +1740,86 @@ Script.Param.Count=20
             ctx:action("GiveCredits", {Target="Owner", Amount=ctx.params.count * 10})
         end
     end
-}</code></pre></figure><div class="pager"><a href="#lua-anim"><small>上一节</small>← Lua 可移动动画</a><a href="#credits"><small>下一节</small>制作与鸣谢 →</a></div></article>
-<article id="credits" data-title="制作与鸣谢" data-group="关于项目"><div class="crumb">规则手册 <span>/</span> 关于项目</div><h2>制作与鸣谢</h2><p id="project-author"><strong>制作者</strong>　<a href="https://space.bilibili.com/12765643">斩断云天</a></p><p id="project-collaborator"><strong>合作者</strong>　ChatGPT、贪吃的布丁</p><p id="special-thanks">特别鸣谢 Westwood、Ares 制作者、Phobos 制作组和 ra2jj.com。</p><div class="pager"><a href="#lua-anim"><small>上一节</small>← Lua 可移动动画</a></div></article></main></div><script>(() => {
+}</code></pre></figure><div class="pager"><a href="#lua-anim"><small>上一节</small>← Lua 可移动动画</a><a href="#weapon-fire-script"><small>下一节</small>武器开火脚本 →</a></div></article>
+<article id="weapon-fire-script" data-title="武器开火脚本" data-group="Lua 脚本（进阶）"><div class="crumb">规则手册 <span>/</span> Lua 脚本（进阶）</div><h2>武器开火脚本</h2>
+<p>在武器段填写 <code>Starfall.FireScript</code>，指定游戏目录下的 Lua 文件。<code>Starfall.FireFunction</code> 可省略，默认调用 <code>onFire</code>。地图可以覆盖这两个参数。使用 <code>OnBeforeFire</code> 更换武器时，以当轮实际选中的武器为准。</p>
+<figure><figcaption><span><b>INI</b> 灰熊坦克的主武器</span><button type="button" class="copy">复制</button></figcaption><pre tabindex="0"><code>[105mm]
+Starfall.FireScript=DoubleShot.lua
+Starfall.FireFunction=onFire</code></pre></figure>
+<p><code>ctx.self</code> 是开火者。<code>ctx.target</code> 是仍然有效的目标单位或建筑，对地开火或目标在回调前消失时为 <code>nil</code>。<code>ctx.point</code> 和 <code>ctx.event.targetPoint</code> 都记录开火瞬间的目标格子。下面的脚本先向目标开一炮，6 帧后再向原格子补一炮。</p>
+<figure><figcaption><span><b>Lua</b> DoubleShot.lua</span><button type="button" class="copy">复制</button></figcaption><pre tabindex="0"><code>return {
+    onFire = function(ctx)
+        ctx:action("FireWeapon", {Weapon="120mm", Target=ctx.target or ctx.point})
+        ctx:schedule(6, "followUp", ctx.point)
+    end,
+
+    followUp = function(ctx, savedPoint)
+        ctx:action("FireWeapon", {Weapon="120mm", Target=savedPoint})
+    end
+}</code></pre></figure>
+<p>每轮齐射只执行一次回调，整轮的弹丸由脚本生成。原武器负责索敌，每轮扣一次弹药并进入完整冷却，即使设置了 <code>Burst=3</code> 也是如此。普通 <code>OnFire</code> 被动每轮触发一次。脚本内的 <code>FireWeapon</code> 可以使用同一个武器 ID。</p>
+<p>回调在游戏处理事件时执行，要求开火者仍然存活。待执行的回调和定时任务都随存档保存。文件或函数配置无效时记录错误并保留普通开火；已接管的回调发生 Lua 运行错误时，该轮弹药和冷却照常结算。</p>
+<p>适用于标准开火流程。配置了 <code>Suicide</code>、<code>Spawner</code>、<code>LimboLaunch</code> 或 <code>DiskLaser</code> 的武器使用专用流程，注册时会提示错误。</p>
+<div class="pager"><a href="#lua-map-trigger"><small>上一节</small>← 地图触发执行 Lua</a><a href="#warheads-detonate-script"><small>下一节</small>弹头引爆执行脚本 →</a></div></article>
+<article id="warheads-detonate-script" data-title="弹头引爆执行脚本" data-group="Lua 脚本（进阶）"><div class="crumb">规则手册 <span>/</span> Lua 脚本（进阶）</div><h2>弹头引爆执行脚本</h2>
+<p>在已注册的弹头段填写脚本文件。<code>Starfall.DetonateFunction</code> 默认调用 <code>onDetonate</code>。地图可覆盖脚本、函数或参数。</p>
+<pre><code>[MyBlastWH]
+Starfall.DetonateScript=Blast.lua
+Starfall.DetonateFunction=onDetonate
+Script.Param.Radius=3</code></pre>
+<p>弹头结算伤害后执行一次回调，炸在空地也会执行。一次直击及其范围伤害合计执行一次。同一帧同一格发生两次独立爆炸，会得到两个不同的 <code>ctx.castId</code>。脚本同步再次引爆同种弹头时，爆炸照常结算，该脚本跳过本次重入。</p>
+<ul><li><code>ctx.warhead</code> 是弹头 ID，<code>ctx.point</code> 是爆心所在格。</li><li><code>ctx.owner</code> 是来源玩家编号，无来源时使用中立方。<code>ctx.damage</code> 是计算受击者装甲前的本次伤害。</li><li><code>ctx.self</code> 和 <code>ctx.target</code> 均为空。可通过 <code>ctx:nearbyUnits</code> 查询爆心附近的单位。示例参数通过 <code>ctx.params.radius</code> 读取。</li><li>用 <code>ctx:schedule</code> 可以延迟执行，任务随存档恢复。延迟函数需要主爆炸伤害时，请将它存入任务数据。</li></ul>
+<p>伊文贴附炸弹可在安放武器上用 Ares 的 <code>IvanBomb.Warhead</code> 指定引爆弹头，再把 Lua 写在该弹头上。这样可以让科技替换武器，普通伊文继续使用普通炸弹，成功拆弹也不会触发烟花。</p>
+<div class="pager"><a href="#weapon-fire-script"><small>上一节</small>← 武器开火脚本</a><a href="#actsp"><small>下一节</small>模块介绍与安装 →</a></div></article>
+<article id="actsp" data-title="模块介绍与安装" data-group="特殊行为子模块"><div class="crumb">规则手册 <span>/</span> 特殊行为子模块</div><h2 id="actsp-install">模块介绍与安装</h2>
+<p id="actsp-overview">ActSp 是流火的可选扩展模块。它可以让飞行子机警戒、跟随或环绕母体，让建筑派出地面守卫，也可以让驻扎步兵各自使用自己的武器向外开火。</p>
+<p id="actsp-load">将 <code>ActSp.dll</code> 放入游戏目录，在 SyringeEx 启动配置中追加 <code>-i=ActSp.dll</code>。与流火合用时，加载顺序为 <code>Starfall.dll</code>、<code>ActSp.dll</code>、Ares、Phobos。以下配置写入 <code>rulesmd.ini</code>。联机玩家需使用同一版本的 ActSp 和同一份规则。</p>
+<div class="pager"><a href="#warheads-detonate-script"><small>上一节</small>← 弹头引爆执行脚本</a><a href="#actsp-drone-behavior"><small>下一节</small>子机行为 →</a></div></article>
+<article id="actsp-drone-behavior" data-title="子机行为" data-group="特殊行为子模块"><div class="crumb">规则手册 <span>/</span> 特殊行为子模块</div><h2>子机行为</h2>
+<h3 id="actsp-flying-drones">飞行子机</h3>
+<p>把 <code>Drone.*</code> 写在母体的类型节。母体需要配置原版子机与槽位。要让子机在无攻击目标时出动，母体当前使用的发射武器需设为 <code>Spawner=yes</code>，精英武器也适用。导弹型子机沿用原版行为。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">模式</th><th scope="col">配置与行为</th></tr></thead><tbody>
+<tr id="actsp-drone-mode"><th scope="row"><code>Drone.Mode=Native</code></th><td data-label="配置与行为">沿用原版行为，省略 <code>Drone.Mode</code> 时采用此模式。</td></tr>
+<tr id="actsp-drone-guard"><th scope="row"><code>Drone.Mode=Guard</code></th><td data-label="配置与行为">在指定格警戒。可用 <code>Drone.GuardCell=84,71</code> 填写默认地图格，也可在对局中<a href="#actsp-guard-cell">设置警戒格</a>。</td></tr>
+<tr id="actsp-drone-follow"><th scope="row"><code>Drone.Mode=Follow</code></th><td data-label="配置与行为">跟随母体，在 <code>Drone.Offset=2,0</code> 指定的相对地图格警戒。默认偏移为 <code>2,0</code>，每轴可填 −32 至 32，偏移方向固定在地图坐标系中。</td></tr>
+<tr id="actsp-drone-orbit"><th scope="row"><code>Drone.Mode=Orbit</code></th><td data-label="配置与行为">围绕母体巡航，各槽位错开相位。<code>Drone.Radius</code> 默认为 3 格，范围 1–32 格。<code>Drone.Period</code> 默认为 180 帧，范围 30–3600 帧。</td></tr>
+</tbody></table></div>
+<p id="actsp-drone-range"><code>Drone.GuardRange</code> 设置警戒点周围的索敌半径，默认为 5 格，范围 1–32 格。母体发射器指定的目标优先，其他时候子机选择警戒范围内最近且可攻击的敌人。弹药用完后，飞行子机按原版逻辑返航补给。</p>
+<figure id="actsp-orbit-example"><figcaption><span><b>INI</b> 航空母舰环绕巡航</span><button type="button" class="copy">复制</button></figcaption><pre tabindex="0"><code>[CARRIER]
+Drone.Mode=Orbit
+Drone.Radius=3
+Drone.Period=180</code></pre></figure>
+<h3 id="actsp-ground-guards">建筑地面守卫</h3>
+<p>在建筑类型节设置 <code>Drone.Mode=Guard</code>，用 <code>Drone.GroundUnit</code> 指定一个已注册、可在地面移动的载具。每栋建筑管理一辆守卫，配有原版飞行子机管理器的建筑优先使用飞行槽位。</p>
+<figure id="actsp-ground-example"><figcaption><span><b>INI</b> 灰熊坦克守卫</span><button type="button" class="copy">复制</button></figcaption><pre tabindex="0"><code>Drone.Mode=Guard
+Drone.GroundUnit=MTNK
+Drone.GroundRespawnDelay=300
+Drone.GuardRange=5</code></pre></figure>
+<p id="actsp-ground-respawn">设定警戒格后，建筑从紧邻占地的可通行空格派车。出口被堵时等待空位。守卫使用载具原有的寻路、炮塔和武器。<code>Drone.GroundRespawnDelay</code> 是守卫损失后的补员延迟，默认为 300 游戏帧，可填 0–1000000。建筑易主后，原守卫归原主人，新主人按补员延迟派车。建筑被拆除或摧毁后，存活的守卫成为普通单位。警戒格、守卫关系和补员时间会随对局存档保存。</p>
+<h3 id="actsp-guard-cell">设置警戒格</h3>
+<p>可在母体类型节写 <code>Drone.GuardCell=84,71</code> 配置默认位置。对局中可选中己方警戒建筑，按设置工厂集合点的方式点击地图。建筑的各槽位共用该警戒格。地面守卫应使用可通行的位置。</p>
+<p id="actsp-guard-lua">同时加载流火和 ActSp 后，Lua 可用 <code>unit:setDroneGuardCell({x=84, y=71})</code> 为 <code>Guard</code> 模式的母体设置警戒格，也可传入地面点选技能的 <code>ctx.point</code>。接受指令时返回 <code>true</code>，缺少 ActSp 或母体不符合条件时返回 <code>false</code>。应传入地图有效范围内的整数格坐标。集合点与 Lua 以最后一次生效的指令为准，Lua 仅调整子机警戒格，工厂产出的单位仍前往出厂集合点。</p>
+<div class="pager"><a href="#actsp"><small>上一节</small>← 模块介绍与安装</a><a href="#better-garrison"><small>下一节</small>高级驻军 →</a></div></article>
+<article id="better-garrison" data-title="高级驻军" data-group="特殊行为子模块"><div class="crumb">规则手册 <span>/</span> 特殊行为子模块</div><h2>高级驻军</h2>
+<p>在 <code>rulesmd.ini</code> 的 <code>[General]</code> 节启用高级驻扎后，允许驻扎开火的建筑由步兵使用自己的乘员武器，各自选敌、开火和装填。武器选择遵循 <code>OpenTransportWeapon</code> 和 <code>FireInTransport</code>。建筑能手动点选的攻击目标由最早入驻且仍在场的步兵的武器决定。建筑类型节可写 <code>BetterGarrison.Enabled=no</code> 保留原版驻扎武器。</p>
+<h3 id="actsp-garrison-building-rules">按建筑类型设置加成</h3>
+<p>全局启用后，在建筑类型节设置同名字段即可逐项覆盖驻军伤害、射程和射速。省略的字段取 <code>[General]</code> 的值。以下示例给战斗碉堡的驻军设定 1.5 倍伤害、额外 2 格射程和 1.25 倍射速。</p>
+<figure id="actsp-garrison-building-example"><figcaption><span><b>INI</b> 战斗碉堡驻军加成</span><button type="button" class="copy">复制</button></figcaption><pre tabindex="0"><code>[General]
+BetterGarrison.Enabled=yes
+
+[NABNKR]
+BetterGarrison.DamageMultiplier=1.50
+BetterGarrison.RangeBonus=2
+BetterGarrison.FireRateMultiplier=1.25</code></pre></figure>
+<p>可直接点选首位驻军武器允许攻击的中立目标，也可按住 Ctrl 左键强制攻击武器允许的空地。鼠标点选与开火均从建筑中心判断射程，弹体从各自的驻扎炮口发出。驻军可以开火时，显示原地攻击指针。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead><tbody>
+<tr id="actsp-garrison-enabled"><th scope="row"><code>BetterGarrison.Enabled</code></th><td data-label="含义">在 <code>[General]</code> 节设为 <code>yes</code> 可全局启用，默认 <code>no</code>。</td></tr>
+<tr id="actsp-garrison-damage"><th scope="row"><code>BetterGarrison.DamageMultiplier</code></th><td data-label="含义">驻军伤害倍率，默认 1.20。</td></tr>
+<tr id="actsp-garrison-range"><th scope="row"><code>BetterGarrison.RangeBonus</code></th><td data-label="含义">增加的射程格数，默认 1，同时用于索敌和开火。</td></tr>
+<tr id="actsp-garrison-fire-rate"><th scope="row"><code>BetterGarrison.FireRateMultiplier</code></th><td data-label="含义">驻军射速倍率，默认 1.0。完整装填间隔除以此倍率后向上取整，至少一帧。</td></tr>
+</tbody></table></div>
+<div class="pager"><a href="#actsp-drone-behavior"><small>上一节</small>← 子机行为</a><a href="#credits"><small>下一节</small>制作与鸣谢 →</a></div></article>
+<article id="credits" data-title="制作与鸣谢" data-group="关于项目"><div class="crumb">规则手册 <span>/</span> 关于项目</div><h2>制作与鸣谢</h2><p id="project-author"><strong>制作者</strong>　<a href="https://space.bilibili.com/12765643">斩断云天</a></p><p id="project-collaborator"><strong>合作者</strong>　ChatGPT、贪吃的布丁</p><p id="special-thanks">特别鸣谢 Westwood、Ares 制作者、Phobos 制作组和 ra2jj.com。</p><div class="pager"><a href="#better-garrison"><small>上一节</small>← 高级驻军</a></div></article></main></div><script>(() => {
   const pages = [...document.querySelectorAll('article')];
   const nav = document.querySelector('.sidebar');
   const main = document.querySelector('main');

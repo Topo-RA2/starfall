@@ -1,7 +1,7 @@
 #include "../../../src/Starfall.cpp"
-int laserCount=0;
+std::vector<CoordStruct> laserEnds;
 DEFINE_HOOK(0x54FE60,SF_TestExtraLasers,6) {
-    ++laserCount;
+    laserEnds.push_back(R->Stack<CoordStruct>(0x10));
     return 0;
 }
 namespace {
@@ -15,7 +15,7 @@ UnitClass* place(HouseClass* owner,CellStruct p) {
     if(owner!=HouseClass::CurrentPlayer) unit->Health=unit->EstimatedHealth=20000;
     return unit;
 }
-void fire(UnitClass* shooter,UnitClass* primary,std::set<DWORD> expected,const char* label) {
+void fire(UnitClass* shooter,TechnoClass* primary,std::set<DWORD> expected,const char* label) {
     shooter->SetTarget(primary);shooter->RearmTimer.Stop();
     auto facing=shooter->GetTargetDirection(primary);
     shooter->PrimaryFacing.SetCurrent(facing);shooter->SecondaryFacing.SetCurrent(facing);
@@ -66,14 +66,125 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiShot,5) {
         fire(u,p,{p->UniqueID},"lone target");
         auto n=place(foe,{46,73}),q=place(foe,{45,76});
         fire(u,p,{p->UniqueID,n->UniqueID},"nearest extra");
+        {
+            auto weapon=u->GetWeapon(0)->WeaponType;
+            auto projectile=weapon->Projectile;
+            const bool previousAA=projectile->AA;
+            projectile->AA=true;
+            auto plane=[&](CellStruct cell) {
+                auto air=static_cast<AircraftClass*>(AircraftTypeClass::Find("ORCA")->CreateObject(foe));
+                check(air && air->Unlimbo(MapClass::Instance.GetCellAt(cell)->GetCoordsWithBridge(),DirType::North),"place air target");
+                air->SetHeight(300);
+                check(air->IsInAir(),"airborne target");
+                return air;
+            };
+            auto nearAir=plane({45,74}),farAir=plane({45,77});
+            grantToUnit(u,PassiveGrant{{"samelayer"},-1});
+            fire(u,nearAir,{nearAir->UniqueID,n->UniqueID},"zero preference stacks keep nearest");
+            changeStacks(u->UniqueID,"splitfire",-1,6);
+            changeStacks(u->UniqueID,"samelayer",1,3);
+            fire(u,nearAir,{nearAir->UniqueID,farAir->UniqueID},"air primary prefers air");
+            check(u->DistanceFrom(nearAir)<u->DistanceFrom(p),"air candidate closer than ground");
+            fire(u,n,{n->UniqueID,p->UniqueID},"ground primary prefers ground");
+            farAir->Limbo();
+            fire(u,nearAir,{nearAir->UniqueID,n->UniqueID},"air primary falls back to ground");
+            nearAir->Limbo();
+            removeHeldPassive(u,"samelayer");
+            changeStacks(u->UniqueID,"splitfire",1,6);
+            projectile->AA=previousAA;
+        }
         changeStacks(u->UniqueID,"splitfire",1,6);
         fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},"two distinct extras");
         auto weapon=u->GetWeapon(0)->WeaponType;
+        auto originalProjectile=weapon->Projectile;
+        for(auto type:{"AAHeatSeeker2","Ballistic"}) {
+            weapon->Projectile=BulletTypeClass::Find(type);
+            check(weapon->Projectile!=nullptr,"projectile fixture");
+            fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},type);
+        }
+        weapon->Projectile=originalProjectile;
         bool laser=weapon->IsLaser;
-        weapon->IsLaser=true;laserCount=0;
+        weapon->IsLaser=true;laserEnds.clear();
         fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},"laser targets");
-        check(laserCount==3,"three laser beams");
+        check(laserEnds.size()==3,"three laser beams");
+        for(auto enemy:{p,n,q})
+            check(std::find(laserEnds.begin(),laserEnds.end(),enemy->GetTargetCoords())!=laserEnds.end() ||
+                std::find(laserEnds.begin(),laserEnds.end(),enemy->GetCenterCoords())!=laserEnds.end(),"laser reaches intended target");
         weapon->IsLaser=laser;
+        auto endpoints=[&](const auto& effects,int start,auto endpoint) {
+            std::set<int> hits;
+            const std::array<UnitClass*,3> enemies={p,n,q};
+            for(int i=start;i<effects.Count;++i) for(int j=0;j<3;++j)
+                if(endpoint(effects[i])==enemies[j]->GetTargetCoords() || endpoint(effects[i])==enemies[j]->GetCenterCoords()) hits.insert(j);
+            return hits.size()==3;
+        };
+        int bolts=EBolt::Array.Count;
+        weapon->IsElectricBolt=true;
+        fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},"electric targets");
+        check(EBolt::Array.Count==bolts+3 && endpoints(EBolt::Array,bolts,[](auto b){return b->Point2;}),"electric arcs reach three endpoints");
+        weapon->IsElectricBolt=false;
+        int beams=RadBeam::Array.Count;
+        weapon->IsRadBeam=true;
+        fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},"radiation targets");
+        check(RadBeam::Array.Count==beams+3 && endpoints(RadBeam::Array,beams,[](auto b){return b->TargetLocation;}),"radiation beams reach three endpoints");
+        weapon->IsRadBeam=false;
+        auto oldParticles=weapon->AttachedParticleSystem;
+        weapon->IsRailgun=true;weapon->AttachedParticleSystem=ParticleSystemTypeClass::Find("LargeRailgunSys");
+        check(weapon->AttachedParticleSystem!=nullptr,"railgun fixture");
+        int particles=ParticleSystemClass::Array.Count;
+        fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},"railgun targets");
+        check(endpoints(ParticleSystemClass::Array,particles,[](auto s){return s->TargetCoords;}),"rail trails reach three endpoints");
+        weapon->IsRailgun=false;weapon->AttachedParticleSystem=oldParticles;
+        for(bool sparks:{false,true}) {
+            weapon->UseSparkParticles=sparks;weapon->UseFireParticles=!sparks;
+            weapon->AttachedParticleSystem=ParticleSystemTypeClass::Find(sparks?"WeldingSys":"FireStreamSys");
+            check(weapon->AttachedParticleSystem!=nullptr,"directed particle fixture");
+            int start=ParticleSystemClass::Array.Count;
+            fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},sparks?"spark targets":"flame targets");
+            std::set<AbstractClass*> directed;
+            for(int i=start;i<ParticleSystemClass::Array.Count;++i) {
+                auto system=ParticleSystemClass::Array[i];
+                if(system->Type==weapon->AttachedParticleSystem && system->Owner==u) directed.insert(system->Target);
+            }
+            check(directed.contains(n) && directed.contains(q),"particles bound to both secondary targets");
+            weapon->UseSparkParticles=weapon->UseFireParticles=false;
+            weapon->AttachedParticleSystem=oldParticles;
+        }
+        {
+            weapon->IsSonic=true;
+            int secondaryBeams=RadBeam::Array.Count;
+            fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},"sonic targets");
+            check(RadBeam::Array.Count==secondaryBeams && u->Target==p,"sonic extras preserve primary and allocate no beams");
+            MapClass::Instance.Reveal(human);
+            auto tactical=TacticalClass::Instance;
+            auto previous=tactical->TacticalPos;
+            tactical->TacticalPos=TacticalClass::CoordsToScreen(u->Location)-Point2D{200,150};
+            auto surface=GameCreate<BSurface>(400,300);
+            auto lit=[&](Point2D center) {
+                for(int y=-8;y<=8;++y) for(int x=-8;x<=8;++x) {
+                    Point2D sample{center.X+x,center.Y+y};
+                    if(surface->GetPixel(&sample)) return true;
+                }
+                return false;
+            };
+            for(unsigned age:{6u,18u,19u}) {
+                surface->Fill(0);
+                SonicRipple::draw(surface,{0,0,400,300},f+age);
+                for(auto enemy:{n,q}) {
+                    auto dest=tactical->CoordsToClient(enemy->GetTargetCoords()).first;
+                    auto muzzle=tactical->CoordsToClient(u->GetFLH(0,CoordStruct::Empty)).first;
+                    auto point=age==6?Point2D{(muzzle.X+dest.X)/2,(muzzle.Y+dest.Y)/2}:dest;
+                    check(lit(point)==(age!=19),"both sonic paths advance reach their endpoints and fade");
+                }
+            }
+            GameDelete(surface);
+            tactical->TacticalPos=previous;
+            weapon->IsSonic=false;
+            weapon->IsMagBeam=true;
+            fire(u,p,{p->UniqueID},"magnetic primary only");
+            check(RadBeam::Array.Count==secondaryBeams,"no secondary magnetic beams");
+            weapon->IsMagBeam=false;
+        }
         changeStacks(u->UniqueID,"splitfire",4,6);
         fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},"fewer enemies than layers");
         u->Health=1;
@@ -82,7 +193,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiShot,5) {
         grantToUnit(u,PassiveGrant{{"fixedshot"},-1});
         fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID,third->UniqueID},"three extra without stacks");
         grantToUnit(u,PassiveGrant{{"formulashot"},-1});
-        check(multiShotTargetCount(u,p)==4,"fixed plus formula");
+        check(multiShotSettings(u,p).count==4,"fixed plus formula");
         removeHeldPassive(u,"fixedshot");
         changeStacks(u->UniqueID,"formulashot",1,6);
         fire(u,p,{p->UniqueID,n->UniqueID},"fraction rounded down");

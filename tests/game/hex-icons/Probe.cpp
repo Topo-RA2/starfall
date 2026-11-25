@@ -89,9 +89,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexIcons,5) {
         const auto& o=projects[i];
         RectangleStruct r{sheet.X+(i%5)*96,sheet.Y+(i/5)*96,96,96};
         check(unique.insert(o.icon).second,"unique file");
-        PngImage raw;
-        check(loadPng(o.icon,0,raw) && raw.width==96 && raw.height==96,"registered image");
-        drawPng(raw,r,0);
+        auto raw=imageFor(o.icon,0,Research::Rarity::Common,false);
+        check(!raw->pixels.empty() && raw->width==96 && raw->height==96,"registered PCX image");
+        drawPng(*raw,r,0);
         auto original=snapshot(r);
         surface->FillRect(&r,background);
         drawProjectIcon(o,r);

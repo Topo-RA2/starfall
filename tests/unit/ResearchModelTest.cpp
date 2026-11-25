@@ -62,6 +62,27 @@ void buildingWeightsTest() {
     unlocked[0].insert("rare");clearOfferCache();
     check(Detail::buildingOfferRows(12,0,pool).empty(),"exhausted weighted building has no choices");
 }
+void replacementTests() {
+    using namespace Research;
+    fixture();
+    options.resize(4);
+    options[2].replaces=options[2].prerequisites={"common0","common1"};
+    options[3].replaces=options[3].prerequisites={"common2"};
+    const std::vector<std::string> pool={"common2"};
+    award(0,400);
+    check(purchase(0,0,"america") && Detail::buildingOfferRows(1,0,pool).empty(),
+        "every base is required even for building upgrades");
+    check(purchase(0,1,"america"),"purchase second base");
+    effectsSucceed=false;
+    check(!purchase(0,2,"america") && owns(0,"common0") && owns(0,"common1") &&
+        balance(0)==200 && retired.empty(),"failed upgrade preserves both bases and points");
+    effectsSucceed=true;
+    check(purchase(0,2,"america") && grantRandom(0,"america")==3 && completedProjects(0)==std::vector<int>{3},
+        "ordinary and random upgrades retire complete chains");
+    check(offers(0,"america").empty() && !canOfferFree(0,"america",{"common0"},{},-1) &&
+        !offers(1,"america").empty() && balance(0)==100 && completedRounds[0]==3,
+        "old tiers stay out of rewards for the upgraded house only");
+}
 void freeChoiceTests() {
     using namespace Research;
     fixture();
@@ -161,6 +182,7 @@ void sharedSequenceTests() {
     check(varied,"different matches produce different common sequences");seed=initialSeed;
 }
 void randomResearchTests() {
+    randomDraws=0;
     fixture();Research::rarityWeights={0,0,0,0};
     check(Research::grantRandom(0,"america",Research::Rarity::Rare)<0 && randomDraws==0,"random research filters countries and prerequisites before drawing");
     check(Research::grantRandom(1,"JAPAN",Research::Rarity::Rare)==8 && Research::owns(1,"rare") &&
@@ -331,9 +353,34 @@ int main() {
     check(Research::purchaseForAI(1,"japan",60)<0 && Research::balance(1)==200,"AI retains surplus when pool exhausted");
     buildingWeightsTest();
     freeChoiceTests();
+    {
+        using namespace Research;
+        fixture();
+        options.resize(3);
+        options[0].excludes={"common1","common2"};
+        options[0].rarity=Rarity::Epic;
+        const std::vector<std::string> scope={"common0","common1"};
+        check(grantFree(0,"america",scope,{}) && ticketOptions(lastTicket,0,"america").size()==2,
+            "unowned exclusions permit both choices");
+        check(!canOfferFree(0,"america",{"common0"},{},2) && !canGrantRandom(0,2,"america",Rarity::Epic),
+            "reward preview accounts for ownership of the granting project");
+        randomPick=1;
+        check(grantRandom(0,"america",Rarity::Common)==2,"grant second exclusion");
+        const int before=randomDraws;
+        check(grantRandom(0,"america",Rarity::Epic)<0 && randomDraws==before,
+            "owning any excluded ID removes the random grant before drawing");
+        check(ids(0)==std::vector<std::string>{"common1"} &&
+            ticketOptions(lastTicket,0,"america")==std::vector<int>{1} &&
+            Detail::buildingOfferRows(1,0,scope)==std::vector<int>{1},
+            "ordinary offers and outstanding reward boards drop excluded projects");
+        check(grantRandom(1,"america",Rarity::Epic)==0 && canOfferFree(1,"america",{"common2"},{},-1),
+            "exclusions are directional and ownership is per house");
+        randomPick=0;
+    }
     sharedSequenceTests();
     randomResearchTests();
     rewardChainTests();
+    replacementTests();
     const auto generation=Research::uiGeneration;
     const auto cleared=effectClears, presented=presentationClears;
     Research::producers[1]={0,2};Research::buildingRewards[2]={0,0,true};

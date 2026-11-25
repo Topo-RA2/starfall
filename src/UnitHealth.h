@@ -5,6 +5,8 @@
 #include <map>
 
 namespace UnitHealth {
+inline bool alive(TechnoClass* t) { return t && t->IsAlive && t->Health>0; }
+
 // YR and other extensions divide ObjectClass::Health by the shared type's Strength.
 // Keep that field on the native scale, and keep exact hit points for combat here.
 struct Pool {
@@ -50,6 +52,11 @@ inline Values read(TechnoClass* unit,int strength) {
     return {unit->Health,strength};
 }
 inline Values read(TechnoClass* unit) {return read(unit,unit->GetTechnoType()->Strength);}
+// UI reads the last simulation update without synchronizing native health.
+inline Values snapshot(TechnoClass* unit) {
+    if(auto p=find(unit->UniqueID)) return {p->current,p->maximum};
+    return {unit->Health,unit->GetTechnoType()->Strength};
+}
 inline int current(TechnoClass* unit) {
     if(unit->Health<=0 || !find(unit->UniqueID)) return unit->Health;
     return read(unit).current;

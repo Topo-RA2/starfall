@@ -58,7 +58,7 @@ struct Option {
     std::string id, passive, icon;
     std::vector<std::string> types;
     std::wstring name, summary, detail;
-    std::vector<std::string> countries, prerequisites;
+    std::vector<std::string> countries, prerequisites, excludes, replaces;
     bool validChain=false;
     Effect effect=Effect::Passive;
     int credits=0;
@@ -69,6 +69,8 @@ struct Option {
     CostChange cost;
     ProjectReward reward;
     std::wstring targetLabel;
+    bool grantOnly=false;
+    std::vector<std::string> unlockWithTech,techProviders;
 };
 extern std::vector<Option> options;
 enum class SoundCue { Button, Cards, Refresh, Select, Available };
@@ -93,7 +95,7 @@ bool canRefresh(int house,const char* country,int slot);
 bool refresh(int house,const char* country,int slot,int expected);
 constexpr int price=100;
 using Unlocks=std::map<int,std::set<std::string>>;
-extern Unlocks unlocked;
+extern Unlocks unlocked, retired;
 // Successful ordinary purchases only; free building rewards do not advance rounds.
 extern std::map<int,unsigned> completedRounds;
 // Loaded match seed; unset for a fresh scenario. Reading offers never mutates it.
@@ -146,10 +148,12 @@ bool available(int option);
 bool executeEffect(int house,int option);
 bool canApply(int house,int option);
 bool meetsPrerequisites(int house,int option);
+bool meetsCountryOrTech(int house,const Option& option,const std::string& country,int source=-1);
 bool purchase(int house,int option,const char* country);
 int purchaseForAI(int house,const char* country,unsigned frame);
 // Free, uniform draw over eligible projects; nullopt includes every rarity.
 // Returns the acquired option index, or -1. Does not advance ordinary rounds.
+int grantNamed(int house,const char* country,const std::string& id);
 int grantRandom(int house,const char* country,std::optional<Rarity> rarity=std::nullopt);
 // Called only after ownership and purchase/building bookkeeping have committed.
 void grantProjectRewards(int house,int option,const char* country);

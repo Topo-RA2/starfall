@@ -1,4 +1,12 @@
 local skill = {}
+function skill.guardOrder(ctx)
+    local point = ctx.self:type() == "ASGNDPOST" and {x=84, y=88} or {x=71, y=82}
+    assert(ctx.self:setDroneGuardCell(point))
+end
+function skill.moveOrder(ctx)
+    local point = ctx.self:position()
+    assert(ctx.self:moveTo({x=point.x+2, y=point.y}))
+end
 function skill.cast(ctx)
     ctx.state.casts = (ctx.state.casts or 0) + 1
     ctx.state.roll = ctx:randomInt(-1000000, 1000000)

@@ -13,6 +13,7 @@
       "unit"
     ],
     "smoke": [
+      "example-starters",
       "unit",
       "health-formula",
       "cloakable",
@@ -21,6 +22,7 @@
       "action-sequence"
     ],
     "passives": [
+      "unit-mount",
       "ground-pickups",
       "building-transform",
       "spawn-building",
@@ -38,6 +40,7 @@
       "cloakable",
       "before-damage",
       "before-fire",
+      "weapon-script",
       "multi-shot",
       "fire-rate",
       "weapon-range",
@@ -45,6 +48,7 @@
       "passenger-consume"
     ],
     "lua": [
+      "weapon-script",
       "building-transform",
       "spawn-building",
       "lua-skills",
@@ -55,16 +59,19 @@
       "map-lua",
       "action-sequence"
     ],
-    "research": [
-      "hex-tactics",
-      "hex-support",
-      "hex-ordnance",
+    "hex": [
       "hex-economy",
       "hex-defense",
       "hex-helicopter",
       "hex-fortress",
-      "research-grant",
       "hex-gameplay",
+      "hex-icons",
+      "hex-ordnance",
+      "hex-support",
+      "hex-tactics"
+    ],
+    "research": [
+      "research-grant",
       "research-hud",
       "research-cost",
       "building-reward",
@@ -73,12 +80,12 @@
       "passive-gained"
     ],
     "visuals": [
-      "hex-icons",
       "passive-animations",
       "projectiles",
       "tornado"
     ],
     "movement": [
+      "actsp",
       "force-move",
       "chrono-teleport",
       "tornado"
@@ -87,15 +94,10 @@
       "multiplayer"
     ],
     "full": [
-      "hex-tactics",
-      "hex-support",
-      "hex-ordnance",
-      "hex-economy",
-      "hex-defense",
-      "hex-helicopter",
-      "hex-fortress",
+      "actsp",
+      "example-starters",
+      "unit-mount",
       "research-grant",
-      "hex-gameplay",
       "ground-pickups",
       "unit",
       "building-transform",
@@ -106,6 +108,7 @@
       "aura",
       "before-damage",
       "before-fire",
+      "weapon-script",
       "building-reward",
       "building-upgrade",
       "chrono-teleport",
@@ -116,7 +119,6 @@
       "fire-rate",
       "force-move",
       "health-formula",
-      "hex-icons",
       "immune",
       "lua-anim",
       "lua-skills",
@@ -144,6 +146,23 @@
     ]
   },
   "Cases": [
+    {
+      "Name":"example-starters","Kind":"game","Map":"maps/Starfall_TestRange.map",
+      "Save":"","Log":"examples.log","Phases":["fresh"],"Standalone":true,
+      "Expected":{"fresh":["PASS repair on kill","PASS three choices and cash award","PASS two scripted shots six frames apart"]}
+    },
+    {
+      "Name":"weapon-script","Kind":"game","Map":"maps/Starfall_TestRange.map",
+      "Save":"WeaponScript.sav","Log":"weapon-script.log","Phases":["fresh","load"],"Standalone":false,
+      "Expected":{"fresh":["PASS live target and snapshot","PASS one volley and full rearm","PASS ground and lost targets","PASS saved pending volley","PASS repeated attack orders","PASS direct-only warhead uses map parameters and suppresses synchronous self-recursion"],
+                  "load":["PASS restored callbacks and positions","PASS repeated attack orders"]}
+    },
+    {
+      "Name":"unit-mount","Kind":"game","Map":"maps/Starfall_TestRange.map",
+      "Save":"UnitMount.sav","Log":"mount.log","Phases":["fresh","load"],"Standalone":false,
+      "Expected":{"fresh":["PASS Count All clears only the selected parent","PASS Lua filters counts and failed sequence","PASS mounted save","PASS transport fires","PASS parent removal","PASS turret rotates relative to fixed foundation","PASS sold building clears child"],
+                  "load":["PASS restored slots and references","PASS recycle last installed gun inside saved transport","PASS parent removal","PASS saved building roof restored","PASS sold building clears child"]}
+    },
     {
       "Name": "hex-economy",
       "Kind": "game",
@@ -808,13 +827,28 @@
       "Log": "conversion.log",
       "Phases": [
         "fresh",
+        "load",
         "without-phobos",
         "without-phobos-load"
       ],
       "Standalone": false,
       "Expected": {
         "fresh": [
-          "PASS legacy Phobos unavailable"
+          "PASS Phobos loaded",
+          "PASS compatible fixture",
+          "PASS conversion",
+          "PASS identity and ownership",
+          "PASS house tracking",
+          "PASS passive retained",
+          "PASS passive action conversion",
+          "PASS infantry conversion",
+          "PASS aircraft conversion",
+          "PASS research conversion",
+            "PASS research converted carrier with its original drone",
+            "PASS Ares classified custom missile",
+          "PASS airborne custom drone survives conversion",
+            "PASS custom missile hit with configured damage and regenerated",
+            "PASS saved"
         ],
         "without-phobos": [
           "PASS compatible fixture",
@@ -827,37 +861,30 @@
           "PASS infantry conversion",
           "PASS aircraft conversion",
           "PASS research conversion",
-          "PASS saved",
+            "PASS research converted carrier with its original drone",
+            "PASS Ares classified custom missile",
+          "PASS airborne custom drone survives conversion",
+            "PASS custom missile hit with configured damage and regenerated",
+            "PASS saved",
           "PASS builtin health and ammo"
         ],
         "without-phobos-load": [
           "PASS loaded conversion",
-          "PASS loaded passive"
+          "PASS loaded passive",
+            "PASS loaded airborne drone and pending regeneration",
+            "PASS custom missile hit with configured damage and regenerated"
         ],
         "load": [
           "PASS loaded conversion",
-          "PASS loaded passive"
+          "PASS loaded passive",
+            "PASS loaded airborne drone and pending regeneration",
+            "PASS custom missile hit with configured damage and regenerated"
         ]
       },
       "PhobosPhases": [
         "fresh",
         "load"
-      ],
-      "ExpectedPhobos": {
-        "fresh": [
-          "PASS public Phobos API",
-          "PASS compatible fixture",
-          "PASS conversion",
-          "PASS identity and ownership",
-          "PASS house tracking",
-          "PASS passive retained",
-          "PASS passive action conversion",
-          "PASS infantry conversion",
-          "PASS aircraft conversion",
-          "PASS research conversion",
-          "PASS saved"
-        ]
-      }
+      ]
     },
     {
       "Name": "deployed-state",
@@ -1217,7 +1244,19 @@
           "PASS level up does not repeat and bonuses remain permanent",
           "PASS repeated shrink refreshes without stacking",
           "PASS shrink refresh extends original deadline",
-          "PASS shrink expires and restores size and damage after two seconds"
+          "PASS shrink expires and restores size and damage after two seconds",
+          "PASS shrink engine vehicle modifiers",
+          "PASS aircraft kill pays half base cost",
+          "PASS disk can paralyze vehicle and aircraft for 105 frames",
+          "PASS both captures survive retargeting and controller removal",
+          "PASS restore pending rebirth",
+          "PASS rebirth joins original team on current script line",
+          "PASS both split children counted in the original slot",
+          "PASS last member's split team survives a normal game tick",
+          "PASS both split members move without replaying the first script line",
+          "PASS split children cannot split recursively",
+          "PASS eternal heals one percent each second",
+          "PASS rancor death grants nearby haste for five seconds"
         ]
       }
     },
@@ -1388,12 +1427,15 @@
           "PASS promotion event",
           "PASS synchronous damage",
           "PASS error isolation",
+          "PASS Lua movement destination accepted",
           "PASS saved"
         ],
         "load": [
           "PASS loaded action chain",
           "PASS Lua iron curtain",
-          "PASS no duplicate callback"
+          "PASS no duplicate callback",
+          "PASS Lua unit reached destination and fired at ordered unit after load",
+          "PASS Lua unit fired at ordered ground cell"
         ]
       }
     },
@@ -1496,7 +1538,23 @@
           "PASS zero stacks",
           "PASS lone target",
           "PASS nearest extra",
+          "PASS zero preference stacks keep nearest",
+          "PASS air primary prefers air",
+          "PASS ground primary prefers ground",
+          "PASS air primary falls back to ground",
           "PASS two distinct extras",
+          "PASS AAHeatSeeker2",
+          "PASS Ballistic",
+          "PASS laser reaches intended target",
+          "PASS electric arcs reach three endpoints",
+          "PASS radiation beams reach three endpoints",
+          "PASS rail trails reach three endpoints",
+          "PASS flame targets",
+          "PASS spark targets",
+          "PASS particles bound to both secondary targets",
+          "PASS sonic targets",
+          "PASS magnetic primary only",
+          "PASS no secondary magnetic beams",
           "PASS fewer enemies than layers",
           "PASS conditional exit",
           "PASS three extra without stacks",
@@ -1593,6 +1651,10 @@
           "PASS animation raster scales",
           "PASS animation follows live scale",
           "PASS tint configuration",
+          "PASS tint strength validation",
+          "PASS body pixels match RGB interpolation at half and full strength",
+          "PASS removing tint restores original pixels",
+          "PASS zero strength preserves original pixels",
           "PASS voxel body tint",
           "PASS infantry body tint",
           "PASS aircraft body tint",
@@ -1669,6 +1731,13 @@
           "PASS transferred ownership retained",
           "PASS batch remove skips absent and clears all matches",
           "PASS stack formula namespace",
+          "PASS tooltip config validation",
+          "PASS native hover five stacks",
+          "PASS native hover peer unchanged",
+          "PASS native hover inactive condition",
+          "PASS native hover combined formulas",
+          "PASS native hover retained",
+          "PASS native hover expired",
           "PASS configuration validation",
           "PASS initial zero",
           "PASS cap and unit isolation",
@@ -1689,6 +1758,8 @@
         ],
         "load": [
           "PASS stack retained",
+          "PASS native hover retained",
+          "PASS native hover expired",
           "PASS queued stack snapshot retained",
           "PASS last source expired",
           "PASS reacquire starts zero",
@@ -1830,6 +1901,9 @@
           "PASS other player unchanged",
           "PASS ownership",
           "PASS loaded production license",
+          "PASS licensed research bypasses country for license holder only",
+          "PASS random awards honor license alternative",
+          "PASS licensed follow-up offered in ordinary research",
           "PASS licensed unit in production queue",
           "PASS purchase production license",
           "PASS shared rarity reads merged rules",
@@ -1854,6 +1928,9 @@
           "PASS other player unchanged",
           "PASS ownership",
           "PASS loaded production license",
+          "PASS licensed research bypasses country for license holder only",
+          "PASS random awards honor license alternative",
+          "PASS licensed follow-up offered in ordinary research",
           "PASS licensed unit in production queue",
           "PASS ordinary research rounds survive game load"
         ]
@@ -1984,6 +2061,19 @@
           "PASS signal values loaded",
           "PASS once after load"
         ]
+      }
+    },
+    {
+      "Name": "actsp",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "ActSp.sav",
+      "Log": "actsp.log",
+      "Phases": ["fresh","load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS patrol modes", "PASS saved", "PASS attack and rearm", "PASS Grizzly flew low and landed on guard cell", "PASS Grizzly fired and rearmed", "PASS ground guard waits for a free exit", "PASS ground guard lifecycle", "PASS better garrison lifecycle", "PASS building type damage override applied to garrison shot", "PASS building type fire-rate override applied to garrison reload"],
+        "load": ["PASS patrol modes", "PASS attack and rearm", "PASS Grizzly flew low and landed on guard cell", "PASS Grizzly fired and rearmed", "PASS same ground guard after save", "PASS ground guard lifecycle", "PASS better garrison lifecycle", "PASS building type damage override applied to garrison shot", "PASS building type fire-rate override applied to garrison reload"]
       }
     },
     {
@@ -2155,6 +2245,10 @@
           "PASS miner elite uses same weapon family",
           "PASS normal and elite rocket damage and radius doubled",
           "PASS actual detonation schedules independent Lua fireworks",
+          "PASS research leaves previously planted ordinary bombs unchanged",
+          "PASS elite Ivan uses elite fireworks weapon",
+          "PASS direct hit and area damage invoke one warhead callback",
+          "PASS two same-frame warhead detonations on empty ground invoke separate callbacks",
           "PASS saved mid fireworks",
           "PASS eight bursts per bomb finish without recursion or timer leaks",
           "PASS mini nuke fixed 120 damage and terrorist warhead",
