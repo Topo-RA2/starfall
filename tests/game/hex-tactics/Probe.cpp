@@ -1,5 +1,6 @@
 #include "../../../src/Starfall.cpp"
 #include <ParasiteClass.h>
+#include <TacticalClass.h>
 
 namespace {
 DWORD droneId=0,victimId=0,nearId=0,farId=0,infId=0,friendId=0,tanyaId=0,attackerId=0,roboId=0;
@@ -120,12 +121,14 @@ void ids(bool load) {
     else std::ofstream("hex-tactics.ids")<<tanyaId<<' '<<attackerId<<' '<<roboId;
 }
 }
+#include "BattleEffects.inc"
 #include "FireSupport.inc"
 DEFINE_HOOK(0x55B4EB,SF_TestHexTactics,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
     const int f=Unsorted::CurrentFrame;const bool load=GetFileAttributesA("reload.flag")!=INVALID_FILE_ATTRIBUTES;
     auto owner=HouseClass::FindByPlayerAt(HouseClass::PlayerAtA),foe=HouseClass::FindByPlayerAt(HouseClass::PlayerAtB);
     checkFireSupport(f,load,owner,foe);
+    checkBattleEffects(f,load,owner,foe);
     if(!load && f==30) {
         Research::ensureReady();
         unlock(owner,"sf_hx_chainreaction",Research::Rarity::Rare);unlock(owner,"sf_hx_battlefieldrecovery",Research::Rarity::Rare);

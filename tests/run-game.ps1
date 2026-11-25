@@ -18,6 +18,13 @@ if($definition.Kind -ne 'game') {throw 'Use run-multiplayer.ps1 for a network ca
 if($StandaloneSpawner -and ($PhobosPackageDirectory -or !$definition.Standalone)) {throw 'This case does not support the requested standalone extension combination.'}
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $game = (Resolve-Path -LiteralPath $GameDirectory).Path
+if ($Case -like 'hex-*') {
+    $hexRoot=if ($env:STARFALL_HEXBRAWL_ROOT) { $env:STARFALL_HEXBRAWL_ROOT } else { Join-Path (Split-Path $root -Parent) 'HexBrawl' }
+    $hexConfig=Join-Path $hexRoot 'Starfall.HexBrawl.PCX.ini'
+    if (!(Test-Path -LiteralPath $hexConfig -PathType Leaf)) {
+        throw 'HexBrawl project missing. Place it next to Starfall or set STARFALL_HEXBRAWL_ROOT to its directory.'
+    }
+}
 foreach ($name in 'Syringe.exe', 'gamemd.exe') {
     if (!(Test-Path -LiteralPath (Join-Path $game $name) -PathType Leaf)) { throw "Missing $name in $game" }
 }
@@ -54,6 +61,23 @@ if ($PhobosPackageDirectory) {
     if (Test-Path -LiteralPath $symbols -PathType Leaf) { Copy-Item -LiteralPath $symbols -Destination $run }
 }
 Copy-Item -LiteralPath (Join-Path $root "build/tests/$Case/Starfall.dll") -Destination $run
+if ($Case -eq 'conversion') {
+    Copy-Item -LiteralPath (Join-Path $fixture 'SpawnRules.ini') -Destination $run
+    [IO.File]::WriteAllText((Join-Path $run 'rules_include.ini'),"[#include]`r`n1=rules_triumph.ini`r`n2=SpawnRules.ini`r`n")
+}
+if ($Case -eq 'actsp') {
+    Copy-Item -LiteralPath (Join-Path $root 'build/ActSp.dll') -Destination $run
+    Copy-Item -LiteralPath (Join-Path $fixture 'Guard.lua') -Destination $run
+    # The test game's rulesmd.ini includes rules_include.ini through Ares.
+    $rules=[IO.File]::ReadAllText((Join-Path $fixture 'rules_include.ini')).Replace('1=rules_triumph.ini',"1=rules_triumph.ini`r`n2=GrizzlyOutpost.rules.ini")
+    [IO.File]::WriteAllText((Join-Path $run 'rules_include.ini'),$rules)
+    $grizzly=Join-Path $root 'examples/GrizzlyOutpost'
+    Copy-Item -LiteralPath (Join-Path $root 'examples/GrizzlyGroundOutpost/GrizzlyGround.rules.ini') -Destination $run
+    foreach ($name in 'GrizzlyOutpost.rules.ini','GrizzlyOutpost.art.ini','asgrdrn.vxl','asgrdrn.hva') {
+        Copy-Item -LiteralPath (Join-Path $grizzly $name) -Destination $run
+    }
+    [IO.File]::WriteAllText((Join-Path $run 'art_include.ini'),"[#include]`r`n1=art_triumph.ini`r`n2=GrizzlyOutpost.art.ini`r`n")
+}
 if ($Case -eq 'research-grant') {
     Copy-Item -LiteralPath (Join-Path $root "build/tests/$Case/ResearchApiClient.dll") -Destination $run
 }
@@ -61,14 +85,28 @@ $loaderText=[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path 
 if (!$loaderText.Contains('-i=') -or !$loaderText.Contains('--nodetach') -or !$loaderText.Contains('--args')) {
     throw 'These tests require SyringeEx with explicit DLL imports, --args and --nodetach. Supply a compatible loader in GameDirectory or PhobosPackageDirectory.'
 }
-if ($Case -like 'hex-*') { Copy-Item -LiteralPath (Join-Path $root 'examples/HexBrawl.lua') -Destination $run }
+if ($Case -like 'hex-*') {
+    Copy-Item -LiteralPath $hexConfig -Destination (Join-Path $run 'Starfall.ini')
+    foreach ($name in 'HexBrawl.lua','HexBrawl.rules.ini','HexBrawl.art.ini') {
+        Copy-Item -LiteralPath (Join-Path $hexRoot $name) -Destination $run
+    }
+    $effects = @{
+        'blind_effect.shp'='hxblind.shp'; 'pierce_effect.shp'='hxpierce.shp'; 'slow_effect.shp'='hxslow.shp'
+        'shield_effect.shp'='hxshield.shp'; 'shield_block_effect.shp'='hxshblk.shp'; 'deathwill_effect.shp'='hxlegacy.shp'
+    }
+    foreach ($name in $effects.Keys) {
+        Copy-Item -LiteralPath (Join-Path $hexRoot "assets/vfx/$name") -Destination (Join-Path $run $effects[$name])
+    }
+    # Expedition's rulesmd.ini and artmd.ini load these includes from the game root.
+    foreach ($kind in 'rules','art') {
+        $include=Join-Path $run "${kind}_include.ini"
+        [IO.File]::WriteAllText($include,"[#include]`r`n1=${kind}_triumph.ini`r`n2=HexBrawl.$kind.ini`r`n")
+    }
+}
 if ($Case -eq 'hex-icons') {
-    Copy-Item -LiteralPath (Join-Path $root 'examples/Starfall.HexBrawl.ini') -Destination (Join-Path $run 'Starfall.ini')
-    Copy-Item -LiteralPath (Join-Path $root 'examples/HexBrawlIcons') -Destination $run -Recurse
-    Get-ChildItem -LiteralPath (Join-Path $root 'examples/HexBrawlIconsPCX') -Filter '*.pcx' | Copy-Item -Destination $run
+    Get-ChildItem -LiteralPath (Join-Path $hexRoot 'HexBrawlIconsPCX') -Filter '*.pcx' | Copy-Item -Destination $run
     Copy-Item -LiteralPath (Join-Path $fixture 'hx-test.pcx') -Destination (Join-Path $run 'hx-test.pcx')
 } elseif ($Case -in 'hex-gameplay','hex-fortress','hex-helicopter','hex-defense','hex-economy','hex-ordnance','hex-support','hex-tactics') {
-    Copy-Item -LiteralPath (Join-Path $root 'examples/Starfall.HexBrawl.ini') -Destination (Join-Path $run 'Starfall.ini')
     if($Case -eq 'hex-economy') {
         $path=Join-Path $run 'Starfall.ini'
         $text=[IO.File]::ReadAllText($path).Replace('[Starfall.PassiveTypes]',"[Starfall.PassiveTypes]`r`n9998=InvalidLiveEvent`r`n9999=InvalidLiveAction")
@@ -81,14 +119,18 @@ if ($Case -eq 'hex-icons') {
         $text += [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $fixture 'Starfall.ini'))
         [IO.File]::WriteAllText($path,$text)
     }
+} elseif ($Case -eq 'example-starters') {
+    $configs=foreach ($exampleName in 'Passive','Research','WeaponScript') {
+        [IO.File]::ReadAllText((Join-Path $root "examples/$exampleName/Starfall.ini"))
+    }
+    [IO.File]::WriteAllText((Join-Path $run 'Starfall.ini'), ($configs -join [Environment]::NewLine))
+    Copy-Item -LiteralPath (Join-Path $root 'examples/WeaponScript/DemoDoubleShot.lua') -Destination $run
 } elseif ($Case -eq 'action-sequence') {
-    $example=Join-Path $root 'examples/ActionSequence'
     $scripts=Get-Item -LiteralPath $run
-    Copy-Item -LiteralPath (Join-Path $example 'GravityWell.lua') -Destination $scripts.FullName
+    Copy-Item -LiteralPath (Join-Path $fixture 'GravityWell.lua') -Destination $scripts.FullName
     Copy-Item -LiteralPath (Join-Path $fixture 'Presentation.lua') -Destination $scripts.FullName
     Copy-Item -LiteralPath (Join-Path $fixture 'Presentation.ini') -Destination (Join-Path $run 'Starfall.ini')
 } elseif ($Case -eq 'tornado') {
-    $example=Join-Path $root 'examples/Tornado'
     $scripts=Get-Item -LiteralPath $run
     if ($TornadoConfig) {
         $userScripts=$game
@@ -96,9 +138,9 @@ if ($Case -eq 'hex-icons') {
             Get-ChildItem -LiteralPath $userScripts -Filter '*.lua' -File | Copy-Item -Destination $scripts.FullName
         }
     }
-    Copy-Item -LiteralPath (Join-Path $example 'Tornado.lua') -Destination $scripts.FullName
-    Copy-Item -LiteralPath (Join-Path $example 'tornado_attack.wav') -Destination $run
-    $config=if ($TornadoConfig) { (Resolve-Path -LiteralPath $TornadoConfig).Path } else { Join-Path $example 'Starfall.ini' }
+    Copy-Item -LiteralPath (Join-Path $fixture 'Tornado.lua') -Destination $scripts.FullName
+    Copy-Item -LiteralPath (Join-Path $fixture 'tornado_attack.wav') -Destination $run
+    $config=if ($TornadoConfig) { (Resolve-Path -LiteralPath $TornadoConfig).Path } else { Join-Path $fixture 'Starfall.ini' }
     $rules=[IO.File]::ReadAllText($config)
     $section=[regex]::new('(?im)^\[SF_Tornado\][^\r\n]*\r?\n')
     if($section.Matches($rules).Count -ne 1) { throw 'Expected one SF_Tornado section' }
@@ -109,11 +151,11 @@ if ($Case -eq 'hex-icons') {
     Copy-Item -LiteralPath (Join-Path $fixture 'AnimationCheck.lua') -Destination $scripts.FullName
     Copy-Item -LiteralPath (Join-Path $fixture 'Starfall.ini') -Destination $run
 } elseif ($Case -in 'area-barrage','active-skills','lua-skills','lua-timers') {
-    $examples=Join-Path $root 'examples/Lua'
+    $sharedLua=Join-Path $PSScriptRoot 'resources/lua-skills'
     $scripts=Get-Item -LiteralPath $run
-    Get-ChildItem -LiteralPath $examples -Filter '*.lua' | Copy-Item -Destination $scripts.FullName
+    Get-ChildItem -LiteralPath $sharedLua -Filter '*.lua' | Copy-Item -Destination $scripts.FullName
     Get-ChildItem -LiteralPath $fixture -Filter '*.lua' | Copy-Item -Destination $scripts.FullName
-    $rules=[IO.File]::ReadAllText((Join-Path $examples 'Starfall.ini'))
+    $rules=[IO.File]::ReadAllText((Join-Path $sharedLua 'Starfall.ini'))
     $fixtureRules=Join-Path $fixture 'Starfall.ini'
     if(Test-Path -LiteralPath $fixtureRules) {
         $extra=[IO.File]::ReadAllText($fixtureRules)
@@ -128,33 +170,33 @@ if ($Case -eq 'hex-icons') {
 } else {
     Copy-Item -LiteralPath (Join-Path $fixture 'Starfall.ini') -Destination $run
 }
-if ($Case -in 'chrono-teleport','force-move','building-upgrade','spawn-building','building-transform','map-lua','research-grant','ground-pickups','passenger-consume') {
+if ($Case -in 'chrono-teleport','force-move','building-upgrade','spawn-building','building-transform','unit-mount','weapon-script','map-lua','research-grant','ground-pickups','passenger-consume') {
     $scripts=Get-Item -LiteralPath $run
     Get-ChildItem -LiteralPath $fixture -Filter '*.lua' | Copy-Item -Destination $scripts.FullName
 }
 if ($Case -eq 'research-hud') {
     Copy-Item -LiteralPath (Join-Path $fixture 'ui-test.wav') -Destination $run
 }
-if ($Case -in 'hex-defense','hex-economy','hex-ordnance','hex-support','hex-tactics') {
-    Copy-Item -LiteralPath (Join-Path $root 'examples/HexBrawl.art.ini') -Destination $run
-}
 Copy-Item -LiteralPath $map -Destination (Join-Path $run 'spawnmap.ini')
-if ($Case -in 'hex-icons','hex-gameplay','hex-fortress','hex-helicopter','hex-defense','hex-economy','hex-ordnance','hex-support','hex-tactics') {
-    [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $root 'examples/HexBrawl.rules.ini')))
+if ($Case -eq 'hex-gameplay') {
+    [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $fixture 'EnemyTeam.ini')))
 }
 if ($Case -eq 'building-upgrade') {
     [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), "`r`n[GAPOWR]`r`nUpgrades=3`r`n[GAPILE]`r`nPowersUpBuilding=GAPOWR`r`n")
 }
 if ($Case -eq 'action-sequence') {
-    [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $example 'Rules.ini'))+[Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $fixture 'Damage.ini')))
+    [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $fixture 'Rules.ini'))+[Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $fixture 'Damage.ini')))
 }
 if ($Case -eq 'research-cost') {
     [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), "`r`n[CLEG]`r`nTechLevel=-1`r`n")
 }
+if ($Case -eq 'weapon-script') {
+    [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), "`r`n"+[IO.File]::ReadAllText((Join-Path $fixture 'Weapon.ini')))
+}
 if ($Case -eq 'before-fire') {
     [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), "`r`n[120mm]`r`nBurst=3`r`n")
 }
-if ($Case -in 'spawn-passives','cloakable') {
+if ($Case -in 'spawn-passives','cloakable','actsp') {
     [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), "`r`n"+[IO.File]::ReadAllText((Join-Path $fixture 'SpawnRules.ini')))
 }
 New-Item -ItemType Directory (Join-Path $run 'Saved Games') | Out-Null
@@ -195,9 +237,13 @@ foreach ($phase in $phases) {
     $report = Join-Path $run $logName
     [IO.File]::WriteAllText($report,'')
     $modules=@('Starfall.dll')
+    if ($Case -eq 'actsp') { $modules+='ActSp.dll' }
     $extensions=if ($StandaloneSpawner) { @('CnCNet-Spawner.dll') } elseif($SpawnerOverride) { @('Ares.dll','CnCNet-Spawner.dll','Phobos.dll') } elseif ($Case -eq 'action-sequence' -and !$PhobosPackageDirectory) { @('cncnet5.dll') } else { @('Ares.dll','cncnet5.dll','Phobos.dll') }
     $modules+=@($extensions | Where-Object { Test-Path -LiteralPath (Join-Path $run $_) -PathType Leaf })
     $imports=($modules | ForEach-Object { '-i='+$_ }) -join ' '
+    if ($Case -eq 'actsp') {
+        & (Join-Path $PSScriptRoot 'check-hook-ranges.ps1') -Primary (Join-Path $run 'ActSp.dll') -Extensions @($modules | Where-Object {$_ -ne 'ActSp.dll'} | ForEach-Object {Join-Path $run $_})
+    }
     $gameArgs=if ($StandaloneSpawner -or $SpawnerOverride) {'-SPAWN -LOG -CD'} else {'-SPAWN -LOG -CD -WIN'}
     $arguments='gamemd.exe '+$imports+' --args="'+$gameArgs+'" --nodetach'
     Write-Host "$Case/$phase module order: $($modules -join ' -> ')"

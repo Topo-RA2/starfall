@@ -9,10 +9,10 @@ EXPORT_FUNC(SF_ResearchDraw);
 
 namespace MultiplayerTest {
 std::vector<HouseClass*> players;
-std::array<TechnoClass*,2> casters{},targets{};
-std::array<int,2> credits{},health{};
-std::array<int,2> buildingCounts{};
-std::array<CellStruct,2> starts{};
+std::array<TechnoClass*,3> casters{},targets{};
+std::array<int,3> credits{},health{};
+std::array<int,3> buildingCounts{};
+std::array<CellStruct,3> starts{};
 int skillIndex=-1;
 void check(bool ok,const char* message) {
     std::ofstream("multiplayer.log",std::ios::app)<<(ok?"PASS ":"FAIL ")<<message<<'\n';
@@ -38,8 +38,25 @@ void snapshot(int frame) {
         <<(t->Owner?t->Owner->ArrayIndex:-1)<<' '<<t->Health<<' '<<t->IsAlive<<' '<<t->InLimbo<<' '
         <<t->Location.X<<' '<<t->Location.Y<<' '<<t->Location.Z<<' '<<int(t->CurrentMission)<<' '<<t->Ammo<<' '
         <<t->Cloakable<<' '<<int(t->CloakState)<<' '<<t->CloakProgress.Value<<' '<<t->CloakDelayTimer.GetTimeLeft()<<'\n';
-    for(auto foot:FootClass::Array) if(foot) native<<"F "<<foot->UniqueID<<' '<<foot->LastMapCoords.X<<' '
-        <<foot->LastMapCoords.Y<<' '<<foot->ThreatPosed<<' '<<foot->IsInAir()<<' '<<foot->GetTargetCoords().Z<<'\n';
+    for(auto foot:FootClass::Array) if(foot) {
+        // A docked spawn has no map cell or registered threat. The engine can leave
+        // the cached threat uninitialized until placement; keep checking deployed units.
+        const bool docked=foot->SpawnOwner && foot->InLimbo && !foot->IsOnMap;
+        native<<"F "<<foot->UniqueID<<' '<<foot->LastMapCoords.X<<' '<<foot->LastMapCoords.Y<<' '
+            <<(docked?0:foot->ThreatPosed)<<' '<<foot->IsInAir()<<' '<<foot->GetTargetCoords().Z<<'\n';
+    }
+    for(auto manager:SpawnManagerClass::Array) if(manager && manager->Owner) {
+        native<<"D "<<manager->Owner->UniqueID<<' '<<int(manager->Status);
+        for(auto node:manager->SpawnedNodes) {
+            auto child=node->Unit;
+            native<<' '<<int(node->Status)<<' '<<(child?child->UniqueID:0)<<' '<<(child && child->Target?child->Target->UniqueID:0);
+            if(child && child->Destination) {
+                auto pos=child->Destination->GetCoords();
+                native<<'@'<<pos.X<<','<<pos.Y;
+            }
+        }
+        native<<'\n';
+    }
     for(int i=0;i<400;++i) for(auto unit:ForceMove::trackerVector(i)) native<<"A "<<i<<' '<<unit->UniqueID<<'\n';
     IStream* stream=nullptr;
     if(FAILED(CreateStreamOnHGlobal(nullptr,TRUE,&stream))) check(false,"snapshot stream");
@@ -129,9 +146,9 @@ void setup() {
     Research::ensureReady();
     check(Research::sharedRaritySequence,"shared rarity enabled on both peers");
     for(auto h:HouseClass::Array) if(h && h->IsHumanPlayer && !h->IsObserver()) players.push_back(h);
-    check(players.size()==2 && ActiveSkills::specs.size()==1,"network fixture configuration");
+    check(players.size()==Game::PlayerCount && ActiveSkills::specs.size()==1,"network fixture configuration");
     skillIndex=0;
-    for(int role=0;role<2;++role) {
+    for(int role=0;role<static_cast<int>(players.size());++role) {
         auto h=players[role];credits[role]=h->Available_Money();
         for(auto b:BuildingClass::Array) if(b && b->Owner==h && !_stricmp(b->Type->ID,"GAPOWR")) ++buildingCounts[role];
         for(int kind=0;kind<2;++kind) {
@@ -155,29 +172,196 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
     using namespace MultiplayerTest;
     int frame=Unsorted::CurrentFrame;
+    static const bool impaired=GetFileAttributesA("impaired.flag")!=INVALID_FILE_ATTRIBUTES;
+    const int ticketClick=impaired?895:845;
+    const int verifyClaim=impaired?980:870;
+    const int grantA=verifyClaim+5, grantB=grantA+(impaired?85:40), upgrade=grantB+(impaired?85:40);
+    const int verifyUpgrade=upgrade+(impaired?85:30);
     if(frame==20) {
-        check(SessionClass::IsMultiplayer() && Game::PlayerCount==2,"real two-player multiplayer session");
+        check(SessionClass::IsMultiplayer() && (Game::PlayerCount==2 || Game::PlayerCount==3),"real multiplayer session");
         int humans=0;
         for(auto h:HouseClass::Array) if(h && h->IsHumanPlayer && !h->IsObserver()) ++humans;
-        check(humans==2,"two human houses");
+        check(humans==Game::PlayerCount,"distinct human houses");
         std::ofstream("multiplayer.log",std::ios::app)<<"LOCAL house="<<HouseClass::CurrentPlayer->ArrayIndex
             <<" mode="<<int(SessionClass::Instance.GameMode)<<" players="<<Game::PlayerCount<<'\n';
         setup();
     }
-    if(frame>20 && frame<=900) for(int role=0;role<2;++role) {
+    static const bool testDroneGuard=GetModuleHandleW(L"ActSp.dll")!=nullptr;
+    if(testDroneGuard && frame>=20 && frame<=685) {
+        static DWORD originalGuard=0;
+        CellStruct site{73,76},rally{70,74},groundSite{80,84},groundRally{84,84};
+        auto cell=MapClass::Instance.GetCellAt(site);
+        auto groundCell=MapClass::Instance.GetCellAt(groundSite);
+        if(frame==20) {
+            auto b=static_cast<BuildingClass*>(BuildingTypeClass::Find("GAPILL")->CreateObject(players[0]));
+            check(b && b->Unlimbo(cell->GetCoords(),DirType::North),"placed network guard outpost");
+            auto type=BuildingTypeClass::Find("ASGNDPOST");
+            auto post=type?static_cast<BuildingClass*>(type->CreateObject(players[0])):nullptr;
+            check(post && post->Unlimbo(groundCell->GetCoords(),DirType::North),"placed network ground outpost");
+        }
+        auto b=cell->GetBuilding();
+        auto post=groundCell->GetBuilding();
+        if(frame==70 && HouseClass::CurrentPlayer==players[0]) {
+            auto action=b->MouseOverCell(&rally);
+            check(action==Action::Move && b->CellClickedAction(action,&rally,&rally,false),"owner clicked guard rally");
+            auto groundAction=post->MouseOverCell(&groundRally);
+            check(groundAction==Action::Move && post->CellClickedAction(groundAction,&groundRally,&groundRally,false),
+                  "owner clicked ground rally");
+        }
+        if(frame==180 || frame==300) {
+            auto child=b->SpawnManager->SpawnedNodes[0]->Unit;
+            auto point=frame==180?rally:CellStruct{71,82};
+            check(b->ArchiveTarget==MapClass::Instance.GetCellAt(rally) && child && !child->InLimbo &&
+                  (child->Destination==MapClass::Instance.GetCellAt(point) || child->GetMapCoords()==point),
+                  frame==180?"remote rally reached guard drone":"synchronized Lua retasked guard drone");
+            if(frame==180) check(grantToUnit(b,PassiveGrant{{"mp_droneguard"},-1}),"grant network Lua guard order");
+            const auto groundPoint=frame==180?groundRally:CellStruct{84,88};
+            int guards=0;
+            for(auto u:UnitClass::Array) {
+                if(u->Owner==players[0] && !_stricmp(u->Type->ID,"MTNK") && u->GetMapCoords()==groundPoint && u->GetHeight()==0) {
+                    ++guards;
+                    originalGuard=u->UniqueID;
+                }
+            }
+            check(guards==1,frame==180?"remote ground rally reached by tank":"network Lua ground rally reached by tank");
+            if(frame==180) check(grantToUnit(post,PassiveGrant{{"mp_droneguard"},-1}),"grant network Lua ground order");
+            if(frame==300) {
+                check(post->SetOwningHouse(players[1],false),"human player captured guard outpost");
+                post->IronCurtain(450,players[1],false);
+            }
+        }
+        if(frame==325) {
+            UnitClass* old=nullptr;
+            for(auto u:UnitClass::Array) if(u->UniqueID==originalGuard) old=u;
+            check(old && old->Owner==players[0],"original network guard retained ownership");
+            old->UnInit();
+        }
+        if(frame==595 || frame==685) {
+            int replacements=0;
+            for(auto u:UnitClass::Array) {
+                auto at=u->GetMapCoords();
+                if(u->Owner==players[1] && !_stricmp(u->Type->ID,"MTNK") && at.X>=78 && at.Y>=82) ++replacements;
+            }
+            check(post && post->Owner==players[1] && replacements==(frame==595?0:1),
+                  frame==595?"captured post waits before replenishing":"new owner's post replenished ground guard");
+        }
+    }
+    if(testDroneGuard && frame>=705 && frame<=900) {
+        static BuildingClass* bunker=nullptr;
+        static InfantryClass* guard=nullptr;
+        static UnitClass* target=nullptr;
+        static int targetHealth=0;
+        constexpr CellStruct fireCell{71,67};
+        if(frame==705) {
+            auto type=BuildingTypeClass::Find("NABNKR");
+            bunker=static_cast<BuildingClass*>(type->CreateObject(players[0]));
+            check(bunker && bunker->Unlimbo(MapClass::Instance.GetCellAt(CellStruct{70,69})->GetCoords(),DirType::North),
+                  "placed network garrison bunker");
+            guard=static_cast<InfantryClass*>(InfantryTypeClass::Find("E1")->CreateObject(players[0]));
+            check(guard && guard->Unlimbo(MapClass::Instance.GetCellAt(CellStruct{69,69})->GetCoords(),DirType::North),
+                  "placed network garrison infantry");
+        }
+        if(frame==735 && HouseClass::CurrentPlayer==players[0]) {
+            const auto action=guard->MouseOverObject(bunker,true);
+            check(action==Action::Capture && guard->ObjectClickedAction(action,bunker,false),"owner issued garrison order");
+        }
+        if(frame==810) {
+            check(bunker->Occupants.Count==1 && bunker->Occupants[0]==guard && !bunker->CanOccupyFire(),
+                  "both peers kept the same native garrison occupant");
+            target=static_cast<UnitClass*>(UnitTypeClass::Find("MTNK")->CreateObject(players[1]));
+            auto targetCoords=MapClass::Instance.GetCellAt(CellStruct{76,69})->GetCoords();
+            targetCoords.X-=96;
+            check(target && target->Unlimbo(targetCoords,DirType::North),
+                  "placed network garrison target");
+            target->Deactivate();
+            targetHealth=target->Health;
+            if(HouseClass::CurrentPlayer==players[0]) {
+                const auto action=bunker->MouseOverObject(target,true);
+                check(action==Action::Attack && bunker->ObjectClickedAction(action,target,false),"owner issued garrison attack in building type bonus range");
+            }
+        }
+        if(frame==864) {
+            check(target->Health<targetHealth,"garrison attack and damage replicated on both peers");
+            if(HouseClass::CurrentPlayer==players[0]) {
+                auto cell=fireCell;
+                check(bunker->CellClickedAction(Action::Attack,&cell,&cell,false),"owner issued garrison ground attack");
+            }
+        }
+        if(frame==900) {
+            const auto cell=abstract_cast<CellClass*>(guard->Target);
+            check(cell && cell->MapCoords==fireCell,"garrison shot at the same ground cell on both peers");
+        }
+    }
+    static const bool mountsOnly=GetFileAttributesA("mount-network.flag")!=INVALID_FILE_ATTRIBUTES;
+    if(mountsOnly) {
+        if(frame==30) for(size_t i=0;i<players.size();++i)
+            check(grantToUnit(casters[i],PassiveGrant{{"mp_mount"},-1}),"parent received network installer");
+        if(frame==80 && HouseClass::CurrentPlayer==players[0]) {
+            send(EventClass(players[0]->ArrayIndex,TargetClass(casters[0]),Mission::Attack,TargetClass(targets[1]),
+                TargetClass(),TargetClass()),"player attacks with mounted parent");
+        }
+        if(frame==170) {
+            check(UnitMount::links.size()==players.size(),"one occupied slot per parent");
+            for(const auto& [id,l]:UnitMount::links) {
+                check(l.slot=="port" && l.child->Owner==l.parent->Owner,"network slot and owner");
+                if(l.parent==casters[0]) check(l.ordered==targets[1],"synchronized explicit target");
+            }
+        }
+        if(frame==190) for(size_t i=0;i<players.size();++i) if(players[i]==HouseClass::CurrentPlayer) {
+            auto cell=MapClass::Instance.GetCellAt(CellStruct{static_cast<short>(45+i*7),80});
+            send(EventClass(players[i]->ArrayIndex,TargetClass(casters[i]),Mission::Move,TargetClass(),TargetClass(cell),TargetClass()),"move mounted parent");
+        }
+        if(frame==370) {
+            check(UnitMount::links.size()==players.size(),"all attachments retained after travel");
+            for(const auto& [id,l]:UnitMount::links)
+                check(!l.ordered && l.child->Location==Mount::position(l),"children follow after synchronized move");
+        }
+        if(frame==410) for(size_t i=0;i<players.size();++i) check(consumeTarget(casters[i]),"remove mounted parent");
+        if(frame==415) check(UnitMount::links.empty(),"network attachments released");
+        if(frame==430) {
+            auto cell=MapClass::Instance.GetCellAt(CellStruct{50,65});
+            check(BuildingSpawn::create(BuildingTypeClass::Find("GTGCAN"),players[0],cell->GetCoords(),0),"place network turret building");
+            check(grantToUnit(cell->GetBuilding(),PassiveGrant{{"mp_mount"},-1}),"install building gun");
+        }
+        if(frame==455 && HouseClass::CurrentPlayer==players[0]) {
+            auto tower=MapClass::Instance.GetCellAt(CellStruct{50,65})->GetBuilding();
+            send(EventClass(players[0]->ArrayIndex,TargetClass(tower),Mission::Attack,TargetClass(targets[1]),
+                TargetClass(),TargetClass()),"building attack command queued");
+        }
+        if(frame==530) {
+            check(UnitMount::links.size()==1,"one network building mount");
+            const auto& gun=UnitMount::links.begin()->second;
+            check(gun.slot=="gun" && gun.parent->WhatAmI()==AbstractType::Building &&
+                gun.ordered==targets[1],"building attack command replicated");
+        }
+        if(frame==545) {
+            auto tower=MapClass::Instance.GetCellAt(CellStruct{50,65})->GetBuilding();
+            check(grantToUnit(tower,PassiveGrant{{"mp_stripguns"},-1}),"network tower grants dismount action");
+        }
+        if(frame==560) {
+            auto tower=MapClass::Instance.GetCellAt(CellStruct{50,65})->GetBuilding();
+            check(tower && UnitMount::links.empty(),"network tower slot released");
+            check(Mount::create(tower,skills.at("mp_mount").actions.front()),"network tower slot reused");
+        }
+        if(frame>=20 && frame<=620) snapshot(frame);
+        if(frame==620) {check(true,"completed network run");TerminateProcess(GetCurrentProcess(),0);}
+        return 0;
+    }
+    if(frame>20 && frame<=900) for(int role=0;role<static_cast<int>(players.size());++role) {
         bool casterFound=false,targetFound=false;
         for(auto unit:TechnoClass::Array) {casterFound|=unit==casters[role];targetFound|=unit==targets[role];}
         if(!casterFound || !targetFound) check(false,"fixture units unexpectedly destroyed");
     }
     if(frame==60) clickCast(0);
     if(frame==120) cast(1);
+    if(frame==140 && players.size()==3) cast(2);
     if(frame==180) refresh(0);
     if(frame==210) check(Research::slotUsed(players[0]->ArrayIndex,0),"remote refresh applied once on both peers");
     if(frame==220) purchase(0);
-    if(frame==240) {cast(0,true);cast(1,true);}
+    if(frame==240) for(int i=0;i<Game::PlayerCount;++i) cast(i,true);
     if(frame==320) {
-        for(int role=0;role<2;++role) check(state(role,"casts")==2 && state(role,"pulses")==8,"both players skills and delayed actions executed exactly twice");
-        for(int role=0;role<2;++role) {
+        for(int role=0;role<static_cast<int>(players.size());++role) check(state(role,"casts")==2 && state(role,"pulses")==8,"both players skills and delayed actions executed exactly twice");
+        for(int role=0;role<static_cast<int>(players.size());++role) {
             int count=0;for(auto b:BuildingClass::Array) if(b && b->Owner==players[role] && !_stricmp(b->Type->ID,"GAPOWR")) ++count;
             check(count==buildingCounts[role]+1,"building fallback executed once per owner on both peers");
             auto id=static_cast<DWORD>(state(role,"buildingId"));
@@ -193,8 +377,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
         Research::readConfiguration(configPath);
         check(!Research::announceSelection,"announcement switch read");
     }
-    if(frame==340) refresh(1);
-    if(frame==380) purchase(1);
+    if(frame==340) for(int i=1;i<Game::PlayerCount;++i) refresh(i);
+    if(frame==380) for(int i=1;i<Game::PlayerCount;++i) purchase(i);
     if(frame==430) check(selectionMessages(players[1])==0,"disabled research stays silent on each peer");
     if(frame==430) {
         auto first=Research::completedProjects(players[0]->ArrayIndex).front();
@@ -203,56 +387,59 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
         // Sample next-round rarity without populating remote lazy board state.
         const auto boards=Research::savedOffers;
         const auto seen=Research::seenOffers;
-        std::array<Research::Rarity,2> rarity{};
-        for(int role=0;role<2;++role) {
+        std::array<Research::Rarity,3> rarity{};
+        for(int role=0;role<static_cast<int>(players.size());++role) {
             auto h=players[role];
             check(Research::completedRounds.at(h->ArrayIndex)==1,"duplicate network purchase advances only once");
             const auto& board=Research::offers(h->ArrayIndex,h->Type->ID);
             check(board.size()==3,"second shared research round available");
             rarity[role]=Research::options[board.front()].rarity;
         }
-        check(rarity[0]==rarity[1],"second round shares rarity across players");
+        check(std::all_of(rarity.begin(),rarity.begin()+players.size(),[&](auto tier){return tier==rarity[0];}),"second round shares rarity across players");
         Research::savedOffers=boards;Research::seenOffers=seen;Research::clearOfferCache();
     }
     if(frame==440) {
         auto local=HouseClass::CurrentPlayer;
-        int role=local==players[0]?0:1;
+        int role=static_cast<int>(std::find(players.begin(),players.end(),local)-players.begin());
         // Legitimate sender with another player's caster must be rejected.
         send(EventClass(local->ArrayIndex,EventType::Place,static_cast<AbstractType>(0x53460000u|skillIndex),
-            casters[1-role]->UniqueID,targets[role]->UniqueID,targets[role]->GetMapCoords()),"cross-owner caster rejection command queued");
+            casters[(role+1)%players.size()]->UniqueID,targets[role]->UniqueID,targets[role]->GetMapCoords()),"cross-owner caster rejection command queued");
     }
-    if(frame==480) {cast(0);cast(1);}
+    if(frame==480) for(int i=0;i<Game::PlayerCount;++i) cast(i);
     if(frame==620) {
-        for(int role=0;role<2;++role) {
+        for(int role=0;role<static_cast<int>(players.size());++role) {
             check(state(role,"casts")==3 && state(role,"pulses")==12,"duplicate and cross-owner casts rejected");
             check(players[role]->Available_Money()==credits[role]+211,"exactly three credit rewards and one research purchase");
             check(targets[role]->Health<health[role] && targets[role]->Health>0,"delayed damage reached both targets");
             check(Research::unlocked[players[role]->ArrayIndex].size()==1 && Research::balance(players[role]->ArrayIndex)>900,"research ownership and probabilistic income");
             check(!ActiveSkills::remaining(casters[role],ActiveSkills::specs[skillIndex]),"cooldown expired on both peers");
         }
-        check(scriptTimers.queue.size()==2 && LuaAnim::entries.empty() && ForceMove::motions.empty(),"only scheduled research rewards remain");
+        check(scriptTimers.queue.size()==players.size() && LuaAnim::entries.empty() && ForceMove::motions.empty(),"only scheduled research rewards remain");
     }
-    if(frame==640) for(auto caster:casters) grantToUnit(caster,PassiveGrant{{"mp_cloak"},120});
-    if(frame==660) for(auto caster:casters)
+    if(frame==640) for(auto caster:casters) if(caster) grantToUnit(caster,PassiveGrant{{"mp_cloak"},120});
+    if(frame==660) for(auto caster:casters) if(caster)
         check(cloakableUnits.contains(caster->UniqueID) && caster->IsCloakable() && !caster->Cloakable,"temporary cloak capability on both peers");
-    if(frame==680) {
-        for(int role=0;role<2;++role) {
+    if(frame==(impaired?730:680)) {
+        for(int role=0;role<static_cast<int>(players.size());++role) {
             const int house=players[role]->ArrayIndex;
             const auto projects=Research::completedProjects(house);
+            std::ofstream("multiplayer.log",std::ios::app)<<"REWARDS frame="<<frame<<" house="<<house<<" grants="<<state(role,"researchRewards")<<" active="<<projects.size()<<" rounds="<<Research::completedRounds.at(house)<<'\n';
             check(state(role,"researchRewards")==2 && projects.size()==3 && Research::completedRounds.at(house)==1 &&
                 Research::options[projects[1]].rarity==Research::Rarity::Rare,"random research grants synchronized without advancing ordinary rounds");
             check(players[role]->Available_Money()==credits[role]+411,"two random research effects applied once");
         }
         check(scriptTimers.queue.empty(),"timers animations and forced moves retired");
     }
-    if(frame==800) for(auto caster:casters)
+    if(frame==800) for(auto caster:casters) if(caster)
         check(!cloakableUnits.contains(caster->UniqueID) && !caster->IsCloakable() && !caster->Cloakable,"temporary cloak withdrawn on both peers");
     if(frame==810) {
         BuildingClass* power=nullptr;
         for(auto b:BuildingClass::Array) if(b && b->Owner==players[1] && !_stricmp(b->Type->ID,"GAPOWR")) {power=b;break;}
         auto spy=static_cast<InfantryClass*>(InfantryTypeClass::Find("SPY")->CreateObject(players[0]));
-        check(power && spy,"network building reward fixture");
-        authorizeBuildingReward(spy,power,Research::BuildingRewardSource::Spy);
+        auto cell=MapClass::Instance.GetCellAt(CellStruct{46,69});
+        check(power && spy && spy->Unlimbo(cell->GetCoordsWithBridge(),DirType::North),"placed network building reward spy");
+        spy->ForceMission(Mission::Sleep);
+        BuildingResearch::authorizeBuildingReward(spy,power,Research::BuildingRewardSource::Spy);
         if(HouseClass::CurrentPlayer==players[0]) {
             auto board=Research::buildingOptions(power->UniqueID,players[0]->ArrayIndex);
             check(board.size()==3,"local weighted free board");
@@ -272,7 +459,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
                 CellStruct{static_cast<short>(id),static_cast<short>(id>>16)}),"other house attempts ticket claim");
         }
     }
-    if(frame==845) {
+    if(frame==ticketClick) {
         auto h=players[1];
         check(Research::freeTickets.size()==1 && Research::completedProjects(h->ArrayIndex).size()==3,"other house cannot consume ticket");
         if(HouseClass::CurrentPlayer==h) {
@@ -292,20 +479,69 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
                 CellStruct{static_cast<short>(id),static_cast<short>(id>>16)}),"repeat ticket claim");
         }
     }
-    if(frame==870) {
+    if(frame==verifyClaim) {
         check(Research::completedProjects(players[0]->ArrayIndex).size()==4 &&
             Research::completedProjects(players[1]->ArrayIndex).size()==4 && Research::freeTickets.empty() &&
             Research::completedRounds.at(players[1]->ArrayIndex)==1 && Research::completedRounds.at(players[0]->ArrayIndex)==1 &&
             Research::pendingBuildingRewards(players[0]->ArrayIndex).empty(),"weighted building claim commits once on both peers");
         check(players[1]->Available_Money()==credits[1]+511,"ticket click and duplicate grant one project on both peers");
     }
-    if(frame==700) for(int role=0;role<2;++role) if(players[role]==HouseClass::CurrentPlayer) {
+    if(frame==700) for(int role=0;role<static_cast<int>(players.size());++role) if(players[role]==HouseClass::CurrentPlayer) {
         auto cell=MapClass::Instance.GetCellAt(CellStruct{static_cast<short>(45+role*7),80});
         send(EventClass(players[role]->ArrayIndex,TargetClass(casters[role]),Mission::Move,TargetClass(),TargetClass(cell),TargetClass()),"native movement queued after skills");
     }
-    if(frame==900) for(int role=0;role<2;++role) check(casters[role]->GetMapCoords()!=starts[role],"native movement resumed after skill work");
+    if(frame==900) for(int role=0;role<static_cast<int>(players.size());++role) check(casters[role]->GetMapCoords()!=starts[role],"native movement resumed after skill work");
     if(frame==100 && GetFileAttributesA("diverge.flag")!=INVALID_FILE_ATTRIBUTES) ++targets[0]->Health;
-    if(frame>=20 && frame<=900) snapshot(frame);
-    if(frame==900) {check(true,"completed network run");TerminateProcess(GetCurrentProcess(),0);}
+    if(players.size()==3) {
+        auto h=players[2];
+        if(frame==grantA || frame==grantB || frame==upgrade) {
+            const char* id=frame==grantA?"neta":frame==grantB?"netb":"netupgrade";
+            if(!Research::owns(h->ArrayIndex,id)) {
+                check(Research::grantFree(h->ArrayIndex,h->Type->ID,{id},{}),"third house scoped choice available");
+                if(HouseClass::CurrentPlayer==h) {
+                    const auto ticket=Research::lastTicket;
+                    auto rows=Research::ticketOptions(ticket,h->ArrayIndex,h->Type->ID);
+                    check(rows.size()==1,"third house exact scoped choice");
+                    EventClass claim(h->ArrayIndex,EventType::SpecialPlace,-0x110000-rows.front(),
+                        CellStruct{static_cast<short>(ticket),static_cast<short>(ticket>>16)});
+                    send(claim,"third house choice queued");send(claim,"repeat third house choice queued");
+                }
+            }
+        }
+        if(frame==verifyUpgrade) {
+            auto house=h->ArrayIndex;
+            check(Research::owns(house,"netupgrade") && Research::retired.at(house)==std::set<string>{"neta","netb"} &&
+                !Research::owns(house,"neta") && !Research::owns(house,"netb") && Research::freeTickets.empty(),
+                "third house retires both projects once");
+            check(!Research::meetsPrerequisites(house,19) && !Research::canOfferFree(house,h->Type->ID,{"netalternative","neta","netb"},{},-1) &&
+                !Research::retired.contains(players[0]->ArrayIndex) && !Research::retired.contains(players[1]->ArrayIndex),
+                "upgrade exclusions and retired cards isolated to third house");
+        }
+    }
+    const int end=Game::PlayerCount==3?verifyUpgrade:std::max(900,verifyClaim);
+    if(players.size()==3 && frame==end-(impaired?105:55)) {
+        for(auto caster:casters) check(grantToUnit(caster,PassiveGrant{{"mp_mount"},-1}),"grant network mount");
+    }
+    if(players.size()==3 && frame==end-(impaired?95:45) && players[0]==HouseClass::CurrentPlayer)
+        send(EventClass(players[0]->ArrayIndex,TargetClass(casters[0]),Mission::Attack,TargetClass(targets[1]),
+            TargetClass(),TargetClass()),"native parent attack queued");
+    if(players.size()==3 && frame==end-8) {
+        check(UnitMount::links.size()==3,"each peer installed three independent mounts");
+        for(const auto& [id,l]:UnitMount::links) {
+            if(l.parent==casters[0]) check(l.ordered==targets[1],"replicated parent attack order");
+            check(l.slot=="port" && l.child->Owner==l.parent->Owner &&
+                !Mount::create(l.parent,skills.at("mp_mount").actions.front()),"network mount owns its slot");
+        }
+    }
+    if(frame==end-6) {
+        for(size_t role=0;role<players.size();++role) {
+            auto unit=static_cast<UnitClass*>(casters[role]);
+            auto point=unit->GetMapCoords();point.X+=2;
+            grantToUnit(unit,PassiveGrant{{"mp_moveorder"},-1});tickGains();dispatch();
+            check(unit->Destination==MapClass::Instance.GetCellAt(point),"Lua order applied to local and remote houses");
+        }
+    }
+    if(frame>=20 && frame<=end) snapshot(frame);
+    if(frame==end) {check(true,"completed network run");TerminateProcess(GetCurrentProcess(),0);}
     return 0;
 }

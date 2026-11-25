@@ -6,13 +6,15 @@ param(
     [string]$GameDirectory,
     [string]$PhobosPackageDirectory,
     [string]$StandaloneSpawner,
-    [ValidateSet('Direct','Impaired')][string]$NetworkProfile='Direct',
+    [ValidateSet('Direct','Impaired','ImpairedStartup')][string]$NetworkProfile='Direct',
+    [ValidateRange(2,3)][int]$PlayerCount=2,
     [int]$Seed=1804805662,
     [switch]$Rebuild,
     [switch]$CopyGameAssets,
     [switch]$KeepGameAssets,
     [switch]$Standalone,
     [switch]$ModernSpawner,
+    [switch]$MountsOnly,
     [switch]$ContinueOnFailure
 )
 $ErrorActionPreference='Stop'
@@ -44,7 +46,7 @@ if($Plan) {
         else {
             $d=Get-TestCase $name
             $phases=if($PhobosPackageDirectory -and !$Standalone -and $d.PSObject.Properties['PhobosPhases']) {@($d.PhobosPhases)} else {@($d.Phases)}
-            $steps=if($d.Kind -eq 'network') {'2 peers / 881 snapshots'} else {$phases -join ' -> '}
+            $steps=if($d.Kind -eq 'network') {"$PlayerCount peers / per-frame snapshots"} else {$phases -join ' -> '}
             [pscustomobject]@{Name=$name;Kind=$d.Kind;Steps=$steps;NeedsGame=$true}
         }
     }
@@ -72,7 +74,7 @@ try {
             if($name -eq 'unit') {
                 & (Join-Path $PSScriptRoot 'unit/run.ps1') -Rebuild:$Rebuild -ReportPath $detail *> $log
             } elseif($name -eq 'multiplayer') {
-                & (Join-Path $PSScriptRoot 'run-multiplayer.ps1') -GameDirectory $GameDirectory -PhobosPackageDirectory $PhobosPackageDirectory -StandaloneSpawner $StandaloneSpawner -NetworkProfile $NetworkProfile -Seed $Seed -Rebuild:$Rebuild -CopyGameAssets:$CopyGameAssets -KeepGameAssets:$KeepGameAssets -ReportPath $detail *> $log
+                & (Join-Path $PSScriptRoot 'run-multiplayer.ps1') -GameDirectory $GameDirectory -PhobosPackageDirectory $PhobosPackageDirectory -StandaloneSpawner $StandaloneSpawner -NetworkProfile $NetworkProfile -MountsOnly:$MountsOnly -PlayerCount $PlayerCount -Seed $Seed -Rebuild:$Rebuild -CopyGameAssets:$CopyGameAssets -KeepGameAssets:$KeepGameAssets -ReportPath $detail *> $log
             } else {
                 $caseArgs=@{Case=$name;GameDirectory=$GameDirectory;Rebuild=$Rebuild;CopyGameAssets=$CopyGameAssets;KeepGameAssets=$KeepGameAssets;ReportPath=$detail}
                 if($Standalone) {$caseArgs.StandaloneSpawner=$StandaloneSpawner}

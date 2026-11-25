@@ -70,6 +70,12 @@ int sameUnit(lua_State* L) {
     lua_pushboolean(L,handle(L,1)==handle(L,2));
     return 1;
 }
+void charge(lua_State* L,unsigned cost) {
+    auto& count=frame(L).operations;
+    if(cost>4096-count) luaL_error(L,"native action/query budget exceeded");
+    count+=cost;
+}
+#include "LuaUnitOrders.inc"
 void units(lua_State* L) {
     luaL_newmetatable(L,"Starfall.Unit");
     lua_pushcfunction(L,sameUnit);lua_setfield(L,-2,"__eq");
@@ -77,6 +83,9 @@ void units(lua_State* L) {
     for(auto name:{"id","alive","position","health","maxHealth","cost","ammo","passengers","rank","type","kind","owner","trainable","hasPassive","stack"}) {
         lua_pushstring(L,name);lua_pushcclosure(L,unitProperty,1);lua_setfield(L,-2,name);
     }
+    static constexpr luaL_Reg orders[]={{"moveTo",moveOrder},{"attack",attackOrder},{"deploy",deployOrder},
+        {"setDroneGuardCell",setDroneGuardCell},{nullptr,nullptr}};
+    luaL_setfuncs(L,orders,0);
     lua_setfield(L,-2,"__index");
     lua_pop(L,1);
 }
@@ -91,11 +100,6 @@ vector<string> list(lua_State* L,int index) {
         result.push_back(lower(trim(lua_tostring(L,-1))));lua_pop(L,1);
     }
     return result;
-}
-void charge(lua_State* L,unsigned cost) {
-    auto& count=frame(L).operations;
-    if(cost>4096-count) luaL_error(L,"native action/query budget exceeded");
-    count+=cost;
 }
 // Return a fresh snapshot on each call; the numeric house index remains
 // compatible with Unit:owner() and the superweapon context's ctx.owner.
@@ -269,7 +273,7 @@ int sequence(lua_State* L) {
         arguments(L,-1,fields,target,point,false);lua_pop(L,1);
         bool result=action(L,fields,frame(L).skill.id,target,point);
         changed|=result;
-        if(!result && includes({"consumepassenger","consumetarget"},lower(fields["action"]))) break;
+        if(!result && stopsSequenceOnFailure(lower(fields["action"]))) break;
     }
     return result(L,changed);
 }
@@ -326,6 +330,25 @@ bool animationPoint(lua_State* L,int index,CoordStruct& out) {
     auto c=MapClass::Instance.TryGetCellAt(cell);
     if(!c || !MapClass::Instance.IsWithinUsableArea(cell,false))return false;
     out=c->GetCoordsWithBridge();out.X=static_cast<int>(std::lround((x+0.5)*256));out.Y=static_cast<int>(std::lround((y+0.5)*256));return true;
+}
+// Death callbacks run in dispatch's shared live-object view. Bind the new handle
+// before returning so following actions in this same callback can initialize it.
+int spawnDeathCopy(lua_State* L) {
+    charge(L,16);
+    auto& f=frame(L);
+    const auto& e=f.event;
+    if(e.trigger!="ondeath" || e.deathType.empty() || activeObjects!=&f.objects ||
+        e.owner<0 || e.owner>=HouseClass::Array.Count) {lua_pushnil(L);return 1;}
+    auto owner=HouseClass::Array.Items[e.owner];
+    auto type=TechnoTypeClass::Find(e.deathType.c_str());
+    auto unit=owner && type && type->WhatAmI()!=AbstractType::BuildingType ? spawnUnit(type,owner,e.origin) : nullptr;
+    if(unit) {
+        joinDeathTeam(unit,e.deathTeam);
+        (*activeObjects)[unit->UniqueID]=unit;
+        f.changed=true;
+    }
+    pushUnit(L,unit?unit->UniqueID:0);
+    return 1;
 }
 int spawnAnim(lua_State* L) {
     auto& f=frame(L);auto name=luaL_checkstring(L,2);CoordStruct where{};
@@ -429,14 +452,19 @@ int invoke(lua_State* L) {
     lua_setfield(L,-2,"params");
     pushUnit(L,e.trigger=="onmaptrigger" && !live(L,e.holder)?0:e.holder);lua_setfield(L,-2,"self");
     DWORD other=eventTarget(e);
-    pushUnit(L,other);lua_setfield(L,-2,"target");
+    const bool weaponFire=e.trigger=="onweaponfire";
+    pushUnit(L,weaponFire && !live(L,other)?0:other);lua_setfield(L,-2,"target");
+    if(weaponFire && e.hasImpact) {
+        pushPoint(L,CellClass::Coord2Cell(e.impact));lua_setfield(L,-2,"point");
+    }
     lua_pushinteger(L,e.damage);lua_setfield(L,-2,"damage");
     lua_pushinteger(L,f.stacks);lua_setfield(L,-2,"stack");
     if(e.sequenceCast) {
         const auto& cast=ActionSequence::casts.at(e.sequenceCast);
         if(cast.point.X>=0 && cast.point.Y>=0) {pushPoint(L,cast.point);lua_setfield(L,-2,"point");}
         lua_pushinteger(L,cast.owner);lua_setfield(L,-2,"owner");
-        if(!cast.typeId.starts_with("@map:") && !cast.typeId.starts_with("@bomb:")) {lua_pushstring(L,cast.typeId.c_str());lua_setfield(L,-2,"superWeapon");}
+        if(cast.typeId.starts_with("@warhead:")) {lua_pushstring(L,cast.typeId.c_str()+9);lua_setfield(L,-2,"warhead");}
+        else if(!cast.typeId.starts_with("@map:")) {lua_pushstring(L,cast.typeId.c_str());lua_setfield(L,-2,"superWeapon");}
         lua_pushinteger(L,e.sequenceCast);lua_setfield(L,-2,"castId");
     }
     if(e.trigger=="oncast") {
@@ -460,7 +488,7 @@ int invoke(lua_State* L) {
     }
     lua_newtable(L);
     if(e.trigger=="ondeath") {pushPoint(L,CellClass::Coord2Cell(e.origin));lua_setfield(L,-2,"selfPoint");}
-    if(e.trigger=="onfire" && e.hasImpact) {
+    if((weaponFire || e.trigger=="onfire") && e.hasImpact) {
         pushPoint(L,CellClass::Coord2Cell(e.impact));lua_setfield(L,-2,"targetPoint");
     }
     lua_pushinteger(L,e.hp);lua_setfield(L,-2,"selfHealth");
@@ -476,13 +504,17 @@ int invoke(lua_State* L) {
     lua_setmetatable(L,-2);lua_setfield(L,-2,"state");
     lua_pushinteger(L,Unsorted::CurrentFrame);lua_setfield(L,-2,"frame");
     if(f.taskId) {lua_pushinteger(L,f.taskId);lua_setfield(L,-2,"taskId");}
-    static const luaL_Reg methods[]={{"schedule",schedule},{"cancel",cancel},{"randomInt",randomInt},{"randomPoint",randomPoint},{"nearbyUnits",nearby},{"house",houseInfo},{"action",direct},{"actions",sequence},{"runAction",fromIni},{"spawnAnim",spawnAnim},{"moveAnim",moveAnim},{"removeAnim",removeAnim},{nullptr,nullptr}};
+    static const luaL_Reg methods[]={{"schedule",schedule},{"cancel",cancel},{"randomInt",randomInt},{"randomPoint",randomPoint},{"nearbyUnits",nearby},{"house",houseInfo},{"action",direct},{"actions",sequence},{"runAction",fromIni},{"spawnDeathCopy",spawnDeathCopy},{"spawnAnim",spawnAnim},{"moveAnim",moveAnim},{"removeAnim",removeAnim},{nullptr,nullptr}};
     luaL_setfuncs(L,methods,0);
     if(f.taskData) LuaTaskData::push(L,*f.taskData);
     lua_call(L,f.taskData?2:1,0);return 0;
 }
 }
 const Skill* scriptSkill(const string& id) {
+    if(id.starts_with("@weapon:")) {
+        auto it=weaponScripts.find(id);
+        if(it!=weaponScripts.end()) return &it->second;
+    }
     if(id.starts_with("@pickup:")) {
         auto it=pickupTypes.find(id.substr(8));
         return it==pickupTypes.end()?nullptr:&it->second.reward;
@@ -505,7 +537,7 @@ bool runScript(const PassiveAction& a,Event& event,const Objects& objects,int st
 
 Event sequenceEvent(DWORD id,const ActionSequence::Cast& cast) {
     Event e{};e.trigger="onsuperweapon";e.kind="none";e.owner=cast.owner;e.sequenceCast=id;
-    if(cast.typeId.starts_with("@bomb:")) e.trigger="onbombdetonate";
+    if(cast.typeId.starts_with("@warhead:")) e.trigger="onwarheaddetonate";
     if(cast.typeId.starts_with("@map:")) {
         e.trigger="onmaptrigger";
         auto split=cast.typeId.find(':',5);

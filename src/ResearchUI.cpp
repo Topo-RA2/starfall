@@ -1,6 +1,6 @@
 #include "ResearchInternal.h"
-#include "ActiveSkills.h"
 #include "ConfigText.h"
+#include "ActiveSkills.h"
 #include <DisplayClass.h>
 #include <deque>
 #include <set>
@@ -12,6 +12,7 @@
 #include "ResearchText.h"
 #include "ResearchImages.h"
 #include "starfall_research_display_v1.h"
+#include "SonicRipple.h"
 #include "ResearchAudio.h"
 #include "player_name_policy.h"
 #include <WWMouseClass.h>
@@ -57,11 +58,10 @@ void playClick() {
 bool hasAvailableResearch() {
     auto house=HouseClass::CurrentPlayer;
     if(!house || !house->Type || Research::balance(house->ArrayIndex)<Research::price) return false;
+    const auto country=ConfigText::lower(house->Type->ID);
     for(int i=0;i<static_cast<int>(Research::options.size());++i) {
         const auto& option=Research::options[i];int rarity=static_cast<int>(option.rarity);
-        bool country=option.countries.empty();
-        for(const auto& id:option.countries) if(id=="*" || !_stricmp(id.c_str(),house->Type->ID)) {country=true;break;}
-        if(country && rarity>=0 && rarity<Research::rarityCount && Research::rarityWeights[rarity]>0 &&
+        if(!option.grantOnly && Research::meetsCountryOrTech(house->ArrayIndex,option,country) && rarity>=0 && rarity<Research::rarityCount && Research::rarityWeights[rarity]>0 &&
            !Research::owns(house->ArrayIndex,option.id) && Research::available(i) &&
            Research::meetsPrerequisites(house->ArrayIndex,i) && Research::canApply(house->ArrayIndex,i)) return true;
     }
@@ -556,7 +556,7 @@ void drawInfoTip(const RectangleStruct& icon) {
     RectangleStruct tip{std::max(view.X,icon.X+icon.Width-width),icon.Y+icon.Height+4,width,52};
     hudFill(tip,color(14,23,36));
     hudOutline(tip,color(75,111,131));
-    ResearchText::draw(L"流火实验室 0.38",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
+    ResearchText::draw(L"流火实验室 0.39",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
     ResearchText::draw(L"By 斩断云天",tip.X+10,tip.Y+28,color(159,194,210),14,width-20);
 }
 void centered(const std::wstring& text,RectangleStruct bounds,int y,int ink,int size) {
@@ -1046,6 +1046,7 @@ ResearchImages::Bitmap ResearchImages::tooltip(int project,int width,int maxHeig
 DEFINE_HOOK(0x4F4583, SF_ResearchDraw, 6) {
     auto surface=DSurface::Composite;
     HudFrame::Frame frame(surface?surface->GetWidth():0,surface?surface->GetHeight():0);
+    SonicRipple::draw(surface,DSurface::ViewBounds,Unsorted::CurrentFrame);
     ResearchAudio::pump();
     if(visible() && WWMouseClass::Instance) draw();
     else cardAnimation=CardAnimation{};

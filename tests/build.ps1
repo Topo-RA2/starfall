@@ -46,6 +46,10 @@ try {
     }
     Build-Part lua '' $lua @((Join-Path $shared 'lua/lua.lib'))
     Build-Part resources '' $assets @((Join-Path $shared 'research.res'))
+    if($Case -eq 'actsp') {
+        $actspSources=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'modules/ActSp') -File | Where-Object Extension -in '.cpp','.h','.cmd' | ForEach-Object FullName)
+        Build-Part actsp '' ($actspSources+$headers) @((Join-Path $script:RepoRoot 'build/ActSp.dll'))
+    }
     if(!$Unit -or 'ActionArgumentsTest' -in $names) {
         Build-Part modules '' ($commonSource+$headers) @((Join-Path $shared 'modules.lib'))
         if(!$Unit -and $Case -eq 'hex-icons') {Build-Part core '' ($source+$headers+$lua) @((Join-Path $shared 'Starfall.obj'))}

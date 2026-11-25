@@ -227,7 +227,7 @@ void psychicAndGrowth(HouseClass* owner,HouseClass* foe) {
     unlock(owner,"sf_hx_forkedcurrent",Research::Rarity::Epic);
     for(auto type:{"SHK","TESLA","SF_HX_GiantTESLA","TTNK"}) {
         auto shooter=place(type,owner);
-        check(multiShotTargetCount(shooter,hostile)==1,"Tesla unit gets one additional target");
+        check(multiShotSettings(shooter,hostile).count==1,"Tesla unit gets one additional target");
         if(shooter->GetTechnoType()!=UnitTypeClass::Find("TTNK")) continue;
         auto primary=neighbor(shooter,"MTNK",foe,1,0);
         neighbor(shooter,"MTNK",foe,0,1);
@@ -235,10 +235,13 @@ void psychicAndGrowth(HouseClass* owner,HouseClass* foe) {
         shooter->RearmTimer.Stop();
         auto facing=shooter->GetTargetDirection(primary);
         shooter->PrimaryFacing.SetCurrent(facing);shooter->SecondaryFacing.SetCurrent(facing);
+        const int beforeBolts=EBolt::Array.Count;
         shooter->Fire(primary,0);
         std::set<AbstractClass*> targets;
         for(auto shot:BulletClass::Array) if(shot->Owner==shooter) targets.insert(shot->Target);
         check(targets.size()==2 && targets.contains(primary),"native Tesla tank shot reaches two distinct targets");
+        check(EBolt::Array.Count==beforeBolts+2 && EBolt::Array[beforeBolts]->Point2!=EBolt::Array[beforeBolts+1]->Point2,
+            "Forked Current draws a separate arc for each hit");
     }
 }
 string tail() {
@@ -253,7 +256,7 @@ void ids(bool write) {
 }
 DEFINE_HOOK(0x48928C,SF_TestOrdnanceArea,5) {
     auto wh=R->Base<WarheadTypeClass*>(0xC);
-    if(wh && includes({"IvanWH","SF_HX_FireworksWH","V3WH","V3EWH"},wh->ID)) {
+    if(wh && includes({"IvanWH","SF_HX_FireworksMainWH","SF_HX_FireworksWH","V3WH","V3EWH"},wh->ID)) {
         blasts.push_back({Unsorted::CurrentFrame,R->EDX<int>(),wh->CellSpread,*R->ECX<CoordStruct*>(),wh->ID});
         const auto& b=blasts.back();std::ofstream("hex-ordnance.log",std::ios::app)<<"blast "<<b.frame<<' '<<b.damage<<' '<<b.radius<<' '<<b.wh<<'\n';
     }
@@ -275,19 +278,25 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexOrdnance,5) {
         check(UnitHealth::read(find(missileId)).maximum==find(missileId)->GetTechnoType()->Strength*2,"rocket health does not double again on load");
     }
     if(!loading && f==30) {
-        check(Research::options.size()==85,"complete HexBrawl catalog loaded");
+        check(Research::options.size()==sectionKeys("Starfall.ResearchTypes").size(),"complete HexBrawl catalog loaded");
         licenses(owner,foe);newProjects(owner,foe);minerChecks(owner,foe);rocketChecks(owner,foe);
         auto ivan=place("IVAN",owner);planterId=ivan->UniqueID;
+        auto oldBomb=plant(ivan,foe);
         auto base=plant(ivan,foe);bomb(base)->Detonate();
         check(!blasts.empty() && blasts.back().wh=="IvanWH","ordinary native bomb explosion");
         baselineDamage=blasts.back().damage;baselineRadius=blasts.back().radius;
         unlock(owner,"sf_hx_ivanboom",Research::Rarity::Common);unlock(owner,"sf_hx_fireworks",Research::Rarity::Rare);settle();
-        firstBomb=plant(ivan,foe);secondBomb=plant(ivan,foe);bomb(secondBomb)->DetonationFrame=75;
+        bomb(oldBomb)->Detonate();
+        check(blasts.back().wh=="IvanWH" && ActionSequence::timers.queue.empty(),"research leaves previously planted ordinary bombs unchanged");
+        check(ivan->GetWeapon(0)->WeaponType==WeaponTypeClass::Find("SF_HX_FireworksBomber"),"research replaces Ivan planting weapon");
+        ivan->Veterancy.Veterancy=2;settle();
+        check(ivan->GetWeapon(0)->WeaponType==WeaponTypeClass::Find("SF_HX_FireworksBomberE"),"elite Ivan uses elite fireworks weapon");
+        firstBomb=plant(ivan,foe);
+        ivan->Veterancy.Veterancy=0;settle();
+        secondBomb=plant(ivan,foe);bomb(secondBomb)->DetonationFrame=75;
         auto disarmed=plant(ivan,foe);bomb(disarmed)->Disarm();
         check(!bombSnapshots.contains(disarmed) && ActionSequence::timers.queue.empty(),"disarmed bomb does not schedule fireworks");
-        std::ofstream("hex-ordnance.log",std::ios::app)<<"snapshot expected "<<firstBomb<<" fp "<<ivan->FirepowerMultiplier<<" interested "<<interested(ivan,"onbombdetonate")<<" snapshots "<<bombSnapshots.size()<<'\n';
-        for(const auto& [id,s]:bombSnapshots) std::ofstream("hex-ordnance.log",std::ios::app)<<"snapshot "<<id<<' '<<s.firepower<<' '<<s.scale<<' '<<s.owner<<' '<<s.scripts.size()<<'\n';
-        check(bombSnapshots.contains(firstBomb) && bombSnapshots.at(firstBomb).scripts.size()==1,"bomb snapshots research at planting");
+        check(bombSnapshots.contains(firstBomb) && bombSnapshots.at(firstBomb).scale==200,"bomb snapshots blast modifiers at planting");
         for(auto u:TechnoClass::Array) if(alive(u)) {u->QueueMission(Mission::Sleep,false);u->NextMission();}
     }
     if(!loading && f==45) {
@@ -298,8 +307,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexOrdnance,5) {
     }
     if(!loading && f==50) {
         bomb(firstBomb)->Detonate();
-        check(blasts.back().damage==baselineDamage*2 && blasts.back().radius==baselineRadius*2,"planted bomb retains double damage and radius after planter death");
-        check(!ActionSequence::timers.queue.empty(),"actual detonation schedules independent Lua fireworks");
+        check(blasts.back().wh=="SF_HX_FireworksMainWH" && blasts.back().damage==baselineDamage*2 && blasts.back().radius==baselineRadius*2,"planted bomb retains double damage and radius after planter death");
+        check(ActionSequence::timers.queue.size()==1 && ActionSequence::casts.begin()->second.owner==owner->ArrayIndex,"actual detonation schedules independent Lua fireworks");
     }
     if(!loading && f==60) {
         int count=0;for(const auto& b:blasts) if(b.wh=="SF_HX_FireworksWH") {++count;check(b.damage==static_cast<int>(baselineDamage*0.4) && b.frame==50+count*3,"fireworks use configured damage and three frame spacing");}
@@ -313,6 +322,31 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexOrdnance,5) {
         else std::ofstream("hex-ordnance.tail")<<tail();
         check(bombSnapshots.empty() && bombImpacts.empty() && spreadScopes.empty(),"ordnance state fully retired");
         if(!loading) psychicAndGrowth(owner,foe);
+        auto wh=WarheadTypeClass::Find("SF_HX_FireworksMainWH");
+        auto victim=place("MTNK",foe);
+        auto at=victim->GetCoords();
+        auto firer=place("MTNK",owner);
+        auto projectile=BulletTypeClass::Find("Invisible")->CreateBullet(victim,firer,1,wh,100,false);
+        check(projectile!=nullptr,"scripted projectile created");
+        firer->UnInit();
+        projectile->SetLocation(at);projectile->Detonate(at);projectile->UnInit();
+        check(ActionSequence::timers.queue.size()==1 && ActionSequence::casts.begin()->second.owner==owner->ArrayIndex,
+              "direct hit and area damage invoke one warhead callback");
+        CellStruct point=CellClass::Coord2Cell(at);
+        CellClass* empty=nullptr;
+        for(short x=point.X+1;x<point.X+20 && !empty;++x) {
+            CellStruct candidate{x,point.Y};
+            auto cell=MapClass::Instance.TryGetCellAt(candidate);
+            if(cell && MapClass::Instance.IsWithinUsableArea(candidate,false) && !cell->FirstObject) empty=cell;
+        }
+        check(empty!=nullptr,"empty test cell found");
+        at=empty->GetCoords();
+        MapClass::DamageArea(at,10,nullptr,wh,false,nullptr);
+        MapClass::DamageArea(at,20,nullptr,wh,false,owner);
+        check(ActionSequence::timers.queue.size()==3 && ActionSequence::casts.rbegin()->second.point==CellClass::Coord2Cell(at) &&
+              std::next(ActionSequence::casts.rbegin())->second.owner==HouseClass::FindNeutral()->ArrayIndex,
+              "two same-frame warhead detonations on empty ground invoke separate callbacks");
+
         TerminateProcess(GetCurrentProcess(),0);
     }
     return 0;

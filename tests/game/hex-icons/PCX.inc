@@ -1,27 +1,35 @@
 namespace {
 void testHexPCX() {
     auto surface=DSurface::Composite;
-    const int columns=10,rows=(static_cast<int>(Research::options.size())+columns-1)/columns;
-    RectangleStruct sheet{8,8,columns*64,rows*64};int background=color(14,23,35);
+    char entries[32768]{};
+    auto count=GetPrivateProfileSectionA("Starfall.ResearchTypes",entries,sizeof(entries),".\\Starfall.ini");
+    check(count && count<sizeof(entries)-2,"read independent project registry");
+    std::set<std::string> registered,loaded;
+    for(char* entry=entries;*entry;entry+=strlen(entry)+1) {
+        auto value=strchr(entry,'=');
+        check(value && value[1],"research registry entry has an ID");
+        registered.insert(Resources::pathKey(value+1));
+    }
+    for(const auto& option:Research::options) loaded.insert(option.id);
+    check(registered==loaded,"complete HexBrawl icon set");
+    const int columns=10,rows=(static_cast<int>(loaded.size())+columns-1)/columns;
+    const int tileSize=std::min({64,(surface->GetWidth()-8)/columns,(surface->GetHeight()-8)/rows});
+    check(tileSize>0,"icon sheet fits the surface");
+    RectangleStruct sheet{8,8,columns*tileSize,rows*tileSize};int background=color(14,23,35);
     surface->FillRect(&sheet,background);
-    check(Research::options.size()==85,"complete HexBrawl icon set");
+    std::set<std::string> iconPaths;
     for(size_t i=0;i<Research::options.size();++i) {
         const auto& option=Research::options[i];
-        auto source=imageFor(option.icon,0,Research::Rarity::Common,true);
-        auto path=Resources::pathKey("hx_"+option.icon.substr(option.icon.find_last_of("\\/")+1));
-        path.replace(path.size()-4,4,".pcx");
-        // Start with a mixed-case lookup before this PCX can populate the Starfall cache.
-        if(i==0) path.front()='H';
-        // Bypass all fallbacks: every actual PCX must load through the native engine.
-        auto converted=imageFor(path,0,Research::Rarity::Common,false);
-        check(!source->pixels.empty() && !converted->pixels.empty(),"PNG and PCX both loaded");
-        check(source->width==96 && source->height==96 && converted->width==source->width &&
-              converted->height==source->height,"PCX retains source dimensions");
-        for(size_t p=3;p<source->pixels.size();p+=4)
-            check(converted->pixels[p]==(source->pixels[p]>=128?255:0),"native PCX preserves transparent silhouette without opaque holes");
-        auto pcxOption=option;pcxOption.icon=path;
-        RectangleStruct tile{sheet.X+static_cast<int>(i%columns)*64,sheet.Y+static_cast<int>(i/columns)*64,64,64};
-        drawProjectIcon(pcxOption,tile);
+        const auto path=Resources::pathKey(option.icon);
+        check(path.starts_with("hx_") && path.ends_with(".pcx") && path.find_first_of("\\/")==std::string::npos &&
+              iconPaths.insert(path).second,"unique root-level PCX icon");
+        auto lookup=path;
+        // Use mixed case before this PCX can populate the Starfall cache.
+        if(i==0) lookup.front()='H';
+        auto icon=imageFor(lookup,0,Research::Rarity::Common,false);
+        check(icon->width==96 && icon->height==96 && icon->pixels.size()==96*96*4,"native PCX loads without fallback");
+        RectangleStruct tile{sheet.X+static_cast<int>(i%columns)*tileSize,sheet.Y+static_cast<int>(i/columns)*tileSize,tileSize,tileSize};
+        drawProjectIcon(option,tile);
         auto pixels=snapshot(tile);
         check(pixels.front()==background && std::any_of(pixels.begin(),pixels.end(),[&](WORD p){return p!=background;}),
               "PCX research icon renders with transparent corner");

@@ -1,6 +1,7 @@
 namespace {
 constexpr auto exposed="sf_hx_armorpiercing_exposed";
 DWORD markedId=0,ggiId=0,flakId=0,chargeTankId=0;
+std::vector<DWORD> armorPiercingCasualties;
 
 int sampleDamage(TechnoClass* target,TechnoClass* source) {
     int amount=20,before=target->Health;
@@ -90,6 +91,34 @@ void checkFireSupport(int frame,bool loading,HouseClass* owner,HouseClass* foe) 
     }
     if(!loading && frame==92)
         check(std::abs(find(chargeTankId)->FirepowerMultiplier-1.0)<1e-5,"next state tick removes firepower after cooling without a shot");
+    if(!loading && frame==93) {
+        auto ggi=find(ggiId);
+        auto reference=place("MTNK",foe,{61,85});
+        const int base=sampleDamage(reference,ggi);
+        const int boosted=static_cast<int>(base*1.30);
+        check(boosted>base+1,"armor piercing lethal test has an overkill margin");
+        for(const int hp:{1,base,boosted-1,boosted}) {
+            auto target=place("MTNK",foe);
+            sampleDamage(target,ggi);
+            check(ownsPassive(target,exposed),"lethal test target is marked");
+            UnitHealth::heal(target,hp);
+            armorPiercingCasualties.push_back(target->UniqueID);
+            int damage=20;
+            const auto result=target->ReceiveDamage(&damage,0,WarheadTypeClass::Find("AP"),ggi,false,false,owner);
+            auto remaining=find(armorPiercingCasualties.back());
+            std::ofstream("hex-tactics.log",std::ios::app)<<"lethal piercing: hp "<<hp<<" damage "<<damage
+                <<" result "<<static_cast<int>(result)<<" health "<<(remaining?remaining->Health:0)<<'\n';
+            check(result==DamageState::NowDead && damage==hp,"armor piercing registers lethal damage");
+            settle();
+        }
+        reference->UnInit();
+    }
+    if(!loading && frame==99) {
+        for(auto id:armorPiercingCasualties) {
+            auto tank=find(id);
+            check(!tank || !tank->IsAlive,"armor piercing leaves no surviving one-health tank");
+        }
+    }
     if(!loading && frame==101) {
         auto tank=find(chargeTankId);
         for(int i=0;i<4;++i) tank->GattlingRateUp(1024);

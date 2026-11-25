@@ -95,6 +95,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
         barracks->QueueMission(Mission::Guard,false);
         check(house->CanBuild(licensed,false,false)!=CanBuildResult::Buildable,"no access before research");
         Research::award(h,100);
+        check(!Research::canOfferFree(h,house->Type->ID,{"licensedupgrade"},{},-1) &&
+            Research::canOfferFree(h,"TestCountry",{"licensedupgrade"},{},-1),"country qualifies before a production license");
         check(Research::purchase(h,6,house->Type->ID),"purchase production license");
         check(!Research::canApply(h,6) && !Research::Detail::hasProductionLicense(other,licensed),"license is local to purchaser");
         check(house->CanBuild(licensed,false,false)==CanBuildResult::Buildable,"licensed unit buildable");
@@ -119,6 +121,15 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
         check(house->GetFactoryProducing(licensed)!=nullptr,"licensed unit in production queue");
         check(Research::Detail::hasProductionLicense(house,licensed) && !Research::Detail::hasProductionLicense(other,licensed) &&
             house->CanBuild(licensed,false,false)==CanBuildResult::Buildable,"loaded production license");
+        check(Research::canOfferFree(h,house->Type->ID,{"licensedupgrade"},{},-1) &&
+            !Research::canOfferFree(other->ArrayIndex,other->Type->ID,{"licensedupgrade"},{},-1),
+            "licensed research bypasses country for license holder only");
+        check(Research::canGrantRandom(h,-1,house->Type->ID,Research::Rarity::Epic) &&
+            !Research::canGrantRandom(other->ArrayIndex,-1,other->Type->ID,Research::Rarity::Epic),
+            "random awards honor license alternative");
+        const auto& offers=Research::offers(h,house->Type->ID);
+        check(std::any_of(offers.begin(),offers.end(),[](int i){return Research::options[i].id=="licensedupgrade";}),
+            "licensed follow-up offered in ordinary research");
         std::ifstream snapshot("prices.txt");
         for(int i=0;i<6;++i) snapshot>>base[i]>>opponent[i];
         int percent[]={85,80,80,125,50,0};

@@ -1,4 +1,5 @@
 #include "../../../src/Starfall.cpp"
+#include <ScriptClass.h>
 
 namespace {
 TechnoClass *sniper=nullptr,*victim=nullptr;
@@ -42,6 +43,57 @@ void shrinkHit() {
     bullet->SetWeaponType(weapon);
     auto at=victim->GetCoords();bullet->SetLocation(at);bullet->Detonate(at);bullet->UnInit();
     settle();
+}
+#include "EnemyResearch.inc"
+void newResearch(HouseClass* owner,HouseClass* foe) {
+    auto tank=place("HTNK",owner,{50,73});
+    unlock(owner,"sf_hx_shrinkengine",Research::Rarity::Epic);settle();
+    check(VisualScale::percent(tank->UniqueID)==60 &&
+        std::abs(static_cast<FootClass*>(tank)->SpeedMultiplier-1.30)<0.0001 &&
+        std::abs(unitFactor(tank->UniqueID,fireRateBase,fireRateState)-1.40)<0.0001,"shrink engine vehicle modifiers");
+
+    unlock(owner,"sf_hx_huntingcontest",Research::Rarity::Common);
+    for(auto id:{"ORCA","BEAG"}) {
+        auto plane=place(id,owner,{52,73});auto enemy=place("HTNK",foe,{53,73});settle();
+        const int money=owner->Available_Money(),bounty=enemy->GetTechnoType()->Cost/2;
+        int fatal=100000;enemy->ReceiveDamage(&fatal,0,RulesClass::Instance->C4Warhead,plane,true,false,owner);settle();
+        check(owner->Available_Money()==money+bounty,"aircraft kill pays half base cost");
+        plane->Limbo();plane->UnInit();
+    }
+
+    auto disk=place("DISK",owner,{50,68});
+    unlock(owner,"sf_hx_paralysisray",Research::Rarity::Rare);settle();
+    for(auto id:{"HTNK","ORCA"}) {
+        auto target=place(id,foe,{51,68});
+        for(int i=0;i<250 && !empLocked(target);++i) {
+            int damage=1;target->Health=target->GetTechnoType()->Strength;
+            target->ReceiveDamage(&damage,0,RulesClass::Instance->C4Warhead,disk,true,false,owner);settle();
+        }
+        check(empLocked(target) && warheadGrants.at(target->UniqueID).skills.at("sf_hx_shortcircuit_emp").remaining(Unsorted::CurrentFrame)==105,
+            "disk can paralyze vehicle and aircraft for 105 frames");
+        target->Limbo();target->UnInit();
+    }
+
+    unlock(owner,"sf_hx_brainwash",Research::Rarity::Epic);
+    for(auto id:{"YURI","YURIPR"}) {
+        auto yuri=place(id,owner,{50,70});settle();
+        const bool prime=std::string_view(id)=="YURIPR";
+        auto weapon=yuri->GetWeapon(0)->WeaponType;
+        check(weapon==WeaponTypeClass::Find(prime?"SF_HX_PermControlX":"SF_HX_PermControl") &&
+            weapon->ROF==(prime?900:600),"brainwash replaces mind control weapon and triples interval");
+        auto first=place("HTNK",foe,{51,70});
+        auto second=place(prime?"NALASR":"MTNK",foe,{53,70});
+        for(auto target:{first,second}) {
+            yuri->SetTarget(target);yuri->RearmTimer.Stop();
+            yuri->PrimaryFacing.SetCurrent(yuri->GetTargetDirection(target));
+            auto shot=yuri->Fire(target,0);check(shot!=nullptr,"native mind control shot fired");
+            auto coords=target->GetCoords();shot->SetLocation(coords);shot->Detonate(coords);shot->UnInit();
+            check(target->Owner==owner,"mind control transfers ownership");
+        }
+        yuri->Limbo();yuri->UnInit();settle();
+        check(first->Owner==owner && second->Owner==owner,"both captures survive retargeting and controller removal");
+        for(auto target:{first,second}) {target->Limbo();target->UnInit();}
+    }
 }
 void clusterShot(TechnoClass* shooter,TechnoClass* primary,TechnoClass* extra) {
     const int slot=shooter->SelectWeapon(primary);
@@ -115,8 +167,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexGameplay,5) {
             std::abs(victim->FirepowerMultiplier-0.6)<0.0001,"shrink hit reduces size and outgoing damage");
         unlock(owner,"sf_hx_clustermissiles",Research::Rarity::Common);
         auto gi=place("GGI",owner,{44,73});auto patriot=place("NASAM",owner,{40,73});settle();
-        check(multiShotTargetCount(gi,victim)==1 && multiShotTargetCount(patriot,victim)==1 &&
-            multiShotTargetCount(sniper,victim)==0,"cluster granted only to patriot and guardian GI");
+        check(multiShotSettings(gi,victim).count==1 && multiShotSettings(patriot,victim).count==1 &&
+            multiShotSettings(sniper,victim).count==0,"cluster granted only to patriot and guardian GI");
         // Remove the infantry candidate so the pair of nearby tanks is unambiguous.
         foot->Limbo();clusterShot(gi,victim,other);
         unlock(owner,"sf_hx_prismconversion",Research::Rarity::Epic);
@@ -149,7 +201,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexGameplay,5) {
     if(frame==75) {
         settle();check(!has(victim,"sf_hx_shrinkray_debuff") && VisualScale::percent(victim->UniqueID)==100 &&
             victim->FirepowerMultiplier==1.0,"shrink expires and restores size and damage after two seconds");
-        TerminateProcess(GetCurrentProcess(),0);
+        newResearch(HouseClass::CurrentPlayer,HouseClass::FindByPlayerAt(HouseClass::PlayerAtB));
+        enemyResearch(HouseClass::FindByPlayerAt(HouseClass::PlayerAtB));
     }
+    if(frame>75 && waypointTeamID) trackSplitTeam(frame);
     return 0;
 }

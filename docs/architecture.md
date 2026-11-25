@@ -13,9 +13,19 @@
 | `src/HudFrame.cpp` / `src/starfall_hud_v1.h` | 为支持 GPU 的宿主输出科研与技能的透明 HUD。宿主在游戏线程上以 `Starfall_SetHudSinkV1` 注册回调；每次绘制由宿主选择原生、原生与 GPU 并行准备、或仅 GPU 输出。图片为逐行 straight RGBA8，按回调顺序做 source-over 混合；空帧撤下 HUD，失败帧整体丢弃。 |
 | `src/ResourceCache.h` / `ResearchAudio.h` / `ResearchText.h` | 有界资源缓存及音频、文字展示工具 |
 | `src/VisualScale.cpp` | 原生 SHP、VXL、弹体及附着动画的视觉缩放 |
+| `src/SonicRipple.cpp` | 多目标声波的前沿绘制。原生输出折射战场像素，GPU 输出沿相同轨迹叠加半透明波纹 |
 | `src/BuildingSpawn.h` / `BuildingSpawn.cpp` | 生成建筑的类型约束、完整占地检查、确定性邻近空地搜索和原生创建；无独立持久状态 |
 | `src/BuildingTransform.h` / `BuildingTransform.cpp` | 完整占地一致性、建筑转换资格、原生对象创建与身份衔接；运行时回调重绑定缓存，已有按 ID 保存的被动和 Lua 状态继续使用 |
-| `src/Starfall.cpp` | 被动配置和运行时、事件分发、建筑科研适配、被动说明生成、引擎 Hook、存读档及模块协调 |
+| `src/CarrierConversion.h` / `CarrierConversion.cpp` | 移动母体内置变形时调整子机槽位。游戏的子机管理器持有母子关联和补充计时，并负责存读档 |
+| `src/Starfall.cpp` | 场景初始化与重置、每帧调用顺序、被动事件队列与分发、跨模块协调 |
+| `src/PassiveTypes.h` / `PassiveRules.cpp` | 被动与动作定义、配置读取、持续状态和动作字段校验。验证脚本函数和拾取物 ID 时只读查询场景注册表 |
+| `src/BuildingResearch.cpp` | 建筑与全局科研点收入、工程师和间谍触发的免费科研、免费选项与领取。拥有按建筑类型索引的规则缓存 |
+| `src/ResearchDescription.cpp` | 科研卡片的条件、动作和组合效果说明。通过只读接口获取被动定义 |
+| `src/ForceMove.cpp` | 强制位移、目标坐标与空中索敌、碰撞、落地和绘制。拥有移动记录与姿态恢复记录 |
+| `src/runtime/PassiveRegistration.inc` | 注册被动、发现脚本、解析绑定、装载场景配置 |
+| `src/runtime/PassiveStates.inc` / `PassiveGrants.inc` | 持续状态、属性修饰，以及光环、乘员、子机与临时被动的授予和回收 |
+| `src/runtime/PassiveActions.inc` / `CombatHooks.inc` | 结果执行、变形与传送，以及引擎战斗事件采集 |
+| `src/runtime/Savegame.inc` | 扩展存档流读写、历史版本校验、状态提交及存读档入口 |
 
 ## 接口与生命周期
 
@@ -30,7 +40,7 @@
 - 定点板条箱在独立运行时使用 Starfall 的最多 3 格避让规则；YRMod 替换了原生定点选址入口，保留自己的最多 24 格确定性搜索。两条路径都经过 `SF_CheckCrateCellForPickup` 的最终落格检查：已有拾取物的候选格失败，不占用箱子槽，平台继续按原顺序检查下一格。
 - Ares 3.0p1 的自定义火箭分支从 `0x663218` 返回到 `0x6632CC`，跳过 Starfall 在 `0x66321D` 和 `0x66328C` 的原生命中 Hook。普通火箭经过这两个 Hook；自定义导弹仍经过通用弹体和绘制 Hook，但该 Ares 分支不应用 Starfall 的原生火箭火力（Firepower）修正。
 - `Research::clearOfferCache()` 同时清除候选、生产价格和科技生产权限缓存，保持购买、读档及配置重读后的失效关系。
-- `Research::reset()` 清理科研运行状态和展示资源，停止旧场景声音；建筑类型缓存仍由主运行时在场景重置时清理。
+- `Research::reset()` 清理科研运行状态和展示资源，停止旧场景声音；场景重置同时调用 `BuildingResearch::clearTypeCaches()` 清理建筑类型缓存。
 - 模块拆分不调整 `SF_Frame` 中各系统的调用顺序，也不改变存档标记、字段顺序或异常存档的事务提交方式。
 
 ## 构建与检查
@@ -42,6 +52,6 @@
 - `tests/run-game.ps1`：验证引擎效果、界面、新游戏和实际存读档。
 - `tests/run-multiplayer.ps1`：验证两个真实客户端的同步状态。
 
-## 仍待逐步拆分
+## 共享场景状态
 
-被动技能解析、动作执行和状态更新、存档事务、建筑科研与被动说明仍在主文件；`.inc` 片段也尚未全部独立编译。后续先为相关状态建立接口，再分别迁移；尤其存档应继续先完整校验再提交，帧内系统顺序应保持稳定。本轮不将这些剩余耦合视为已经解决。
+`src/runtime/` 下的实现片段随主运行时编译，共用一份场景状态。新增动作在 `PassiveRules.cpp` 校验字段，在 `PassiveActions.inc` 实现执行。新增持久状态须同时检查 `Starfall.cpp` 中的场景重置和 `Savegame.inc` 中的历史版本读取。每帧子系统的执行顺序集中在 `SF_Frame`。

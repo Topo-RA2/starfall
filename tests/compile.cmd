@@ -4,6 +4,10 @@ cd /d "%~dp0.."
 call tools\msvc-x86.cmd || exit /b 1
 call tools\module-sources.cmd
 set "shared=build\tests\shared"
+if /i "%~1"=="actsp" (
+    call modules\ActSp\build.cmd
+    exit /b
+)
 if /i "%~1"=="lua" (
     call tools\build-lua.cmd "%shared%\lua"
     exit /b

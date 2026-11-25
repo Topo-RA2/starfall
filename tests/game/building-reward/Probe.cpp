@@ -89,19 +89,19 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
         auto spyTransfer=place("NAHAND",foe,{73,65});
         auto claimed=place("NAPOWR",foe,{81,65});
         auto real=place("GAPOWR",foe,{89,65});
-        check(!rewardRule(closed->Type).engineer && !rewardRule(closed->Type).spy &&
-              rewardRule(engBuilding->Type).engineer && !rewardRule(engBuilding->Type).spy &&
-              !rewardRule(spyBuilding->Type).engineer && rewardRule(spyBuilding->Type).spy &&
-              rewardRule(real->Type).engineer && rewardRule(real->Type).spy,"configuration");
+        check(!BuildingResearch::rewardRule(closed->Type).engineer && !BuildingResearch::rewardRule(closed->Type).spy &&
+              BuildingResearch::rewardRule(engBuilding->Type).engineer && !BuildingResearch::rewardRule(engBuilding->Type).spy &&
+              !BuildingResearch::rewardRule(spyBuilding->Type).engineer && BuildingResearch::rewardRule(spyBuilding->Type).spy &&
+              BuildingResearch::rewardRule(real->Type).engineer && BuildingResearch::rewardRule(real->Type).spy,"configuration");
         auto engineer=infantry("ENGINEER",house);auto spy=infantry("E1",house);
-        tickBuildings();
-        check(closed->SetOwningHouse(house,false),"transfer closed");tickBuildings();
-        authorizeBuildingReward(engineer,closed,Research::BuildingRewardSource::Engineer);
-        authorizeBuildingReward(spy,closed,Research::BuildingRewardSource::Spy);
+        BuildingResearch::tickBuildings();
+        check(closed->SetOwningHouse(house,false),"transfer closed");BuildingResearch::tickBuildings();
+        BuildingResearch::authorizeBuildingReward(engineer,closed,Research::BuildingRewardSource::Engineer);
+        BuildingResearch::authorizeBuildingReward(spy,closed,Research::BuildingRewardSource::Spy);
         check(Research::buildingOptions(closed->UniqueID,house->ArrayIndex).empty(),"defaults closed");
-        authorizeBuildingReward(spy,engBuilding,Research::BuildingRewardSource::Spy);
+        BuildingResearch::authorizeBuildingReward(spy,engBuilding,Research::BuildingRewardSource::Spy);
         check(Research::buildingOptions(engBuilding->UniqueID,house->ArrayIndex).empty(),"engineer only excludes spy");
-        authorizeBuildingReward(spy,spyBuilding,Research::BuildingRewardSource::Spy);
+        BuildingResearch::authorizeBuildingReward(spy,spyBuilding,Research::BuildingRewardSource::Spy);
         check(!Research::buildingOptions(spyBuilding->UniqueID,house->ArrayIndex).empty(),"spy enabled");
         auto board=Research::buildingOptions(spyBuilding->UniqueID,house->ArrayIndex);
         check(board.size()==3 && std::set<int>(board.begin(),board.end()).size()==3 &&
@@ -114,7 +114,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
         Sleep(160);
         check(freeFocusVisible(),"new free entitlement animates the research button");
         Sleep(620);
-        authorizeBuildingReward(spy,spyBuilding,Research::BuildingRewardSource::Spy);
+        BuildingResearch::authorizeBuildingReward(spy,spyBuilding,Research::BuildingRewardSource::Spy);
         SF_ResearchDraw(nullptr);Sleep(160);
         check(!freeFocusVisible(),"repeated authorization does not replay the animation");
         click(tabCenter());
@@ -123,19 +123,19 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
         click(tabCenter());click(tabCenter());
         check(Research::buildingOptions(Research::rewardPanel,house->ArrayIndex)==board,"reopening preserves weighted board");
         click(tabCenter());
-        check(spyTransfer->SetOwningHouse(house,false),"spy building transfer");tickBuildings();
-        authorizeBuildingReward(engineer,spyTransfer,Research::BuildingRewardSource::Engineer);
+        check(spyTransfer->SetOwningHouse(house,false),"spy building transfer");BuildingResearch::tickBuildings();
+        BuildingResearch::authorizeBuildingReward(engineer,spyTransfer,Research::BuildingRewardSource::Engineer);
         check(Research::buildingOptions(spyTransfer->UniqueID,house->ArrayIndex).empty(),"independent flags");
-        check(spyTransfer->SetOwningHouse(foe,false),"transfer back");tickBuildings();
-        authorizeBuildingReward(spy,spyTransfer,Research::BuildingRewardSource::Spy);
+        check(spyTransfer->SetOwningHouse(foe,false),"transfer back");BuildingResearch::tickBuildings();
+        BuildingResearch::authorizeBuildingReward(spy,spyTransfer,Research::BuildingRewardSource::Spy);
         check(!Research::buildingOptions(spyTransfer->UniqueID,house->ArrayIndex).empty(),"spy permission");
-        check(spyTransfer->SetOwningHouse(house,false),"spy owner change");tickBuildings();
+        check(spyTransfer->SetOwningHouse(house,false),"spy owner change");BuildingResearch::tickBuildings();
         check(Research::buildingOptions(spyTransfer->UniqueID,house->ArrayIndex).empty(),"spy privilege revoked on transfer");
-        check(engBuilding->SetOwningHouse(house,false),"engineer building transfer");tickBuildings();
-        authorizeBuildingReward(engineer,engBuilding,Research::BuildingRewardSource::Engineer);
+        check(engBuilding->SetOwningHouse(house,false),"engineer building transfer");BuildingResearch::tickBuildings();
+        BuildingResearch::authorizeBuildingReward(engineer,engBuilding,Research::BuildingRewardSource::Engineer);
         check(!Research::buildingOptions(engBuilding->UniqueID,house->ArrayIndex).empty(),"engineer privilege");
-        check(claimed->SetOwningHouse(house,false),"claim building transfer");tickBuildings();
-        authorizeBuildingReward(engineer,claimed,Research::BuildingRewardSource::Engineer);
+        check(claimed->SetOwningHouse(house,false),"claim building transfer");BuildingResearch::tickBuildings();
+        BuildingResearch::authorizeBuildingReward(engineer,claimed,Research::BuildingRewardSource::Engineer);
         auto choices=Research::buildingOptions(claimed->UniqueID,house->ArrayIndex);
         check(!choices.empty(),"free research offers");
         check(choices==vector<int>{0,1,2} && Research::pendingBuildingRewards(house->ArrayIndex).size()==3,
@@ -155,8 +155,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
         int messages=0;
         for(const auto& text:MessageListClass::Instance.MessageBuffers) if(notice==text) ++messages;
         check(messages==1,"free research announced once");
-        check(claimed->SetOwningHouse(foe,false),"claimed transfer");tickBuildings();
-        authorizeBuildingReward(spy,claimed,Research::BuildingRewardSource::Spy);
+        check(claimed->SetOwningHouse(foe,false),"claimed transfer");BuildingResearch::tickBuildings();
+        BuildingResearch::authorizeBuildingReward(spy,claimed,Research::BuildingRewardSource::Spy);
         check(Research::buildingOptions(claimed->UniqueID,house->ArrayIndex).empty() && Research::buildingRewards.at(claimed->UniqueID).claimed,"claimed once");
         real->Type->Capturable=true;
         auto realEngineer=infantry("ENGINEER",house);

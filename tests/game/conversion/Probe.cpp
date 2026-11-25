@@ -1,9 +1,17 @@
 #include "../../../src/Starfall.cpp"
 namespace {
+HRESULT __stdcall unimplementedConversion(FootClass*,TechnoTypeClass*) { return E_NOTIMPL; }
+HRESULT __stdcall rejectedConversion(FootClass*,TechnoTypeClass*) { return E_INVALIDARG; }
 void check(bool ok,const char* label) {
     std::ofstream("conversion.log",std::ios::app)<<(ok?"PASS ":"FAIL ")<<label<<"\n";
     if(!ok) TerminateProcess(GetCurrentProcess(),2);
 }
+#include "CarrierCheck.inc"
+}
+DEFINE_HOOK(0x48928C,SF_TestConversion_CustomMissileDamage,5) {
+    auto wh=R->Base<WarheadTypeClass*>(0xC);
+    if(wh && !_stricmp(wh->ID,"V3WH") && R->EDX<int>()==73) missileImpact=true;
+    return 0;
 }
 DEFINE_HOOK(0x640A49,SF_TestConversion_NoPreview,6) {
     if(GetFileAttributesA("without-phobos.flag")!=INVALID_FILE_ATTRIBUTES) return 0x6410B6;
@@ -15,34 +23,37 @@ DEFINE_HOOK(0x55B4EB,SF_TestConversion,5) {
     bool loading=GetFileAttributesA("reload.flag")!=INVALID_FILE_ATTRIBUTES;
     bool standalone=GetFileAttributesA("without-phobos.flag")!=INVALID_FILE_ATTRIBUTES;
     if(loading && frame<=20) return 0;
-    if(frame!=20 && frame!=30) return 0;
+    static bool checkedMarkers=false;
+    if(frame>20) checkCarrierFlight(frame,loading);
+    if(frame!=20 && (frame<30 || checkedMarkers)) return 0;
     auto house=HouseClass::FindByPlayerAt(HouseClass::PlayerAtA);
     auto from=UnitTypeClass::Find("MTNK"),to=UnitTypeClass::Find("HTNK");
     UnitClass* unit=nullptr;DWORD id=0;
-    if(frame==30) std::ifstream("conversion.id")>>id;
+    if(frame>=30) std::ifstream("conversion.id")>>id;
     for(auto u:UnitClass::Array) if(u->Owner==house && (id?u->UniqueID==id:u->Type==from)) {unit=u;break;}
     check(unit!=nullptr,"unit");
-    if(!standalone && !publicPhobosConverter()) {
-        check(GetModuleHandleW(L"Phobos.dll") && !publicPhobosConverter() &&
-            !conversionAvailable() && !Research::available(0) && !transformUnit(unit,to) && unit->Type==from,"legacy Phobos unavailable");
-        TerminateProcess(GetCurrentProcess(),0);return 0;
-    }
     if(frame==20) {
-        if(!standalone) check(publicPhobosConverter()!=nullptr,"public Phobos API");
+        const bool builtin=!publicPhobosConverter();
+        if(standalone) check(!GetModuleHandleW(L"Phobos.dll"),"Phobos absent");
+        else {
+            check(GetModuleHandleW(L"Phobos.dll")!=nullptr,"Phobos loaded");
+            check(true,builtin?"built-in fallback with legacy Phobos":"public Phobos API");
+        }
         check(from && to && IsEqualGUID(from->Locomotor,to->Locomotor),"compatible fixture");
         check(Research::available(0),"registered research");
-        if(standalone) check(!GetModuleHandleW(L"Phobos.dll"),"Phobos absent");
+        check(!transformUnit(unit,to,rejectedConversion) && unit->Type==from,"explicit rejection preserved");
         auto unitId=unit->UniqueID;auto oldOwner=unit->Owner;
         int beforeOld=house->CountOwnedNow(from),beforeNew=house->CountOwnedNow(to);
         unit->Veterancy.Veterancy=1.0f;
-        if(standalone) {check(UnitHealth::change(unit,100),"increased max health");UnitHealth::heal(unit,UnitHealth::read(unit).maximum/2);}
+        if(builtin) {check(UnitHealth::change(unit,100),"increased max health");UnitHealth::heal(unit,UnitHealth::read(unit).maximum/2);}
         auto before=UnitHealth::read(unit);
         int beforeAmmo=unit->Ammo;
-        if(standalone) {
-            auto originalSpawns=to->Spawns;
-            to->Spawns=AircraftTypeClass::Find("ORCA");
-            bool guarded=to->Spawns && !canTransformUnit(unit,to);
-            to->Spawns=originalSpawns;
+        if(builtin) {
+            auto originalSlave=to->Enslaves;
+            to->Enslaves=InfantryTypeClass::Find("SLAV");
+            bool guarded=to->Enslaves && !canTransformUnit(unit,to) && !transformUnit(unit,to) && unit->Type==from &&
+                !Research::Detail::Runtime::conversionSupportsTypes(from,to) && !transformUnit(unit,to,unimplementedConversion);
+            to->Enslaves=originalSlave;
             check(guarded,"unsupported complex type skipped");
         }
         grantToUnit(unit,PassiveGrant{{"conversionmarker"},-1});
@@ -50,7 +61,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestConversion,5) {
         check(transformUnit(unit,to),"conversion");
         check(unit->UniqueID==unitId && unit->Owner==oldOwner && unit->Type==to && unit->Veterancy.Veterancy==1.0f,"identity and ownership");
         check(house->CountOwnedNow(from)==beforeOld-1 && house->CountOwnedNow(to)==beforeNew+1,"house tracking");
-        if(standalone) {
+        if(builtin) {
             auto hp=UnitHealth::read(unit);
             int expectedMax=to->Strength+before.maximum-from->Strength;
             int expectedHp=static_cast<int>((static_cast<int64_t>(before.current)*expectedMax+before.maximum/2)/before.maximum);
@@ -71,6 +82,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestConversion,5) {
         InfantryClass* infantry=nullptr;
         for(auto candidate:InfantryClass::Array) if(candidate && candidate->Owner==house && candidate->Type==infFrom) {infantry=candidate;break;}
         check(infantry && transformUnit(infantry,infTo) && infantry->Type==infTo,"infantry conversion");
+        check(transformUnit(infantry,infFrom,unimplementedConversion) && infantry->Type==infFrom,"unimplemented API falls back");
         auto airFrom=AircraftTypeClass::Find("ORCA"),airTo=AircraftTypeClass::Find("BEAG");
         check(airFrom && airTo && IsEqualGUID(airFrom->Locomotor,airTo->Locomotor),"aircraft fixture types");
         auto aircraft=static_cast<AircraftClass*>(airFrom->CreateObject(house));
@@ -79,13 +91,13 @@ DEFINE_HOOK(0x55B4EB,SF_TestConversion,5) {
         check(transformUnit(aircraft,airTo) && aircraft->Type==airTo,"aircraft conversion");
         Research::award(house->ArrayIndex,100);
         check(Research::purchase(house->ArrayIndex,0,house->Type->ID),"research conversion");
+        setupCarriers(house);
         std::ofstream("conversion.id")<<unitId;
-        check(ScenarioClass::SaveGame("Saved Games\\Conversion.sav",L"Conversion"),"saved");
     }
-    if(frame==30) {
+    if(frame>=30) {
+        checkedMarkers=true;
         check(unit->Type==to && unit->Veterancy.Veterancy==1.0f,"loaded conversion");
         check(stackCount(unit->UniqueID,"conversionmarker")==2 && std::abs(unit->FirepowerMultiplier-1.25)<0.0001,"loaded passive");
-        TerminateProcess(GetCurrentProcess(),0);
     }
     return 0;
 }

@@ -4,6 +4,7 @@ constexpr auto type=static_cast<SuperWeaponType>(-0x534651);
 using Sections=std::map<string,ScriptFields>;
 Sections mapFields;
 std::map<string,vector<Skill>> definitions;
+std::map<WarheadTypeClass*,const Skill*> warheadScripts;
 LuaTimers::Store timers;
 struct Cast {string typeId;int owner;CellStruct point;};
 std::map<int,string> mapScripts;
@@ -12,7 +13,8 @@ DWORD lastCast=0;
 
 bool fieldName(const string& key) {
     // The map overlay also persists warhead house flags needed by single-target damage.
-    return key=="affectsowner" || key=="affectsenemies" || key=="affectsneutral" ||
+    return key=="starfall.detonatescript" || key=="starfall.detonatefunction" ||
+        key=="starfall.firescript" || key=="starfall.firefunction" || key=="affectsowner" || key=="affectsenemies" || key=="affectsneutral" ||
         key=="starfall.actions" || key=="starfall.target" || key=="action" || key=="script" || key=="function" ||
         key.starts_with("action.") || key.starts_with("script.param.");
 }
@@ -45,7 +47,7 @@ ScriptFields fields(const Sections& rules,const string& id) {
         for(const auto& [key,value]:found->second) values[key]=value;
     return values;
 }
-bool houseAction(const string& name) {return name=="givecredits" || name=="giveresearchpoints" || name=="grantrandomresearch" || name=="grantfreeresearch";}
+bool houseAction(const string& name) {return name=="givecredits" || name=="giveresearchpoints" || name=="grantrandomresearch" || name=="grantfreeresearch" || name=="grantresearch";}
 // Translate the SW's point and house to the location/owner paths in the
 // existing action executor. A unit action in Lua must carry a real unit handle.
 bool prepare(ScriptFields& f,bool selected=false) {
@@ -63,12 +65,29 @@ bool prepare(ScriptFields& f,bool selected=false) {
     return true;
 }
 void load() {
+    warheadScripts.clear();
     definitions.clear();
     mapScripts.clear();
     Sections rules;
+    collect(CCINIClass::INI_Rules,rules);
+    for(auto wh:WarheadTypeClass::Array) {
+        if(!wh) continue;
+        auto cfg=fields(rules,lower(wh->ID));
+        auto file=cfg.find("starfall.detonatescript");
+        if(file==cfg.end() || file->second.empty()) continue;
+        auto function=cfg.find("starfall.detonatefunction");
+        ScriptFields action{{"action","runscript"},{"action.script",file->second},
+            {"action.function",function==cfg.end()?"onDetonate":function->second}};
+        Skill step{};step.id="@warhead:"+lower(wh->ID);step.trigger="onwarheaddetonate";
+        for(const auto& [key,value]:cfg) if(key.starts_with("script.param.") && key.size()>13)
+            step.scriptParams[key.substr(13)]=value;
+        if(!readAction(step,wh->ID,&action)) continue;
+        auto& steps=definitions[step.id];
+        steps.push_back(std::move(step));
+        warheadScripts.emplace(wh,&steps.front());
+    }
     for(auto sw:SuperWeaponTypeClass::Array) {
         if(!sw || sw->Type!=type) continue;
-        if(definitions.empty()) collect(CCINIClass::INI_Rules,rules);
         auto id=lower(sw->ID);
         auto& steps=definitions[id];
         auto settings=fields(rules,id);
@@ -122,10 +141,6 @@ void load() {
 }
 const Skill* stepFor(const Cast& cast,const string& section) {
     auto name=lower(cast.typeId);
-    if(name.starts_with("@bomb:") && name.substr(6)==section) {
-        auto found=skills.find(section);
-        return found!=skills.end() && found->second.trigger=="onbombdetonate"?&found->second:nullptr;
-    }
     if(name.starts_with("@map:")) {auto split=name.find(':',5);if(split!=string::npos) name.resize(split);}
     auto it=definitions.find(name);
     if(it!=definitions.end()) for(const auto& step:it->second) if(step.id==section) return &step;
@@ -135,7 +150,7 @@ void retire(DWORD id) {
     for(const auto& [order,task]:timers.queue) if(task.owner==id) return;
     timers.forget(id);casts.erase(id);
 }
-void reset() {definitions.clear();mapScripts.clear();mapFields.clear();casts.clear();lastCast=0;timers={};}
+void reset() {warheadScripts.clear();definitions.clear();mapScripts.clear();mapFields.clear();casts.clear();lastCast=0;timers={};}
 template<class W> void write(W& w) {
     w.word(lastCast);w.word(static_cast<DWORD>(casts.size()));
     for(const auto& [id,c]:casts) {w.word(id);w.str(c.typeId);w.word(c.owner);w.word(c.point.X);w.word(c.point.Y);}

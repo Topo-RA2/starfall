@@ -112,7 +112,7 @@ void prism(bool elite) {
     check(u && u->IsDeployed() && u->GetWeapon(1)->WeaponType==weapon && std::abs(u->ArmorMultiplier-1.5)<1e-6,"deployed prism weapon and armor");
     auto native=u->Type->GetWeapon(1,elite).WeaponType;
     std::ofstream("hex-economy.log",std::ios::app)<<"GI original "<<native->ID<<" damage "<<native->Damage<<" range "<<native->Range<<" ROF "<<native->ROF<<" burst "<<native->Burst<<'\n';
-    check(weapon->Damage>native->Damage && weapon->Damage<=native->Damage*1.5 && weapon->Range==native->Range+512 && weapon->ROF==native->ROF && weapon->Burst==native->Burst && weapon->IsLaser,"prism improves damage and range retaining native cadence");
+    check(weapon->Damage==48 && weapon->Range==native->Range+512 && weapon->ROF==native->ROF && weapon->Burst==native->Burst && weapon->IsLaser,"prism improves damage and range retaining native cadence");
     auto foe=HouseClass::FindByPlayerAt(HouseClass::PlayerAtB);auto target=place("E2",foe);int hp=target->Health;
     u->SetTarget(target);u->RearmTimer.Stop();
     auto facing=u->GetTargetDirection(target);u->PrimaryFacing.SetCurrent(facing);u->SecondaryFacing.SetCurrent(facing);
@@ -142,7 +142,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexEconomy,5) {
         check(true,"all five projects persist through save");TerminateProcess(GetCurrentProcess(),0);return 0;
     }
     if(f==30) {
-        Research::ensureReady();check(Research::options.size()==85,"complete HexBrawl catalog loaded");
+        Research::ensureReady();check(Research::options.size()==sectionKeys("Starfall.ResearchTypes").size(),"complete HexBrawl catalog loaded");
         check(!skills.contains("invalidliveevent") && !skills.contains("invalidliveaction"),"live formula variables rejected in events");
         auto plant=static_cast<BuildingClass*>(place("GAPOWR",owner));plantId=plant->UniqueID;basePower=plant->GetPowerOutput();
         auto soviet=static_cast<BuildingClass*>(place("NAPOWR",owner));int sovietPower=soviet->GetPowerOutput();

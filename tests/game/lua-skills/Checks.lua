@@ -1,4 +1,32 @@
 return {
+    orders = function(ctx)
+        if ctx.self:type() == "E1" then
+            assert(ctx.self:deploy())
+            return
+        end
+        local tank = ctx.self
+        local targets = ctx:nearbyUnits(tank, 12, {houses={"Enemies"}, types={"HTK"}})
+        assert(#targets == 1 and not tank:deploy())
+        local destination = {x=56, y=69}
+        assert(not tank:setDroneGuardCell(destination))
+        assert(not targets[1]:moveTo(destination))
+        assert(tank:moveTo(destination))
+        ctx:schedule(65, "attackUnit", {destination=destination, enemy=targets[1]})
+    end,
+    attackUnit = function(ctx, data)
+        local position = ctx.self:position()
+        assert(position.x == data.destination.x and position.y == data.destination.y)
+        assert(ctx.self:attack(data.enemy))
+        ctx.state.attackIssued = true
+        ctx:schedule(65, "attackGround", {})
+    end,
+    attackGround = function(ctx)
+        assert(ctx.self:attack({x=55, y=70}))
+        ctx.state.groundIssued = true
+    end,
+    interceptedOrder = function(ctx)
+        ctx.self:attack(ctx.target)
+    end,
     eat = function(ctx)
         local enemy = ctx.target
         assert(enemy:alive() and ctx.self:passengers() == 1)

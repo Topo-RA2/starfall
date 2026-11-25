@@ -82,6 +82,11 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchGrant,5) {
             "ineligible pool fails without RNG consumption");
         check(!Research::owns(h,"wrongcountry") && !Research::owns(h,"missingprerequisite") && !Research::owns(h,"invalideffect"),
             "country prerequisite and effect restrictions enforced");
+        check(ownsPassive(unit,"basearmor"),"base passive active before upgrade");
+        check(Research::grantFree(h,house->Type->ID,{"combinedupgrade"},{}) &&
+            Research::claimFree(Research::ticketFlag|Research::lastTicket,h,12) &&
+            Research::owns(h,"combinedupgrade") && Research::retired[h].size()==2 && !ownsPassive(unit,"basearmor") && ownsPassive(unit,"rewardboost"),
+            "upgrade replaces both bases and grants its passive");
     }
     if(frame==20 || frame==35) {
         const auto tickets=Research::pendingFreeRewards(v);
@@ -102,12 +107,14 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchGrant,5) {
         check(ScenarioClass::SaveGame("Saved Games\\ResearchGrant.sav",L"Research grant"),"saved");
     }
     if(frame==35) {
-        constexpr char playerIds[]="rarea\0rareb\0",opponentIds[]="epicboost\0insanea\0";
+        constexpr char playerIds[]="combinedupgrade\0",opponentIds[]="epicboost\0insanea\0";
         check(checkExternalList(h,playerIds,sizeof(playerIds)) && checkExternalList(v,opponentIds,sizeof(opponentIds)),
             "external DLL reads exact research IDs for each house");
         check(checkExternalDisplay(v,"epicboost",2),"external display API reads completed research and bounded icon");
-        check(Research::owns(h,"rarea") && Research::owns(h,"rareb") && Research::owns(v,"epicboost") &&
-            Research::owns(v,"insanea") && Research::unlocked[h].size()==2 && Research::unlocked[v].size()==2 &&
+        check(!Research::owns(h,"rarea") && !Research::owns(h,"rareb") && Research::owns(h,"combinedupgrade") &&
+            Research::retired[h].size()==2 && !Research::canOfferFree(h,house->Type->ID,{"rarea","rareb"},{},-1) &&
+            !ownsPassive(unit,"basearmor") && ownsPassive(unit,"rewardboost") && Research::owns(v,"epicboost") &&
+             Research::owns(v,"insanea") && Research::unlocked[h].size()==1 && Research::unlocked[v].size()==2 &&
             Research::completedRounds.empty() && Research::balance(h)==100 && Research::slotUsed(h,0),"free research and round zero survive load");
         check(ownsPassive(target,"rewardboost") && std::abs(target->FirepowerMultiplier-1.25)<0.0001,"research passive survives load");
         auto tickets=Research::pendingFreeRewards(v);
@@ -125,7 +132,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchGrant,5) {
         auto rare=Research::freeOptions(Research::ticketFlag|Research::lastTicket,v);
         check(std::set<int>(rare.begin(),rare.end())==std::set<int>{5,6},"explicit rarity includes zero-weight eligible projects");
         const auto nativeRandom=ScenarioClass::Instance->Random;
-        check(ownerReward(house,nullptr) && Research::unlocked[h].size()==3 && Research::completedRounds.empty(),"default All grants one additional project");
+        check(ownerReward(house,nullptr) && Research::unlocked[h].size()==2 && Research::completedRounds.empty(),"default All grants one additional project");
         check(memcmp(&nativeRandom,&ScenarioClass::Instance->Random,sizeof(nativeRandom))==0,"reward draw leaves native RNG unchanged");
         const auto id=Research::unlockOrder[h].back();
         if(loading) {

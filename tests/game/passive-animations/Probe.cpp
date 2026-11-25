@@ -13,6 +13,7 @@ vector<WORD> renderBody(TechnoClass* unit) {
     // Clearing only the sample rectangle can leave the first building draw's
     // depth values in place and suppress every pixel of the second draw.
     ZBuffer::Instance->Fill(0xFFFF);
+    ABuffer::Instance->Fill(127); // Neutral light for the off-screen sample.
     surface->FillRect(&area,0x39E7);
     if(unit->WhatAmI()==AbstractType::Building) {
         auto tactical=TacticalClass::Instance;
@@ -36,17 +37,37 @@ vector<WORD> renderBody(TechnoClass* unit) {
     surface->Unlock();return pixels;
 }
 void verifyTintPixels(TechnoClass* unit,const char* label) {
-    auto base=renderBody(unit);
+    const auto base=renderBody(unit);
+    grantToUnit(unit,PassiveGrant{{"zerotint"},-1});tickStates();
+    check(renderBody(unit)==base,"zero strength preserves original pixels");
+    removeHeldPassive(unit,"zerotint");
+    const int masks[]={Drawing::RGB_To_Int(255,0,0),Drawing::RGB_To_Int(0,255,0),Drawing::RGB_To_Int(0,0,255)};
+    const int shifts[]={Drawing::RedShiftLeft,Drawing::GreenShiftLeft,Drawing::BlueShiftLeft};
+    for(auto color:{ColorStruct{0,0,0},ColorStruct{255,255,255},ColorStruct{32,176,88}}) {
+        auto& sample=skills.at("sampletint");sample.tint=color;
+        grantToUnit(unit,PassiveGrant{{"sampletint"},-1});
+        sample.tintStrength=100;tickStates();const auto solid=renderBody(unit);
+        sample.tintStrength=50;tickStates();const auto half=renderBody(unit);
+        const int target=Drawing::RGB_To_Int(color);
+        int body=0, matched=0;
+        for(size_t i=0;i<base.size();++i) {
+            if(base[i]==0x39E7 && solid[i]==0x39E7) continue;
+            ++body;
+            if(solid[i]!=target) continue;
+            int expected=0;
+            for(int k=0;k<3;++k) {
+                const int a=(base[i]&masks[k])>>shifts[k], b=(target&masks[k])>>shifts[k];
+                expected|=((a+b+1)/2)<<shifts[k];
+            }
+            if(half[i]==expected) ++matched;
+        }
+        std::ofstream("animations.log",std::ios::app)<<label<<" target "<<target<<" matched "<<matched<<"/"<<body<<"\n";
+        check(body>8 && matched*2>body,"body pixels match RGB interpolation at half and full strength");
+        removeHeldPassive(unit,"sampletint");tickStates();
+        check(renderBody(unit)==base,"removing tint restores original pixels");
+    }
     grantToUnit(unit,PassiveGrant{{"tintonly"},-1});tickStates();
-    auto blue=renderBody(unit);
-    check(std::any_of(base.begin(),base.end(),[](WORD pixel){return pixel!=0x39E7;}) &&
-        std::any_of(blue.begin(),blue.end(),[](WORD pixel){return pixel!=0x39E7;}),"both body samples contain rendered pixels");
-    int brighter=0;
-    int mask=Drawing::RGB_To_Int(0,0,255);
-    for(size_t i=0;i<base.size();++i)
-        if(base[i]!=0x39E7 && blue[i]!=0x39E7 && (blue[i]&mask)>(base[i]&mask)) ++brighter;
-    std::ofstream("animations.log",std::ios::app)<<label<<" base "<<(base.size()-std::count(base.begin(),base.end(),0x39E7))<<" pixels "<<brighter<<"\n";
-    check(brighter>=4,label);
+    check(passiveTints.at(unit->UniqueID).strength==50,label);
 }
 int animWidth(AnimClass* anim) {
     auto surface=DSurface::Temp;
@@ -81,6 +102,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveAnimations,5) {
             skills.contains("animonly") && !skills.contains("animinvalid"),"configuration");
         grantToUnit(unit,PassiveGrant{{"animconditional","animalways","animevent","animonly"},-1});
         check(skills.contains("tintonly") && skills.contains("woundedtint") && !skills.contains("badtint"),"tint configuration");
+        check(skills.contains("softtint") && skills.contains("zerotint") &&
+            skills.at("zerotint").tintStrength==0 && skills.at("softtint").tintStrength==30 && !skills.contains("badstrength") && !skills.contains("missingcolor"),"tint strength validation");
         verifyTintPixels(unit,"voxel body tint");
         auto gi=static_cast<InfantryClass*>(InfantryTypeClass::Find("E1")->CreateObject(house));
         CellStruct cell{48,70};
@@ -100,7 +123,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveAnimations,5) {
         MapClass::Instance.Reveal(house);
         verifyTintPixels(building,"building body tint");
         grantToUnit(unit,PassiveGrant{{"woundedtint"},-1});tickStates();
-        check(passiveTints.at(id)==ColorStruct{0,0,200},"tint before condition");
+        check(passiveTints.at(id).color==ColorStruct{0,0,200},"tint before condition");
         check(!has("animconditional") && has("animalways") && !has("animevent") && has("animonly"),"initial visibility");
     }
     if(frame==21) {
@@ -109,7 +132,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveAnimations,5) {
     }
     if(frame==36) {
         tickStates();
-        check(passiveTints.at(id)==ColorStruct{255,0,200} && !unit->IsIronCurtained(),"combined tint without invulnerability");
+        check(passiveTints.at(id).color==ColorStruct{255,0,0} && passiveTints.at(id).strength==75 && !unit->IsIronCurtained(),"combined tint without invulnerability");
         check(has("animconditional") && VisualScale::percent(id)==200,"delayed activation and scale");
         auto& record=attachedAnims.at({id,"animconditional"});AnimFrame resolver;
         auto anim=resolver.resolve(record);check(anim!=nullptr,"animation object");
@@ -127,19 +150,19 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveAnimations,5) {
         tickStates();
         check(has("animconditional") && has("animalways") && has("animevent") && has("animonly") &&
             VisualScale::attachedAnims.at(attachedAnims.at({id,"animconditional"}).id)==id && VisualScale::percent(id)==200,"retained after save");
-        check(passiveTints.at(id)==ColorStruct{255,0,200},"tint after load");
+        check(passiveTints.at(id).color==ColorStruct{255,0,0} && passiveTints.at(id).strength==75,"tint after load");
         unit->Health=unit->Type->Strength;tickStates();
-        check(passiveTints.at(id)==ColorStruct{0,0,200},"condition exits restore tint");
+        check(passiveTints.at(id).color==ColorStruct{0,0,200} && passiveTints.at(id).strength==50,"condition exits restore tint");
         check(!has("animconditional") && has("animalways") && !has("animevent") && has("animonly") && VisualScale::percent(id)==100,"condition exit");
         auto cloak=unit->CloakState;unit->CloakState=CloakState::Cloaked;tickStates();
         check(!has("animalways") && !has("animonly"),"cloak hides animation");
-        check(drawTint(unit,0)==0,"cloak hides tint");
+        check(!visibleTint(unit),"cloak hides tint");
         unit->CloakState=cloak;tickStates();
         check(has("animalways") && has("animonly"),"uncloak restores animation");
         warheadGrants[id].skills.erase("animonly");removedPassives[id].insert("animonly");tickStates();
         check(!has("animonly"),"removed passive clears animation");
         unit->IronCurtain(75,house,false);
-        check(unit->IsIronCurtained() && !drawTint(unit,0) && drawTint(unit,37)==37,"iron curtain takes precedence");
+        check(unit->IsIronCurtained() && !visibleTint(unit),"iron curtain takes precedence");
         removeHeldPassive(unit,"tintonly");tickStates();
         check(!passiveTints.contains(id),"lost passive clears tint");
         TerminateProcess(GetCurrentProcess(),0);

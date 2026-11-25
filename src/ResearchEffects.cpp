@@ -194,7 +194,7 @@ bool validateEffect(const Research::EffectSpec& o,const EffectWarning& warn) {
             if(!to || to->WhatAmI()!=kind) valid=fail("ToType","目标类型不存在或类别不符");
             if(!valid) return false;
             if(from==to || !IsEqualGUID(from->Locomotor,to->Locomotor)) return fail("ToType","两个类型相同或移动方式不兼容");
-            if(!Runtime::conversionAvailable() || (!GetModuleHandleW(L"Phobos.dll") && !Runtime::nativeConversionTypesSafe(from,to)))
+            if(!Runtime::conversionSupportsTypes(from,to))
                 return fail("ToType","当前转换接口不支持这组类型");
             return true;
         }
@@ -206,6 +206,20 @@ bool researchEffectCanApply(HouseClass* h,const Research::EffectSpec& o,int sour
     if(o.effect==Effect::FreeResearch) return Research::canOfferFree(h->ArrayIndex,h->Type->ID,o.reward.projects,o.reward.rarity,source);
     if(o.effect==Effect::RandomResearch) return Research::canGrantRandom(h->ArrayIndex,source,h->Type->ID,o.reward.rarity);
     if(o.effect==Effect::Passive || o.effect==Effect::TypeCost || o.effect==Effect::CategoryCost) return true;
+    if(source>=0 && !Research::options[source].replaces.empty() &&
+       (o.effect==Effect::Technology || o.effect==Effect::ReplaceProduction)) {
+        const auto& removed=Research::options[source].replaces;
+        auto conflicts=[&](const auto& active) {
+            if(active.effect!=o.effect) return false;
+            if(o.effect==Effect::Technology) return active.technology==o.technology;
+            return active.from==o.from || active.from==o.to || active.to==o.from || active.to==o.to;
+        };
+        for(const auto& project:Research::options) {
+            if(!Research::owns(h->ArrayIndex,project.id) || includes(removed,project.id)) continue;
+            if(project.effectList ? std::any_of(project.effects.begin(),project.effects.end(),conflicts) : conflicts(project)) return false;
+        }
+        return true;
+    }
     if(o.effect==Effect::ReplaceProduction) {
         auto from=TechnoTypeClass::Find(o.from.c_str()),to=TechnoTypeClass::Find(o.to.c_str());
         const auto& replace=replacements(h);
@@ -272,6 +286,7 @@ bool Research::canApply(int house,int option) {
 bool Research::executeEffect(int house,int option) {
     if(!canApply(house,option)) return false;
     auto h=HouseClass::Array.Items[house];const auto& o=options[option];
+    if(!o.replaces.empty()) h->RecheckTechTree=true;
     if(!o.effectList) return applyResearchEffect(h,singleEffect(o),option);
     bool applied=false;
     for(const auto& effect:o.effects) if(applyResearchEffect(h,effect,option)) applied=true;
