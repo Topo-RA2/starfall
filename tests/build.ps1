@@ -22,6 +22,7 @@ try {
     $control=@('tests/compile.cmd','tests/build.ps1','tools/build-lua.cmd','tools/msvc-x86.cmd','tools/module-sources.cmd') | ForEach-Object {Join-Path $script:RepoRoot $_}
     $headers=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'references/Phobos/YRpp') -Recurse -File | Where-Object Extension -in '.h','.inl' | ForEach-Object FullName)
     $source=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'src') -Recurse -File | Where-Object Extension -in '.h','.inc','.cpp' | ForEach-Object FullName)
+    $source+=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'modules/ActSp') -File | Where-Object Extension -in '.h','.cpp' | ForEach-Object FullName)
     $commonSource=@($source | Where-Object {[IO.Path]::GetFileName($_) -notin 'Starfall.cpp','ResearchUI.cpp'})
     $lua=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'references/lua') -File | Where-Object Extension -in '.h','.c' | ForEach-Object FullName)
     $assets=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'assets') -Recurse -File | ForEach-Object FullName)
@@ -46,10 +47,6 @@ try {
     }
     Build-Part lua '' $lua @((Join-Path $shared 'lua/lua.lib'))
     Build-Part resources '' $assets @((Join-Path $shared 'research.res'))
-    if($Case -eq 'actsp') {
-        $actspSources=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'modules/ActSp') -File | Where-Object Extension -in '.cpp','.h','.cmd' | ForEach-Object FullName)
-        Build-Part actsp '' ($actspSources+$headers) @((Join-Path $script:RepoRoot 'build/ActSp.dll'))
-    }
     if(!$Unit -or 'ActionArgumentsTest' -in $names) {
         Build-Part modules '' ($commonSource+$headers) @((Join-Path $shared 'modules.lib'))
         if(!$Unit -and $Case -eq 'hex-icons') {Build-Part core '' ($source+$headers+$lua) @((Join-Path $shared 'Starfall.obj'))}

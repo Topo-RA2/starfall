@@ -10,11 +10,12 @@ double tiltAngle(UnitClass* u) {
     auto [forward,side]=ForceMove::visualTilt(u);
     return std::acos(std::clamp(std::cos(double(forward))*std::cos(double(side)),-1.0,1.0));
 }
-vector<WORD> bodyPixels(TechnoClass* u) {
+vector<WORD> bodyPixels(TechnoClass* u,WORD background=0x39E7,int anchorY=180) {
     auto surface=DSurface::Temp;
-    Point2D pos{200,180};RectangleStruct bounds=DSurface::ViewBounds,area{140,110,120,130};
+    Point2D pos{200,anchorY};RectangleStruct bounds=DSurface::ViewBounds,area{140,110,120,130};
     ZBuffer::Instance->FillRect(0xFFFF,area);
-    surface->FillRect(&area,0x39E7);
+    ABuffer::Instance->FillRect(0x7F,area);
+    surface->FillRect(&area,background);
     u->DrawIt(&pos,&bounds);
     auto pitch=surface->GetPitch();
     auto bytes=static_cast<const BYTE*>(surface->Lock(area.X,area.Y));
@@ -31,6 +32,59 @@ FootClass* place(TechnoTypeClass* type,CellStruct pos) {
     auto foot=static_cast<FootClass*>(type->CreateObject(HouseClass::CurrentPlayer));
     check(foot && foot->Unlimbo(MapClass::Instance.GetCellAt(pos)->GetCoordsWithBridge(),DirType::North),"place");
     return foot;
+}
+void shadowProbe(TechnoTypeClass* type) {
+    auto unit=place(type,{72,70});
+    const bool drawShadow=std::exchange(Game::bDrawShadow,true);
+    ForceMove::Spec spec;spec.height=432;spec.duration=4;spec.tilt=false;spec.airborneHeight=400;
+    check(ForceMove::start(unit,spec,unit->Location),"start shadow fixture");
+    auto& motion=ForceMove::motions.at(unit->UniqueID);
+    const auto grounded=bodyPixels(unit);
+    motion.elapsed=1;
+    const auto rising=bodyPixels(unit);
+    motion.elapsed=2;
+    const auto peak=bodyPixels(unit);
+    // The capture starts at y=110. At both heights the body clears y=162.
+    const int groundBand=52*120;
+    std::ofstream("force-move.log",std::ios::app)<<"SHADOW "<<type->ID<<" noShadow="<<type->NoShadow
+        <<" ground pixels rising/peak "<<std::count_if(rising.begin()+groundBand,rising.end(),[](WORD p){return p!=0x39E7;})
+        <<'/'<<std::count_if(peak.begin()+groundBand,peak.end(),[](WORD p){return p!=0x39E7;})<<'\n';
+    check(std::any_of(peak.begin()+groundBand,peak.end(),[](WORD p){return p!=0x39E7;}) &&
+          std::equal(peak.begin()+groundBand,peak.end(),rising.begin()+groundBand),
+          "visible shadow remains at the same ground pixels during lift");
+    check(grounded!=peak && !std::equal(rising.begin(),rising.begin()+groundBand,peak.begin()),
+          "body moves independently of the ground shadow");
+    if(type==UnitTypeClass::Find("DRON")) {
+        // A second translucent shadow attached to the drone would blend with
+        // both backgrounds in the air band. Its opaque legs must match.
+        const auto alternate=bodyPixels(unit,0xF7BE);
+        for(int i=0;i<groundBand;++i)
+            if(peak[i]!=alternate[i] && (peak[i]!=0x39E7 || alternate[i]!=0xF7BE))
+                check(false,"drone shadow drawn in the air");
+        check(true,"drone body has no second shadow");
+    }
+    if(type==InfantryTypeClass::Find("E1")) {
+        // Align the body in screen space and turn off the separate drop
+        // shadow. Only baked contact-shadow pixels may disappear on lift.
+        Game::bDrawShadow=false;
+        const auto cleaned=bodyPixels(unit,0x39E7,180+ForceMove::screenLift(unit));
+        motion.elapsed=0;
+        const auto original=bodyPixels(unit);
+        int removed=0,firstBody=130,lastBody=0,firstChange=130;
+        for(size_t i=0;i<original.size();++i) {
+            int y=static_cast<int>(i/120);
+            if(original[i]!=0x39E7) {firstBody=std::min(firstBody,y);lastBody=std::max(lastBody,y);}
+            if(original[i]==cleaned[i]) continue;
+            if(cleaned[i]!=0x39E7) check(false,"infantry body recolored during lift");
+            firstChange=std::min(firstChange,y);++removed;
+        }
+        check(removed>0 && firstChange>(firstBody+lastBody)/2,"only the infantry foot shadow is removed");
+        Game::bDrawShadow=true;
+    }
+    motion.elapsed=motion.duration;
+    check(bodyPixels(unit)==grounded,"landing restores original draw position");
+    Game::bDrawShadow=drawShadow;
+    unit->UnInit();
 }
 void targetingProbe() {
     auto owner=HouseClass::CurrentPlayer,foe=HouseClass::FindByPlayerAt(HouseClass::PlayerAtB);
@@ -168,6 +222,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestForceMove,5) {
     auto tank=UnitTypeClass::Find("MTNK");
     if(!loading && f==20) {
         Research::ensureReady();
+        shadowProbe(tank);
+        shadowProbe(InfantryTypeClass::Find("E1"));
+        shadowProbe(UnitTypeClass::Find("DRON"));
         targetingProbe();
         airTargetingProbe();
         check(skills.contains("scriptpush") && skills.contains("pull") && !skills.contains("badoffset") && !skills.contains("badease"),"config");

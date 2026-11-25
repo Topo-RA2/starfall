@@ -440,12 +440,7 @@ void tickStates() {
         std::string_view tintId;
         WeaponRules nextSlots{};
         const bool onMap=unit->IsOnMap && !unit->InLimbo;
-        using OccupantCheck=BOOL (__cdecl*)(TechnoClass*);
-        static const auto occupantCheck=[] {
-            auto module=GetModuleHandleW(L"ActSp.dll");
-            return module?reinterpret_cast<OccupantCheck>(GetProcAddress(module,"ActSp_IsBetterGarrisonOccupant")):nullptr;
-        }();
-        const bool passengerOnly=!onMap && ((occupantCheck && occupantCheck(unit)) ||
+        const bool passengerOnly=!onMap && (BetterGarrison::isOccupant(unit) ||
             (alive(unit->Transporter) && unit->Transporter->WhatAmI()==AbstractType::Unit));
         bool rider=UnitMount::mounted(unit);
         if(alive(unit) && (onMap || passengerOnly || rider)) {

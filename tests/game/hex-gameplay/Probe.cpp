@@ -45,9 +45,49 @@ void shrinkHit() {
     settle();
 }
 #include "EnemyResearch.inc"
+TechnoClass* measuredVehicle=nullptr;
+double hullBasisLength=0;
+// Measure the vehicle itself. A shrinking shadow alone must not pass.
+RectangleStruct vehicleBodyBounds(TechnoClass* tank) {
+    auto surface=DSurface::Temp;
+    RectangleStruct area{128,96,192,160},view=DSurface::ViewBounds;
+    Point2D anchor{224,176};
+    const WORD background=0x39E7;
+    surface->FillRect(&area,background);
+    ZBuffer::Instance->FillRect(0xFFFF,area);
+    ABuffer::Instance->FillRect(0x7F,area);
+    auto type=tank->GetTechnoType();
+    const bool noShadow=std::exchange(type->NoShadow,true);
+    measuredVehicle=tank;hullBasisLength=0;
+    tank->DrawIt(&anchor,&view);
+    measuredVehicle=nullptr;
+    type->NoShadow=noShadow;
+    int left=area.Width,top=area.Height,right=-1,bottom=-1;
+    auto pitch=surface->GetPitch();
+    auto pixels=static_cast<const BYTE*>(surface->Lock(area.X,area.Y));
+    check(pixels!=nullptr,"vehicle render surface");
+    for(int y=0;y<area.Height;++y) {
+        auto row=reinterpret_cast<const WORD*>(pixels+y*pitch);
+        for(int x=0;x<area.Width;++x) if(row[x]!=background) {
+            left=std::min(left,x);top=std::min(top,y);
+            right=std::max(right,x);bottom=std::max(bottom,y);
+        }
+    }
+    surface->Unlock();
+    return {left,top,right-left+1,bottom-top+1};
+}
 void newResearch(HouseClass* owner,HouseClass* foe) {
     auto tank=place("HTNK",owner,{50,73});
+    const auto ordinary=vehicleBodyBounds(tank);
+    const double ordinaryBasis=hullBasisLength;
     unlock(owner,"sf_hx_shrinkengine",Research::Rarity::Epic);settle();
+    const auto reduced=vehicleBodyBounds(tank);
+    check(ordinaryBasis>0 && std::abs(hullBasisLength/ordinaryBasis-0.60)<0.001,
+          "shrink engine supplies a scaled hull to the voxel renderer");
+    std::ofstream("hex-gameplay.log",std::ios::app)<<"Rhino body "<<ordinary.Width<<'x'<<ordinary.Height
+        <<" -> "<<reduced.Width<<'x'<<reduced.Height<<'\n';
+    check(ordinary.Width>10 && ordinary.Height>10 && std::abs(reduced.Width-ordinary.Width*.6)<=2 &&
+          std::abs(reduced.Height-ordinary.Height*.6)<=2,"shrink engine scales the vehicle body to sixty percent");
     check(VisualScale::percent(tank->UniqueID)==60 &&
         std::abs(static_cast<FootClass*>(tank)->SpeedMultiplier-1.30)<0.0001 &&
         std::abs(unitFactor(tank->UniqueID,fireRateBase,fireRateState)-1.40)<0.0001,"shrink engine vehicle modifiers");
@@ -113,6 +153,16 @@ void clusterShot(TechnoClass* shooter,TechnoClass* primary,TechnoClass* extra) {
 }
 }
 
+// Check the transform supplied to the voxel renderer itself, including
+// renderers that never use the native final screen blit.
+DEFINE_HOOK(0x706647,SF_TestShrinkHullTransform,6) {
+    if(measuredVehicle && R->ECX<TechnoClass*>()==measuredVehicle &&
+       R->Stack<VoxelStruct*>(0x54)==&measuredVehicle->GetTechnoType()->MainVoxel) {
+        const auto& matrix=*R->Stack<Matrix3D*>(0x6C);
+        hullBasisLength=std::hypot(matrix.row[0][0],matrix.row[1][0],matrix.row[2][0]);
+    }
+    return 0;
+}
 DEFINE_HOOK(0x55B4EB,SF_TestHexGameplay,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
     const int frame=Unsorted::CurrentFrame;

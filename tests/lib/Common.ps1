@@ -60,7 +60,8 @@ function Assert-NoTestProcesses([string]$Directory) {
 function Copy-TestGameFiles([string]$Source,[string]$Destination,[switch]$CopyArchives) {
     $records=@()
     foreach($file in Get-ChildItem -LiteralPath $Source -File | Where-Object {
-        ($_.Extension -in '.mix','.dll','.tlb','.inj','.dsk','.lcf','.pcx' -or $_.Name -in 'Syringe.exe','gamemd.exe','ConquerMD.dat','ddraw.ini','RA2MD.ini') -and $_.Name -ne 'Starfall.dll'
+        ($_.Extension -in '.mix','.dll','.tlb','.inj','.dsk','.lcf','.pcx' -or $_.Name -in 'Syringe.exe','gamemd.exe','ConquerMD.dat','ddraw.ini','RA2MD.ini') -and
+            $_.Name -notin 'Starfall.dll','ActSp.dll','ActSp.dll.inj'
     }) {
         $target=Join-Path $Destination $file.Name
         $linked=$false

@@ -4,7 +4,7 @@
 
 ## 安装
 
-1. 将包内的 `ActSp.dll` 放入游戏目录，在现有 SyringeEx 启动参数中加入 `-i=ActSp.dll`。
+1. 按[流火安装说明](../../README.md#运行与测试)加载包含 ActSp 的 `Starfall.dll`。
 2. 将 `GrizzlyGround.rules.ini` 放入游戏目录。在启用了 Ares 的 `rulesmd.ini` 的 `[#include]` 节，用空闲编号加入一行，例如 `50=GrizzlyGround.rules.ini`。也可把片段里的建筑注册项与建筑节合入现有规则。建筑和坦克复用游戏已有美术资源。
 3. 重启游戏，开始新对局，建造哨站并指定可通行的地面格。哨站周围需要留出至少一个可放置坦克的相邻格。出口全部堵住时，哨站会等到有空位再出车。
 

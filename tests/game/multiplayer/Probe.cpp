@@ -167,6 +167,42 @@ void setup() {
     auto local=HouseClass::CurrentPlayer;
     check(Research::offers(local->ArrayIndex,local->Type->ID).size()==3,"asymmetric local UI preparation");
 }
+
+void testPlatformTransfer(int frame) {
+    constexpr CellStruct platformCell{67,67}, start{63,69}, deck{68,69};
+    static BuildingClass* platform=nullptr;
+    static InfantryClass* unit=nullptr;
+    auto& map=MapClass::Instance;
+    auto owner=players[0];
+    const bool local=owner==HouseClass::CurrentPlayer;
+    if(frame==21) {
+        auto type=BuildingTypeClass::Find("ASHIGHPL");
+        platform=type?static_cast<BuildingClass*>(type->CreateObject(owner)):nullptr;
+        check(platform && platform->Unlimbo(map.GetCellAt(platformCell)->GetCoords(),DirType::North),"placed network high platform");
+        unit=static_cast<InfantryClass*>(InfantryTypeClass::Find("E1")->CreateObject(owner));
+        check(unit && unit->Unlimbo(map.GetCellAt(start)->GetCoords(),DirType::East),"placed network platform infantry");
+    }
+    if(frame==40 && local) {
+        const auto action=unit->MouseOverObject(platform,true);
+        check(action==Action::Enter && unit->ObjectClickedAction(action,platform,false),"owner clicked platform entrance");
+    }
+    if(frame==150) {
+        check(unit && unit->GetMapCoords()==deck && unit->GetCoords().Z==map.GetCellAt(deck)->GetCoords().Z,
+            "platform entry reached the same deck cell on both peers");
+        if(local) {
+            const auto action=platform->MouseOverObject(platform,true);
+            check(action==Action::Self_Deploy && platform->ObjectClickedAction(action,platform,false),"owner deployed high platform");
+        }
+    }
+    if(frame==185) {
+        const auto landing=unit->GetMapCoords();
+        check(landing.X==66 && landing.Y>=66 && landing.Y<=73 &&
+            unit->GetCoords().Z==map.GetCellAt(landing)->GetCoords().Z && unit->GetCoords().Z<map.GetCellAt(deck)->GetCoords().Z,
+            "platform Deploy reached the outside ground ring on both peers");
+        unit->UnInit();
+        platform->UnInit();
+    }
+}
 }
 DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
@@ -186,7 +222,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
             <<" mode="<<int(SessionClass::Instance.GameMode)<<" players="<<Game::PlayerCount<<'\n';
         setup();
     }
-    static const bool testDroneGuard=GetModuleHandleW(L"ActSp.dll")!=nullptr;
+    static const bool testDroneGuard=GetFileAttributesA("actsp-network.flag")!=INVALID_FILE_ATTRIBUTES;
+    if(testDroneGuard && frame>=21 && frame<=185) testPlatformTransfer(frame);
     if(testDroneGuard && frame>=20 && frame<=685) {
         static DWORD originalGuard=0;
         CellStruct site{73,76},rally{70,74},groundSite{80,84},groundRally{84,84};

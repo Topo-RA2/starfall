@@ -26,6 +26,10 @@ const Motion* find(const AbstractClass* unit) {
     auto it=motions.find(unit->UniqueID);
     return it==motions.end()?nullptr:&it->second;
 }
+int screenLift(const AbstractClass* unit) {
+    const auto motion=find(unit);
+    return motion?TacticalClass::AdjustForZ(motion->lift()):0;
+}
 bool airborne(const AbstractClass* unit) {
     if(UnitMount::mounted(unit)) {
         const auto& link=UnitMount::links.at(unit->UniqueID);
@@ -163,42 +167,6 @@ bool eligible(TechnoClass* unit) {
     auto foot=static_cast<FootClass*>(unit);
     return foot->Locomotor && foot->TubeIndex<0 && !foot->IsAttackedByLocomotor && !foot->IsDeploying;
 }
-void stopOrders(FootClass* foot) {
-    foot->ClearMegaMissionData();
-    foot->NavQueue.Count=0;
-    foot->SetTarget(nullptr);
-    foot->SetDestination(nullptr,true);
-    foot->StopMoving();
-    foot->ForceMission(Mission::Sleep);
-}
-// Stop_Moving lets a drive already on a turn track finish that track. A moving
-// target needs a stationary instance of the same locomotor at its current XY.
-bool interruptTravel(FootClass* foot) {
-    auto old=foot->Locomotor.GetInterfacePtr();
-    if(!old->Is_Moving() && !old->Is_Moving_Now()) {stopOrders(foot);return true;}
-    IPiggyback* piggy=nullptr;
-    if(SUCCEEDED(old->QueryInterface(__uuidof(IPiggyback),reinterpret_cast<void**>(&piggy)))) {
-        bool borrowed=piggy->Is_Piggybacking();piggy->Release();
-        if(borrowed) return false;
-    }
-    IPersistStream* persist=nullptr;
-    if(FAILED(old->QueryInterface(__uuidof(IPersistStream),reinterpret_cast<void**>(&persist)))) return false;
-    CLSID clsid{};
-    auto hr=persist->GetClassID(&clsid);persist->Release();
-    if(FAILED(hr)) return false;
-    ILocomotion* replacement=nullptr;
-    if(FAILED(LocomotionClass::CreateInstance(&replacement,&clsid,nullptr,CLSCTX_INPROC_SERVER)) || !replacement) return false;
-    if(FAILED(replacement->Link_To_Object(foot))) {replacement->Release();return false;}
-    bool powered=old->Is_Powered();
-    stopOrders(foot);
-    old->Mark_All_Occupation_Bits(MarkType::Up);
-    foot->Mark(MarkType::Up);
-    foot->Locomotor.Attach(replacement);
-    if(!powered) replacement->Power_Off();
-    replacement->Unlimbo();
-    foot->Mark(MarkType::Down);
-    return true;
-}
 bool terrainAllows(FootClass* foot,CellClass* cell) {
     auto type=foot->GetTechnoType();
     if(!cell || type->SpeedType<SpeedType::Foot || type->SpeedType>SpeedType::FloatBeach) return false;
@@ -261,35 +229,6 @@ bool start(TechnoClass* unit,const Spec& spec,const CoordStruct& center) {
     syncAirTracker(motions.at(unit->UniqueID));
     if(wasUnreserved && !spec.ignoreCollision) foot->MarkAllOccupationBits(foot->Location);
     return true;
-}
-// SetLocation/Mark move the object and its cell chain, but FootClass normally
-// updates LastMapCoords, threat regions, sensors and neighbouring-cell counts
-// only at PCPType::End. Forced motion bypasses that locomotor path. Move these
-// registrations together without running cell-entry actions (crushing, mines,
-// building entry, etc.) while IgnoreCollision units are still in transit.
-void syncCellRegistration(FootClass* foot) {
-    const auto previous=foot->LastMapCoords,current=foot->GetMapCoords();
-    if(previous==current || previous==CellStruct{0,0} || !foot->Owner) return;
-    auto& map=MapClass::Instance;
-    auto oldCell=map.TryGetCellAt(previous),newCell=map.TryGetCellAt(current);
-    if(!oldCell || !newCell) return;
-    if(foot->GetTechnoType()->SensorsSight) {
-        foot->RemoveSensorsAt(previous);
-        foot->AddSensorsAt(current);
-    }
-    const auto house=foot->GetOwningHouseIndex();
-    oldCell->UpdateThreat(house,-static_cast<int>(foot->ThreatPosed));
-    foot->ThreatPosed=0;
-    foot->ThreatPosed=foot->GetThreatValue();
-    newCell->UpdateThreat(house,static_cast<int>(foot->ThreatPosed));
-    for(int y=-1;y<=1;++y) for(int x=-1;x<=1;++x) {
-        if(!x && !y) continue;
-        if(auto cell=map.TryGetCellAt(CellStruct{static_cast<short>(previous.X+x),static_cast<short>(previous.Y+y)}))
-            --cell->BlockedNeighbours;
-        if(auto cell=map.TryGetCellAt(CellStruct{static_cast<short>(current.X+x),static_cast<short>(current.Y+y)}))
-            ++cell->BlockedNeighbours;
-    }
-    foot->LastMapCoords=current;
 }
 // Sweep even one-frame moves in short steps to catch intervening cells.
 bool moveTo(FootClass* foot,int x,int y,bool ignoreCollision) {
@@ -473,14 +412,43 @@ DEFINE_HOOK(0x7441B0,SF_ForceMoveOccupation,5) {
 // DrawIt takes a screen point by reference. Keep the native position grounded.
 DEFINE_HOOK_AGAIN(0x518F90,SF_ForceMoveDraw,7)
 DEFINE_HOOK(0x73CEC0,SF_ForceMoveDraw,5) {
-    if(ForceMove::motions.empty()) return 0;
-    auto it=ForceMove::motions.find(R->ECX<TechnoClass*>()->UniqueID);
-    if(it!=ForceMove::motions.end()) {
+    if(const int lift=ForceMove::screenLift(R->ECX<TechnoClass*>())) {
         static Point2D location;
         location=*R->Stack<Point2D*>(4);
-        location.Y-=TacticalClass::AdjustForZ(it->second.lift());
+        location.Y-=lift;
         R->Stack(4,&location);
     }
+    return 0;
+}
+// DrawAsVXL has finished the body. Its separate shadow origin is shared by
+// vanilla and Phobos, before bridge handling and locomotor shadow offsets.
+DEFINE_HOOK(0x73C216,SF_ForceMoveVoxelShadow,8) {
+    R->EDX(R->EDX<int>()+ForceMove::screenLift(R->EBP<UnitClass*>()));
+    return 0;
+}
+// A grounded voxel can bake its shadow into the body surface. Draw it on the
+// scene instead for any visible lift, even below the air-targeting threshold.
+DEFINE_HOOK(0x73C41B,SF_ForceMoveVoxelShadowSurface,5) {
+    return ForceMove::screenLift(R->EBP<UnitClass*>())?0x73C427:0;
+}
+// Airborne infantry already drew their native drop shadow in DrawIt.
+DEFINE_HOOK_AGAIN(0x70653E,SF_ForceMoveSpriteShadow,10)
+DEFINE_HOOK(0x706469,SF_ForceMoveSpriteShadow,10) {
+    auto unit=R->ESI<TechnoClass*>();
+    return ForceMove::screenLift(unit) && unit->WhatAmI()==AbstractType::Infantry?0x706602:0;
+}
+// The native airborne infantry shadow uses height above the bridge or ground.
+// ForceMove keeps physical height grounded, so open this draw path explicitly
+// without changing the height used for its depth test.
+DEFINE_HOOK(0x5194E7,SF_ForceMoveInfantryShadowVisible,8) {
+    auto unit=R->EBP<InfantryClass*>();
+    if(ForceMove::screenLift(unit) && Game::bDrawShadow && !unit->Type->NoShadow &&
+       unit->CloakState==CloakState::Uncloaked)
+        return 0x5194EF;
+    return 0;
+}
+DEFINE_HOOK(0x51953B,SF_ForceMoveInfantryAirShadow,6) {
+    R->EAX(R->EAX<int>()+ForceMove::screenLift(R->EBP<InfantryClass*>()));
     return 0;
 }
 // UnitClass::DrawIt is about to call DrawAsVXL with the projected point,

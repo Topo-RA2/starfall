@@ -237,11 +237,3 @@ DEFINE_HOOK(0x6B7663, ActSp_NoTargetPatrol, 5) {
     manager->SpawnedNodes[slot]->Status=SpawnNodeStatus::Preparing;
     return 0x6B795A;
 }
-DEFINE_HOOK(0x683549, ActSp_ScenarioStart, 9) { profiles.clear(); GuardPoints::reset(); return 0; }
-
-SYRINGE_HANDSHAKE(info) {
-    if(!info || info->cbSize<sizeof(SyringeHandshakeInfo)) return E_INVALIDARG;
-    if(info->exeCRC!=0x54CC0A13) return E_FAIL;
-    if(info->Message && info->cchMessage>0) _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"ActSp");
-    return S_OK;
-}

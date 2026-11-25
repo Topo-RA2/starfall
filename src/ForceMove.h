@@ -1,6 +1,6 @@
 #pragma once
 #include "ForceMoveSpec.h"
-#include <FootClass.h>
+#include "FootMovement.h"
 #include <map>
 #include <cmath>
 
@@ -43,10 +43,11 @@ void installTargeting();
 void clearMotions();
 void forget(DWORD id);
 bool locked(const AbstractClass* unit);
-void stopOrders(FootClass* foot);
-bool interruptTravel(FootClass* foot);
+int screenLift(const AbstractClass* unit);
+using FootMovement::stopOrders;
+using FootMovement::interruptTravel;
 bool start(TechnoClass* unit,const Spec& spec,const CoordStruct& center);
-void syncCellRegistration(FootClass* foot);
+using FootMovement::syncCellRegistration;
 void tick();
 Lean visualTilt(UnitClass* unit);
 bool terrainAllows(FootClass* foot,CellClass* cell);
