@@ -2,6 +2,8 @@
 #include <TargetClass.h>
 #include <map>
 
+class EventClass;
+
 namespace BetterGarrison {
 struct Order {
     int house;
@@ -12,4 +14,6 @@ struct Order {
 extern std::map<DWORD,Order> orders;
 void tick();
 void reset();
+bool isOccupant(TechnoClass* unit);
+void applyOrder(TechnoClass* unit,EventClass* event);
 }

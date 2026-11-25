@@ -31,10 +31,7 @@ int moveOrder(lua_State* L) {
 int setDroneGuardCell(lua_State* L) {
     auto unit=orderSource(L);
     auto point=pointAt(L,2);
-    using Setter=BOOL(__cdecl*)(TechnoClass*,int,int);
-    auto module=GetModuleHandleW(L"ActSp.dll");
-    auto set=module?reinterpret_cast<Setter>(GetProcAddress(module,"ActSp_SetDroneGuardCell")):nullptr;
-    bool accepted=unit && set && set(unit,point.X,point.Y);
+    bool accepted=unit && GuardPoints::set(unit,point);
     if(accepted) frame(L).changed=true;
     lua_pushboolean(L,accepted);
     return 1;

@@ -14,6 +14,9 @@
 #include "BuildingResearch.h"
 #include "ForceMove.h"
 #include "PassiveRules.h"
+#include "../modules/ActSp/ActSp.h"
+#include "../modules/ActSp/BetterGarrison.h"
+#include "../modules/ActSp/GuardPoints.h"
 #include <filesystem>
 #include <algorithm>
 #include <array>
@@ -1170,7 +1173,12 @@ DEFINE_HOOK(0x68AD2F, SF_MapPassiveBindings, 5) {
     }
     return 0;
 }
-DEFINE_HOOK(0x683549, SF_ScenarioStart, 9) { reset();installAresMindGuards(); return 0; }
+DEFINE_HOOK(0x683549, SF_ScenarioStart, 9) {
+    reset();
+    installAresMindGuards();
+    ActSp::reset();
+    return 0;
+}
 // New units (including aircraft born off-grid), and units lifted from a cell
 // between synchronous Lua calls, stay eligible even while no cell lists them.
 DEFINE_HOOK(0x6F3259,SF_NearbyUnitCreated,7) {
@@ -1220,6 +1228,7 @@ DEFINE_HOOK(0x6F4500, SF_UnitDestroyed, 5) {
     ForceMove::forget(id);ForceMove::settling.erase(id);
     LuaAnim::forget(id);scriptTimers.forget(id);
     if(activeObjects) activeObjects->erase(id);
+    ActSp::forget(id);
     return 0;
 }
 // QueueMission and ForceMission ignore new orders while the motion owns the unit.
@@ -1246,19 +1255,24 @@ DEFINE_HOOK(0x700C40,SF_ForceMoveControl,9) {
 }
 
 // After target and controllability validation in native synchronized orders.
-DEFINE_HOOK(0x4C7225,SF_MountOrder,5) {
-    if(UnitMount::links.empty()) return 0;
-    auto source=R->EDI<TechnoClass*>();auto e=R->ESI<EventClass*>();
-    if(UnitMount::mounted(source)) return 0x4C8109;
-    Mount::order(source,e->MegaMission.Mission==static_cast<BYTE>(Mission::Attack)?e->MegaMission.Target.As_Techno():nullptr);
+DEFINE_HOOK(0x4C7225,SF_ApplyObjectOrder,5) {
+    auto source=R->EDI<TechnoClass*>();
+    auto event=R->ESI<EventClass*>();
+    if(!UnitMount::links.empty()) {
+        if(UnitMount::mounted(source)) return 0x4C8109;
+        Mount::order(source,event->MegaMission.Mission==static_cast<BYTE>(Mission::Attack)?event->MegaMission.Target.As_Techno():nullptr);
+    }
+    BetterGarrison::applyOrder(source,event);
     return 0;
 }
 // The separate synchronized stop event has passed its native ownership checks.
-DEFINE_HOOK(0x4C757D,SF_MountStopOrder,6) {
-    if(UnitMount::links.empty()) return 0;
+DEFINE_HOOK(0x4C757D,SF_ApplyStopOrder,6) {
     auto source=R->ESI<TechnoClass*>();
-    if(UnitMount::mounted(source)) return 0x4C8109;
-    Mount::order(source,nullptr);
+    if(!UnitMount::links.empty()) {
+        if(UnitMount::mounted(source)) return 0x4C8109;
+        Mount::order(source,nullptr);
+    }
+    ActSp::stopOrder(source);
     return 0;
 }
 #include "runtime/CombatHooks.inc"
@@ -1306,6 +1320,7 @@ DEFINE_HOOK(0x55B4E1, SF_Frame, 5) {
     collectPickups();
     dispatch();
     tickScriptTimers();
+    ActSp::tick();
     return 0;
 }
 

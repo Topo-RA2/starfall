@@ -1,6 +1,8 @@
-# ActSp 子机行为扩展
+# ActSp 特殊行为子模块
 
-ActSp 为《尤里的复仇》提供原版飞行子机巡逻和建筑地面守卫。编译时运行本目录的 `build.cmd`，将生成的 `build/ActSp.dll` 放到游戏目录，在现有 SyringeEx 启动配置中追加 `-i=ActSp.dll`。和流火合用时可按 `Starfall.dll`、`ActSp.dll`、Ares、Phobos 的顺序加载。
+ActSp 为《尤里的复仇》提供飞行子机巡逻、建筑地面守卫、高级驻军和可建造高台。运行项目根目录的 `build.cmd` 会将这些功能编译进 `build/Starfall.dll`。按[流火安装说明](../../README.md#运行与测试)加载 DLL，并在规则中启用所需功能。
+
+可建造高台的配置和所需美术见[混凝土高台示例](../../examples/HighPlatform/README.md)。
 
 在 `rulesmd.ini` 的**母体类型节**中追加 `Drone.*` 字段。例如，给原版盟军航空母舰的 `[CARRIER]` 节加入以下三行即可启用环绕巡航：
 
@@ -29,13 +31,13 @@ ActSp 按字段读取游戏已加载的规则，省略的字段使用下表所�
 
 在已有子机的哨站建筑类型节写入 `Drone.Mode=Guard`。选中己方哨站，用平时设置工厂集合点的操作点击空地，该建筑的所有槽位共用这个警戒格。有生产功能的母体沿用工厂最终选定的集合点。每个母体独立保存警戒格，同类型的其他母体可以守在不同位置。
 
-安装本版流火和 ActSp 后，Lua 技能可以对建筑或移动母体调用以下方法。地面点选技能也可直接传入 `ctx.point`。
+Lua 技能可以对建筑或移动母体调用以下方法。地面点选技能也可直接传入 `ctx.point`。
 
 ```lua
 local accepted = ctx.self:setDroneGuardCell({x=84, y=71})
 ```
 
-成功返回 `true`。缺少 ActSp、单位无法接受指令、母体未配置为 `Guard` 或使用导弹子机时返回 `false`。传入地图可用范围内的整数格坐标。无效坐标会引发 Lua 参数错误。集合点命令和 Lua 以最后生效的一次为准。Lua 只修改子机警戒格，工厂生产单位仍前往原有的出厂集合点。警戒格随对局存档保存。
+成功返回 `true`。单位无法接受指令、母体未配置为 `Guard` 或使用导弹子机时返回 `false`。传入地图可用范围内的整数格坐标。无效坐标会引发 Lua 参数错误。集合点命令和 Lua 以最后生效的一次为准。Lua 只修改子机警戒格，工厂生产单位仍前往原有的出厂集合点。警戒格随对局存档保存。
 
 修改规则后重启游戏，让引擎重新加载 `rulesmd.ini`。ActSp 在新局和读档时清空行为缓存。环绕相位由游戏帧和原版槽位序号计算。联机时所有玩家应使用同一份 DLL 和游戏规则。单机和读档回归入口为 `tests/run.ps1 -Case actsp`。双客户端测试使用 `tests/run-multiplayer.ps1` 的 `-ActSp` 参数，会比较双方每帧状态并检查子机实际飞过的坐标。
 
@@ -74,4 +76,4 @@ BetterGarrison.FireRateMultiplier=1.25
 
 全局启用后，可在建筑类型节用同名字段逐项覆盖这三项加成。省略的字段继承 `[General]` 的值。配置示例见[高级驻军参数](../../docs/manual/actsp.md#advanced-garrison)。
 
-依赖专用 `OccupyWeapon` 的建筑可在其建筑类型节填写 `BetterGarrison.Enabled=no`，保留原版驻扎开火。所有联机玩家应加载同一版 ActSp 和同一份规则。
+依赖专用 `OccupyWeapon` 的建筑可在其建筑类型节填写 `BetterGarrison.Enabled=no`，保留原版驻扎开火。所有联机玩家应加载同一版流火和同一份规则。

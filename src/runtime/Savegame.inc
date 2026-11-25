@@ -948,7 +948,7 @@ DEFINE_HOOK(0x67D074, SF_SaveStorage, 6) {
         return 0x67D08F;
     const bool ok=saveState(stream) && SUCCEEDED(stream->Commit(STGC_DEFAULT));
     stream->Release();
-    return ok ? 0 : 0x67D08F;
+    return ok && ActSp::save(storage) ? 0 : 0x67D08F;
 }
 
 // Object load and scenario resets have finished; the source IStorage is still open.
@@ -971,10 +971,10 @@ DEFINE_HOOK(0x67E67B, SF_LoadStorage, 5) {
         std::ofstream("Starfall.log",std::ios::app)<<"Starfall: cannot open saved state, HRESULT "<<std::hex<<opened<<"\n";
         valid=false;
     }
-    if(!valid) {
+    if(!valid || !ActSp::load(storage)) {
         // Native objects have already been loaded. Continuing or returning to the
         // old scenario here would leave engine and extension state inconsistent.
-        MessageBoxW(nullptr,L"流火存档数据损坏或版本不受支持，无法继续载入。\n游戏将关闭；请查看 Starfall.log，并使用匹配的版本或其他存档。",
+        MessageBoxW(nullptr,L"流火或特殊行为子模块的存档数据损坏或版本不受支持，无法继续载入。\n游戏将关闭；请使用匹配的版本或其他存档。",
             L"Starfall：读档失败",MB_OK|MB_ICONERROR);
         ExitProcess(EXIT_FAILURE);
     }

@@ -57,7 +57,7 @@ void captureOutpost(CoordStruct center) {
     surface->Unlock();
 }
 }
-DEFINE_HOOK(0x6FF66C,ActSp_TestGrizzlyCannon,6) {
+DEFINE_HOOK(0x6FF672,ActSp_TestGrizzlyCannon,10) {
     auto firer=R->ESI<TechnoClass*>();
     if(grizzlyId && firer->UniqueID==grizzlyId && firer->Target && firer->Target->UniqueID==grizzlyTargetId)
         grizzlyShot=true;

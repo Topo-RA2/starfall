@@ -2,9 +2,11 @@
 #include <MapClass.h>
 #include <TargetClass.h>
 #include <Unsorted.h>
+#include "ActSp.h"
 #include "GroundGuards.h"
 #include "GuardPoints.h"
 #include "BetterGarrison.h"
+#include "HighPlatforms.h"
 
 namespace GroundGuards {
 std::map<DWORD,Slot> slots;
@@ -112,13 +114,13 @@ void update(BuildingClass* post,const Config& config,DWORD frame) {
 }
 }
 
-DEFINE_HOOK(0x55B4E1,ActSp_GroundGuardFrame,5) {
+void ActSp::tick() {
+    HighPlatforms::tick();
     BetterGarrison::tick();
     DWORD frame=Unsorted::CurrentFrame;
-    if(frame%8) return 0;
+    if(frame%8) return;
     for(auto post:BuildingClass::Array) {
         if(!post) continue;
         if(auto config=GroundGuards::config(post)) GroundGuards::update(post,*config,frame);
     }
-    return 0;
 }

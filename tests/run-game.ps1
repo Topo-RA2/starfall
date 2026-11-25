@@ -66,7 +66,6 @@ if ($Case -eq 'conversion') {
     [IO.File]::WriteAllText((Join-Path $run 'rules_include.ini'),"[#include]`r`n1=rules_triumph.ini`r`n2=SpawnRules.ini`r`n")
 }
 if ($Case -eq 'actsp') {
-    Copy-Item -LiteralPath (Join-Path $root 'build/ActSp.dll') -Destination $run
     Copy-Item -LiteralPath (Join-Path $fixture 'Guard.lua') -Destination $run
     # The test game's rulesmd.ini includes rules_include.ini through Ares.
     $rules=[IO.File]::ReadAllText((Join-Path $fixture 'rules_include.ini')).Replace('1=rules_triumph.ini',"1=rules_triumph.ini`r`n2=GrizzlyOutpost.rules.ini")
@@ -77,6 +76,14 @@ if ($Case -eq 'actsp') {
         Copy-Item -LiteralPath (Join-Path $grizzly $name) -Destination $run
     }
     [IO.File]::WriteAllText((Join-Path $run 'art_include.ini'),"[#include]`r`n1=art_triumph.ini`r`n2=GrizzlyOutpost.art.ini`r`n")
+}
+if ($Case -eq 'high-platform') {
+    Copy-Item -LiteralPath (Join-Path $fixture 'rules_include.ini') -Destination $run
+    [IO.File]::WriteAllText((Join-Path $run 'art_include.ini'),"[#include]`r`n1=art_triumph.ini`r`n2=HighPlatform.art.ini`r`n")
+    $platform=Join-Path $root 'examples/HighPlatform'
+    foreach ($name in 'HighPlatform.rules.ini','HighPlatform.art.ini','ashighpl.shp','ashplmk.shp','aspltem.pal','asplsno.pal','asplurb.pal','aspldes.pal','asplubn.pal','aspllun.pal') {
+        Copy-Item -LiteralPath (Join-Path $platform $name) -Destination $run
+    }
 }
 if ($Case -eq 'research-grant') {
     Copy-Item -LiteralPath (Join-Path $root "build/tests/$Case/ResearchApiClient.dll") -Destination $run
@@ -237,13 +244,9 @@ foreach ($phase in $phases) {
     $report = Join-Path $run $logName
     [IO.File]::WriteAllText($report,'')
     $modules=@('Starfall.dll')
-    if ($Case -eq 'actsp') { $modules+='ActSp.dll' }
     $extensions=if ($StandaloneSpawner) { @('CnCNet-Spawner.dll') } elseif($SpawnerOverride) { @('Ares.dll','CnCNet-Spawner.dll','Phobos.dll') } elseif ($Case -eq 'action-sequence' -and !$PhobosPackageDirectory) { @('cncnet5.dll') } else { @('Ares.dll','cncnet5.dll','Phobos.dll') }
     $modules+=@($extensions | Where-Object { Test-Path -LiteralPath (Join-Path $run $_) -PathType Leaf })
     $imports=($modules | ForEach-Object { '-i='+$_ }) -join ' '
-    if ($Case -eq 'actsp') {
-        & (Join-Path $PSScriptRoot 'check-hook-ranges.ps1') -Primary (Join-Path $run 'ActSp.dll') -Extensions @($modules | Where-Object {$_ -ne 'ActSp.dll'} | ForEach-Object {Join-Path $run $_})
-    }
     $gameArgs=if ($StandaloneSpawner -or $SpawnerOverride) {'-SPAWN -LOG -CD'} else {'-SPAWN -LOG -CD -WIN'}
     $arguments='gamemd.exe '+$imports+' --args="'+$gameArgs+'" --nodetach'
     Write-Host "$Case/$phase module order: $($modules -join ' -> ')"

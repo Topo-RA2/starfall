@@ -13,7 +13,9 @@
 #include <optional>
 #include <tuple>
 #include <vector>
+#include "ActSp.h"
 #include "BetterGarrison.h"
+#include "HighPlatforms.h"
 
 namespace BetterGarrison {
 std::map<DWORD,Order> orders;
@@ -345,16 +347,16 @@ void tick() {
 
 using namespace BetterGarrison;
 
-extern "C" __declspec(dllexport) BOOL __cdecl ActSp_IsBetterGarrisonOccupant(TechnoClass* unit) {
-    if(!unit || !unit->InLimbo || unit->WhatAmI()!=AbstractType::Infantry) return FALSE;
+bool BetterGarrison::isOccupant(TechnoClass* unit) {
+    if(!unit || !unit->InLimbo || unit->WhatAmI()!=AbstractType::Infantry) return false;
     auto found=occupied.find(unit->UniqueID);
-    if(found==occupied.end()) return FALSE;
+    if(found==occupied.end()) return false;
     auto post=found->second.As_Building();
-    if(!post || !post->IsAlive || !post->IsOnMap) return FALSE;
+    if(!post || !post->IsAlive || !post->IsOnMap) return false;
     auto infantry=static_cast<InfantryClass*>(unit);
-    if(!resident(post,infantry)) return FALSE;
-    for(auto occupant:post->Occupants) if(occupant==infantry) return TRUE;
-    return FALSE;
+    if(!resident(post,infantry)) return false;
+    for(auto occupant:post->Occupants) if(occupant==infantry) return true;
+    return false;
 }
 
 // Disable the virtual test for legacy garrison fire; entry, exit and pips use the occupant list.
@@ -442,20 +444,19 @@ DEFINE_HOOK(0x4AB34A,ActSp_GarrisonAttackPointer,8) {
     return 0x4AB525;
 }
 
-DEFINE_HOOK(0x4C7225,ActSp_GarrisonAttackOrder,5) {
-    auto post=abstract_cast<BuildingClass*>(R->EDI<TechnoClass*>());
-    if(!post || !post->Occupants.Count || !post->Owner || !enabled(post)) return 0;
-    auto event=R->ESI<EventClass*>();
+void BetterGarrison::applyOrder(TechnoClass* unit,EventClass* event) {
+    auto post=abstract_cast<BuildingClass*>(unit);
+    if(!post || !post->Occupants.Count || !post->Owner || !enabled(post)) return;
     if(event->MegaMission.Mission!=static_cast<BYTE>(Mission::Attack)) orders.erase(post->UniqueID);
     else if(auto target=resolveTarget(event->MegaMission.Target); checkCommand(post,target,false)==FireError::OK) {
         const auto reference=TargetClass(target);
         orders[post->UniqueID]={post->Owner->ArrayIndex,reference.m_ID,static_cast<AbstractType>(reference.m_RTTI)};
     }
-    return 0;
 }
 
-DEFINE_HOOK(0x4C757D,ActSp_GarrisonStopOrder,6) {
-    auto object=R->ESI<TechnoClass*>();
-    if(object) orders.erase(object->UniqueID);
-    return 0;
+void ActSp::stopOrder(TechnoClass* object) {
+    if(object) {
+        orders.erase(object->UniqueID);
+        HighPlatforms::forgetEntry(object->UniqueID);
+    }
 }

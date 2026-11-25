@@ -7,16 +7,17 @@
 - [Overview and installation](#overview-and-installation)
 - [Drone behavior](#drone-behavior)
 - [Advanced garrison](#advanced-garrison)
+- [Raised platform](#raised-platform)
 
 ## Special behavior submodule
 
 ### Overview and installation
 
-ActSp is an optional companion DLL that adds patrol modes for native aircraft spawns, vehicle guards for buildings, and independent occupant fire for garrisons.
+ActSp is built into `Starfall.dll`. It adds patrol modes for native aircraft spawns, vehicle guards for buildings, independent occupant fire for garrisons, and constructible raised platforms. Each feature uses its rules settings to determine where it applies.
 
-To build it from source, run `modules\ActSp\build.cmd` from the repository root. Place the resulting `build/ActSp.dll` beside `gamemd.exe` and append `-i=ActSp.dll` to the SyringeEx launch configuration. When using these extensions together, load `Starfall.dll`, `ActSp.dll`, Ares, and Phobos in that order.
+Run `build.cmd` from the repository root to build `build/Starfall.dll`. Place it beside `gamemd.exe` and load it with SyringeEx. When upgrading from a two-DLL installation, move the old `ActSp.dll` out of the game directory and remove `-i=ActSp.dll` from the launch configuration.
 
-Add the fields below to `rulesmd.ini`. ActSp reads the engine's merged rules. All multiplayer peers need the same ActSp version and rules. [ActSp module guide](../../modules/ActSp/README.md)
+Add the fields below to `rulesmd.ini`. ActSp reads the engine's merged rules. All multiplayer peers need the same `Starfall.dll` and rules. [ActSp module guide](../../modules/ActSp/README.md)
 
 ### Drone behavior
 
@@ -92,7 +93,7 @@ Once assigned a guard cell, the building deploys the vehicle from a passable emp
 
 Set `Drone.GuardCell=x,y` in the type section for an initial guard cell. During play, select a friendly `Guard` building and use the normal rally point control to assign a cell shared by its spawn slots. Choose a reachable cell for a ground vehicle.
 
-With Starfall and ActSp loaded, Lua can call `unit:setDroneGuardCell({x=84, y=71})` or pass `ctx.point`. The method accepts integer coordinates in the playable map and returns `true` if the order is accepted. It returns `false` if ActSp is absent or the unit cannot accept the order. The most recent rally or Lua order wins. A Lua order updates the guard cell while normal factory production uses the factory's rally point. Guard cells survive save/load.
+Lua can call `unit:setDroneGuardCell({x=84, y=71})` or pass `ctx.point`. The method accepts integer coordinates in the playable map. It returns `true` if the unit accepts the order and `false` otherwise. The most recent rally or Lua order wins. A Lua order updates the guard cell while normal factory production uses the factory's rally point. Guard cells survive save/load.
 
 ### Advanced garrison
 
@@ -133,3 +134,17 @@ BetterGarrison.FireRateMultiplier=(number)
 ; Default: 1.0. Accepted range: 0.01..100.
 
 ```
+
+### Raised platform
+
+Set `HighPlatform.Enabled=yes` on a building type with the custom 6×6 ring foundation in the example. The platform occupies the 20 perimeter cells. ActSp raises the interior 4×4 deck by four terrain levels. Both the deck and the perimeter must be unoccupied level clear terrain or road.
+
+Other buildings can be placed with their entire foundation on the deck, subject to the normal build radius. Units placed on the deck can travel across it. The perimeter is closed to ground movement and construction. A ground attacker below the deck cannot acquire or fire on a grounded deck target with a projectile that has `SubjectToCliffs=yes`. Force-firing at a deck cell follows the same rule. Selling or destroying the platform reopens the perimeter, restores the original terrain, destroys the buildings on the deck, and drops ground units to their deaths.
+
+Click a visible retaining wall to select the high platform or issue an attack against it. Click occupants on the deck to select or target them individually. Wall attacks use the controller as the target and follow the weapon's normal rules.
+
+Select your ground infantry or vehicles and click a wall of your high platform with the Enter cursor. They walk to a reachable cell outside the perimeter and transfer to free space on the deck. They wait outside while the deck is full. Stop or give them another order to cancel. To bring down your deck units, select the platform and press the Deploy key (D by default) or use the Deploy cursor on the platform. Units wait on the deck if all suitable ground cells are occupied.
+
+`HighPlatform.Enter` defaults to `yes`. Set it to `no` in the platform's building type section to close its entrance, or in an infantry or vehicle type section to keep that type from entering any high platform. The setting only controls entry. Deploy can still bring down units on the deck.
+
+The platform uses the building's normal SHP and palette. Set `CanHideThings=no` in its art section to keep the platform from marking deck occupants as hidden behind a building. The [concrete platform example](../../examples/HighPlatform/README.md) supplies the art and rules for a buildable Soviet platform.

@@ -1772,8 +1772,14 @@ Script.Param.Radius=3</code></pre>
 <p>伊文贴附炸弹可在安放武器上用 Ares 的 <code>IvanBomb.Warhead</code> 指定引爆弹头，再把 Lua 写在该弹头上。这样可以让科技替换武器，普通伊文继续使用普通炸弹，成功拆弹也不会触发烟花。</p>
 <div class="pager"><a href="#weapon-fire-script"><small>上一节</small>← 武器开火脚本</a><a href="#actsp"><small>下一节</small>模块介绍与安装 →</a></div></article>
 <article id="actsp" data-title="模块介绍与安装" data-group="特殊行为子模块"><div class="crumb">规则手册 <span>/</span> 特殊行为子模块</div><h2 id="actsp-install">模块介绍与安装</h2>
-<p id="actsp-overview">ActSp 是流火的可选扩展模块。它可以让飞行子机警戒、跟随或环绕母体，让建筑派出地面守卫，也可以让驻扎步兵各自使用自己的武器向外开火。</p>
-<p id="actsp-load">将 <code>ActSp.dll</code> 放入游戏目录，在 SyringeEx 启动配置中追加 <code>-i=ActSp.dll</code>。与流火合用时，加载顺序为 <code>Starfall.dll</code>、<code>ActSp.dll</code>、Ares、Phobos。以下配置写入 <code>rulesmd.ini</code>。联机玩家需使用同一版本的 ActSp 和同一份规则。</p>
+<p id="actsp-overview">ActSp 是内置于 <code>Starfall.dll</code> 的特殊行为子模块。它可以让飞行子机警戒、跟随或环绕母体，让建筑派出地面守卫，让驻扎步兵使用自己的武器向外开火，并支持可建造的高台。</p>
+<p id="actsp-load">按流火的安装方式加载 <code>Starfall.dll</code>，在 <code>rulesmd.ini</code> 启用所需功能。从双 DLL 版本升级时，将旧 <code>ActSp.dll</code> 移出游戏目录，并删除启动配置中的 <code>-i=ActSp.dll</code>。联机玩家应使用同一份 <code>Starfall.dll</code> 和规则。</p>
+<h3 id="actsp-raised-platform">可建造高台</h3>
+<p>在建筑类型节设置 <code>HighPlatform.Enabled=yes</code>，并采用示例中的 6×6 环形地基。外圈 20 格禁止地面单位通行和建造，内部 4×4 台面抬高四级。整片区域须为同高的空地或道路。台面上的建筑须完全落在台面内，同时遵守原版建造距离。高台外观使用建筑的 SHP 和调色板。</p>
+<p>下方地面单位使用 <code>SubjectToCliffs=yes</code> 的抛射体时，无法自动锁定或攻击台面上的地面目标。强制攻击台面格也受崖边限制。出售或摧毁高台会解封外圈、恢复地形、摧毁台面建筑，并让地面单位坠落阵亡。示例位于项目中的 <code>examples/HighPlatform</code>。</p>
+<p>点击可见墙面可以选中己方高台，或向敌方高台下达攻击指令。点击台面上的单位和建筑会选取对应对象，攻击遵守武器原有的目标限制。</p>
+<p>选中自己的地面步兵或载具，使用「进入」指针点击己方高台墙面。单位会走到外圈之外可到达的格子，再进入台面空位。台面已满时，单位会在墙外等待。下达停止或其他指令可取消。选中高台后，按部署键（默认 D）或使用「部署」指针点击高台，可将自己的台面单位送到墙外。墙外没有合适空位时，单位留在台面上。</p>
+<p><code>HighPlatform.Enter</code> 默认为 <code>yes</code>。在高台的建筑类型节设为 <code>no</code> 可关闭该高台的入口。在步兵或载具类型节设为 <code>no</code> 可禁止该类型进入任何高台。此设置只控制上台，台面上的单位仍能通过部署下台。</p>
 <div class="pager"><a href="#warheads-detonate-script"><small>上一节</small>← 弹头引爆执行脚本</a><a href="#actsp-drone-behavior"><small>下一节</small>子机行为 →</a></div></article>
 <article id="actsp-drone-behavior" data-title="子机行为" data-group="特殊行为子模块"><div class="crumb">规则手册 <span>/</span> 特殊行为子模块</div><h2>子机行为</h2>
 <h3 id="actsp-flying-drones">飞行子机</h3>
@@ -1798,7 +1804,7 @@ Drone.GuardRange=5</code></pre></figure>
 <p id="actsp-ground-respawn">设定警戒格后，建筑从紧邻占地的可通行空格派车。出口被堵时等待空位。守卫使用载具原有的寻路、炮塔和武器。<code>Drone.GroundRespawnDelay</code> 是守卫损失后的补员延迟，默认为 300 游戏帧，可填 0–1000000。建筑易主后，原守卫归原主人，新主人按补员延迟派车。建筑被拆除或摧毁后，存活的守卫成为普通单位。警戒格、守卫关系和补员时间会随对局存档保存。</p>
 <h3 id="actsp-guard-cell">设置警戒格</h3>
 <p>可在母体类型节写 <code>Drone.GuardCell=84,71</code> 配置默认位置。对局中可选中己方警戒建筑，按设置工厂集合点的方式点击地图。建筑的各槽位共用该警戒格。地面守卫应使用可通行的位置。</p>
-<p id="actsp-guard-lua">同时加载流火和 ActSp 后，Lua 可用 <code>unit:setDroneGuardCell({x=84, y=71})</code> 为 <code>Guard</code> 模式的母体设置警戒格，也可传入地面点选技能的 <code>ctx.point</code>。接受指令时返回 <code>true</code>，缺少 ActSp 或母体不符合条件时返回 <code>false</code>。应传入地图有效范围内的整数格坐标。集合点与 Lua 以最后一次生效的指令为准，Lua 仅调整子机警戒格，工厂产出的单位仍前往出厂集合点。</p>
+<p id="actsp-guard-lua">Lua 可用 <code>unit:setDroneGuardCell({x=84, y=71})</code> 为 <code>Guard</code> 模式的母体设置警戒格，也可传入地面点选技能的 <code>ctx.point</code>。接受指令时返回 <code>true</code>，母体不符合条件时返回 <code>false</code>。应传入地图有效范围内的整数格坐标。集合点与 Lua 以最后一次生效的指令为准，Lua 仅调整子机警戒格，工厂产出的单位仍前往出厂集合点。</p>
 <div class="pager"><a href="#actsp"><small>上一节</small>← 模块介绍与安装</a><a href="#better-garrison"><small>下一节</small>高级驻军 →</a></div></article>
 <article id="better-garrison" data-title="高级驻军" data-group="特殊行为子模块"><div class="crumb">规则手册 <span>/</span> 特殊行为子模块</div><h2>高级驻军</h2>
 <p>在 <code>rulesmd.ini</code> 的 <code>[General]</code> 节启用高级驻扎后，允许驻扎开火的建筑由步兵使用自己的乘员武器，各自选敌、开火和装填。武器选择遵循 <code>OpenTransportWeapon</code> 和 <code>FireInTransport</code>。建筑能手动点选的攻击目标由最早入驻且仍在场的步兵的武器决定。建筑类型节可写 <code>BetterGarrison.Enabled=no</code> 保留原版驻扎武器。</p>

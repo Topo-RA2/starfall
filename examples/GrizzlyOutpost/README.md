@@ -8,7 +8,7 @@
 
 ## 安装到已有模组
 
-1. 将 `ActSp.dll`、`asgrdrn.vxl` 和 `asgrdrn.hva` 放到游戏根目录。在现有 SyringeEx 启动参数中加入 `-i=ActSp.dll`。示例使用 Ares 的规则引入功能和 Phobos 的单发航空武器设置。
+1. 按[流火安装说明](../../README.md#运行与测试)加载包含 ActSp 的 `Starfall.dll`。将 `asgrdrn.vxl` 和 `asgrdrn.hva` 放到游戏根目录。示例使用 Ares 的规则引入功能和 Phobos 的单发航空武器设置。
 2. 将 `GrizzlyOutpost.rules.ini` 和 `GrizzlyOutpost.art.ini` 放在游戏根目录。在现有 `rulesmd.ini` 的 `[#include]` 节用一个空闲编号引入 `GrizzlyOutpost.rules.ini`，在 `artmd.ini` 的同名节引入 `GrizzlyOutpost.art.ini`。例如两个文件各自都有空闲的编号 50 时，分别写入 `50=GrizzlyOutpost.rules.ini` 和 `50=GrizzlyOutpost.art.ini`。也可以将两个片段的条目分别合并到对应规则和美术文件。
 3. 重启游戏并开一局盟军遭遇战。在防御栏找到造价 1000 的 **Grizzly Outpost**，建好后给它设置集合点。
 

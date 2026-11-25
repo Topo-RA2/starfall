@@ -3,9 +3,11 @@
 #include <MapClass.h>
 #include <map>
 #include <set>
+#include "ActSp.h"
 #include "GuardPoints.h"
 #include "GroundGuards.h"
 #include "BetterGarrison.h"
+#include "HighPlatforms.h"
 
 namespace {
 std::map<DWORD,CellStruct> overrides;
@@ -15,11 +17,6 @@ constexpr DWORD formatVersion=4;
 bool playable(CellStruct cell) {
     return cell.X>=0 && cell.X<512 && cell.Y>=0 && cell.Y<512 &&
            MapClass::Instance.IsWithinUsableArea(cell,false) && MapClass::Instance.TryGetCellAt(cell);
-}
-bool setPoint(TechnoClass* owner,CellStruct cell) {
-    if(!GuardPoints::eligible(owner) || !playable(cell)) return false;
-    overrides[owner->UniqueID]=cell;
-    return true;
 }
 bool needsRallyCommand(BuildingClass* building) {
     return building->Owner && building->Owner->IsControlledByCurrentPlayer() &&
@@ -110,12 +107,10 @@ CellStruct GuardPoints::station(DWORD ownerId,CellStruct fallback) {
     auto found=overrides.find(ownerId);
     return found==overrides.end()?fallback:found->second;
 }
-void GuardPoints::reset() { overrides.clear(); GroundGuards::slots.clear(); BetterGarrison::reset(); }
-
-// The Starfall Lua host resolves this optional export only for a live unit handle.
-extern "C" __declspec(dllexport) BOOL __cdecl ActSp_SetDroneGuardCell(TechnoClass* owner,int x,int y) {
-    if(x<0 || x>=512 || y<0 || y>=512) return FALSE;
-    return setPoint(owner,{static_cast<short>(x),static_cast<short>(y)});
+bool GuardPoints::set(TechnoClass* owner,CellStruct cell) {
+    if(!eligible(owner) || !playable(cell)) return false;
+    overrides[owner->UniqueID]=cell;
+    return true;
 }
 
 // BuildingClass::MouseOverCell has already decided on attack/force-fire and other special actions.
@@ -144,39 +139,47 @@ DEFINE_HOOK(0x4C6DD3,ActSp_ApplyGuardRally,8) {
     auto& target=R->ESI<EventClass*>()->Archive.Whom2;
     if(owner->WhatAmI()==AbstractType::Building && owner->CurrentMission!=Mission::Selling &&
        target.m_RTTI==static_cast<unsigned char>(AbstractType::Cell)) {
-        if(auto cell=target.As_Cell()) setPoint(owner,cell->MapCoords);
+        if(auto cell=target.As_Cell()) GuardPoints::set(owner,cell->MapCoords);
     }
     return 0;
 }
 
-DEFINE_HOOK(0x6F4500,ActSp_ForgetGuardPoint,5) {
-    auto id=R->ECX<TechnoClass*>()->UniqueID;
+void ActSp::reset() {
+    GuardPoints::clearProfiles();
+    overrides.clear();
+    GroundGuards::slots.clear();
+    BetterGarrison::reset();
+    HighPlatforms::reset();
+}
+
+void ActSp::forget(DWORD id) {
     overrides.erase(id);
     GroundGuards::slots.erase(id);
     BetterGarrison::orders.erase(id);
-    return 0;
+    HighPlatforms::forget(id);
 }
-DEFINE_HOOK(0x67D074,ActSp_SaveGuardPoints,6) {
-    auto storage=R->EAX<IStorage*>();
+
+bool ActSp::save(IStorage* storage) {
     IStream* stream=nullptr;
     if(FAILED(storage->CreateStream(streamName,STGM_CREATE|STGM_WRITE|STGM_SHARE_EXCLUSIVE,0,0,&stream)))
-        return 0x67D08F;
-    bool ok=writePoints(stream);
+        return false;
+    const bool ok=writePoints(stream);
     stream->Release();
-    return ok?0:0x67D08F;
+    return ok && HighPlatforms::save(storage);
 }
-DEFINE_HOOK(0x67E67B,ActSp_LoadGuardPoints,5) {
+
+bool ActSp::load(IStorage* storage) {
     GuardPoints::clearProfiles();
     BetterGarrison::reset();
-    auto storage=R->Stack<IStorage*>(0x18);
+    if(!storage || !HighPlatforms::load(storage)) return false;
     IStream* stream=nullptr;
     HRESULT status=storage->OpenStream(streamName,nullptr,STGM_READ|STGM_SHARE_EXCLUSIVE,0,&stream);
-    if(status==STG_E_FILENOTFOUND) { GuardPoints::reset(); return 0; }
-    bool ok=SUCCEEDED(status) && readPoints(stream);
-    if(stream) stream->Release();
-    if(!ok) {
-        MessageBoxW(nullptr,L"无法读取子机警戒格。请检查存档和 ActSp 版本。",L"ActSp",MB_OK|MB_ICONERROR);
-        ExitProcess(EXIT_FAILURE);
+    if(status==STG_E_FILENOTFOUND) {
+        overrides.clear();
+        GroundGuards::slots.clear();
+        return true;
     }
-    return 0;
+    const bool ok=SUCCEEDED(status) && readPoints(stream);
+    if(stream) stream->Release();
+    return ok;
 }

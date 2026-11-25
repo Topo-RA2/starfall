@@ -1,5 +1,7 @@
 #include "VisualScale.h"
+#include "ForceMove.h"
 #include <FootClass.h>
+#include <UnitClass.h>
 #include <AnimClass.h>
 #include <BuildingClass.h>
 #include <DisplayClass.h>
@@ -10,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace VisualScale {
@@ -78,7 +81,7 @@ static int animationPercent(ObjectClass* object) {
 }
 namespace {
 using Bytes=std::vector<BYTE>;
-using FrameKey=std::tuple<SHPStruct*,int,int,int,int>;
+using FrameKey=std::tuple<SHPStruct*,int,int,int,int,bool>;
 std::map<FrameKey,Bytes> sprites;
 size_t cacheBytes=0;
 int cacheFrame=-1;
@@ -86,7 +89,37 @@ int cacheFrame=-1;
 int scaled(int value,int percent) {
     return static_cast<int>(std::lround(value*(percent/100.0)));
 }
-bool appendFrame(SHPStruct* source,SHPFile* file,int index,int scale,int slot,int canvasW,int canvasH,Bytes& output) {
+// Some infantry art paints its contact shadow into the body with palette
+// index 12. The same index can occur on the weapon. Only remove a broad,
+// shallow patch connected to the very bottom of the visible silhouette.
+void removeContactShadow(Bytes& pixels,int width,int height) {
+    constexpr BYTE ink=12;
+    const auto last=std::find_if(pixels.rbegin(),pixels.rend(),[](BYTE p){return p!=0;});
+    if(last==pixels.rend()) return;
+    const int bottom=static_cast<int>(pixels.size()-1-(last-pixels.rbegin()))/width;
+    const auto base=pixels.begin()+bottom*width;
+    if(std::find(base,base+width,ink)==base+width) return;
+    Bytes seen(pixels.size());
+    std::vector<int> patch;
+    for(int x=0;x<width;++x) {
+        const int start=bottom*width+x;
+        if(pixels[start]!=ink || seen[start]) continue;
+        patch.assign(1,start);seen[start]=1;
+        int left=x,right=x,top=bottom;
+        for(size_t i=0;i<patch.size();++i) {
+            int px=patch[i]%width,py=patch[i]/width;
+            left=std::min(left,px);right=std::max(right,px);top=std::min(top,py);
+            for(int y=std::max(0,py-1);y<=std::min(bottom,py+1);++y)
+                for(int nx=std::max(0,px-1);nx<=std::min(width-1,px+1);++nx) {
+                    int n=y*width+nx;
+                    if(!seen[n] && pixels[n]==ink) {seen[n]=1;patch.push_back(n);}
+                }
+        }
+        if(top>bottom/2 && right-left+1>=std::max(4,width/3) && right-left>bottom-top)
+            for(int n:patch) pixels[n]=0;
+    }
+}
+bool appendFrame(SHPStruct* source,SHPFile* file,int index,int scale,int slot,int canvasW,int canvasH,Bytes& output,bool cleanBody=false) {
     if(index>=file->Frames) return true;
     auto h=file->GetFrameHeader(index);
     if(!h.Offset || !h.Width || !h.Height) return true;
@@ -108,13 +141,11 @@ bool appendFrame(SHPStruct* source,SHPFile* file,int index,int scale,int slot,in
         stride=src[0]+256*src[1]-2; src+=2;
         if(stride<0 || stride>h.Width) return false;
     }
-    Bytes row(h.Width);
-    const int offset=static_cast<int>(output.size());
-    for(int y=0,outY=y0;y<h.Height && outY<y1;++y) {
+    auto readRow=[&](BYTE* row) {
         if(format==3) {
             int size=src[0]+256*src[1];
             if(size<2 || size>2*h.Width+2) return false;
-            std::fill(row.begin(),row.end(),0);
+            std::fill_n(row,h.Width,0);
             int x=0;
             for(int i=2;i<size;) {
                 BYTE pixel=src[i++];
@@ -130,8 +161,21 @@ bool appendFrame(SHPStruct* source,SHPFile* file,int index,int scale,int slot,in
             }
             src+=size;
         } else {
-            std::copy_n(src,stride,row.begin());src+=stride;
+            std::copy_n(src,stride,row);src+=stride;
         }
+        return true;
+    };
+    Bytes body,line(h.Width);
+    if(cleanBody) {
+        body.resize(h.Width*h.Height);
+        for(int y=0;y<h.Height;++y)
+            if(!readRow(body.data()+y*h.Width)) return false;
+        removeContactShadow(body,h.Width,h.Height);
+    }
+    const int offset=static_cast<int>(output.size());
+    for(int y=0,outY=y0;y<h.Height && outY<y1;++y) {
+        const BYTE* row=cleanBody?body.data()+y*h.Width:line.data();
+        if(!cleanBody && !readRow(line.data())) return false;
         while(outY<y1 && sample(outY,h.Height,height)==y) {
             size_t start=output.size();
             output.resize(start+2);
@@ -158,13 +202,13 @@ bool appendFrame(SHPStruct* source,SHPFile* file,int index,int scale,int slot,in
 }
 // The native SHP drawer requests the shadow at frame + Frames/2. Supply a
 // two-frame shape, keeping palette indices and the center of the original canvas.
-SHPStruct* framePair(SHPStruct* source,int index,int scale) {
+SHPStruct* framePair(SHPStruct* source,int index,int scale,bool cleanBody=false) {
     if(!source || index<0 || index>=source->Frames) return nullptr;
     if(cacheBytes>8*1024*1024 && cacheFrame!=Unsorted::CurrentFrame) clearSprites();
     cacheFrame=Unsorted::CurrentFrame;
     auto canvas=[&](int original,int screen){return std::clamp(scaled(original,scale),1,std::min(32000,2*(screen+512)));};
     int width=canvas(source->Width,DSurface::ViewBounds.Width),height=canvas(source->Height,DSurface::ViewBounds.Height);
-    FrameKey key{source,index,scale,width,height};
+    FrameKey key{source,index,scale,width,height,cleanBody};
     auto cached=sprites.find(key);
     if(cached==sprites.end()) {
         auto file=source->GetData();
@@ -173,7 +217,7 @@ SHPStruct* framePair(SHPStruct* source,int index,int scale) {
         short header[]={0,static_cast<short>(width),static_cast<short>(height),2};
         static_assert(sizeof(header)==sizeof(SHPStruct) && sizeof(SHPFrame)==24);
         memcpy(data.data(),header,sizeof(header));
-        if(!appendFrame(source,file,index,scale,0,width,height,data) ||
+        if(!appendFrame(source,file,index,scale,0,width,height,data,cleanBody) ||
            !appendFrame(source,file,index+file->Frames/2,scale,1,width,height,data)) return nullptr;
         cacheBytes+=data.size();
         cached=sprites.emplace(key,std::move(data)).first;
@@ -198,7 +242,37 @@ DEFINE_HOOK(0x6D5284,SF_PlacementScaleBegin,6) {
 DEFINE_HOOK(0x6D5290,SF_PlacementScaleEnd,5) {
     VisualScale::placementScale=100;return 0;
 }
+namespace {
+struct LiftedSpriteDraw {
+    Surface* scene;
+    int lift;
+    Point2D shadow;
+};
+LiftedSpriteDraw* liftedSprite=nullptr;
+}
+// Vanilla and Ares choose different passes for SHP vehicle shadows. Keep
+// their choice and offset only the shadow blit that reaches the scene.
+DEFINE_HOOK(0x73D361,SF_LiftedSpriteVehicleDraw,6) {
+    auto unit=R->ESI<UnitClass*>();
+    const int lift=ForceMove::screenLift(unit);
+    if(!lift && !liftedSprite) return 0;
+    LiftedSpriteDraw draw{DSurface::Temp,lift,{}};
+    auto previous=std::exchange(liftedSprite,lift?&draw:nullptr);
+    unit->DrawAsSHP(R->Stack<Point2D>(0x1C),*R->EBX<RectangleStruct*>(),R->EBP<int>(),0);
+    liftedSprite=previous;
+    return 0x73D395;
+}
 DEFINE_HOOK(0x4AED70,SF_PlacementShapeScale,6) {
+    if(liftedSprite && R->ECX<Surface*>()==liftedSprite->scene &&
+       (R->Stack<DWORD>(0x14)&static_cast<DWORD>(BlitterFlags::Darken))) {
+        auto shape=R->Stack<SHPStruct*>(4);
+        const int frame=R->Stack<int>(8);
+        if(shape && frame>=shape->Frames/2 && frame<shape->Frames) {
+            liftedSprite->shadow=*R->Stack<Point2D*>(0xC);
+            liftedSprite->shadow.Y+=liftedSprite->lift;
+            R->Stack(0xC,&liftedSprite->shadow);
+        }
+    }
     if(VisualScale::placementScale!=100) {
         if(auto shape=VisualScale::framePair(R->Stack<SHPStruct*>(4),R->Stack<int>(8),VisualScale::placementScale)) {
             R->Stack(4,shape);R->Stack<int>(8,0);
@@ -338,11 +412,25 @@ struct ScaledBlit {
 ScaledBlit& scaledBlit() {static ScaledBlit blit;return blit;}
 }
 
+// Shrink the shared body transform before either the native or a deferred
+// renderer receives the voxels. Turret/barrel offsets derive from this matrix.
+// The type-wide voxel cache is keyed by facing, not by per-unit scale.
+DEFINE_HOOK(0x73B5DB, SF_ShrinkUnitVoxel, 9) {
+    const int scale=VisualScale::percent(R->EBP<UnitClass*>()->UniqueID);
+    if(scale<100) {
+        reinterpret_cast<Matrix3D*>(R->ESP()+0xD4)->Scale(scale/100.0f);
+        R->Stack<int>(0x14,-1);
+    }
+    return 0;
+}
 // The unit drawer composites body, turret and barrel before this call.
 DEFINE_HOOK(0x4373B0, SF_UnitScaleBlit, 7) {
     auto caller=R->Stack<DWORD>(0);
     if(caller!=0x73B37C && caller!=0x73B3EA && caller!=0x73B44B) return 0;
     int scale=VisualScale::percent(R->ESI<TechnoClass*>()->UniqueID);
+    // All three blits have ten stack arguments. Beyond them and DrawObject's
+    // saved registers/locals is its caller: DrawAsVXL or the SHP compositor.
+    if(scale<100 && R->Stack<DWORD>(0x74)==0x73C1AB) return 0;
     if(scale!=100) {
         auto& blit=scaledBlit();
         auto dst=R->Stack<RectangleStruct*>(4);
@@ -421,9 +509,11 @@ DEFINE_HOOK(0x468275, SF_ProjectileSpriteScale, 6) {
     return 0;
 }
 DEFINE_HOOK(0x705E00, SF_SpriteDrawScale, 7) {
-    int scale=VisualScale::percent(R->ECX<TechnoClass*>()->UniqueID);
-    if(scale!=100) {
-        auto shape=VisualScale::framePair(R->Stack<SHPStruct*>(4),R->Stack<int>(8),scale);
+    auto unit=R->ECX<TechnoClass*>();
+    int scale=VisualScale::percent(unit->UniqueID);
+    bool cleanBody=ForceMove::screenLift(unit)>0 && unit->WhatAmI()==AbstractType::Infantry;
+    if(scale!=100 || cleanBody) {
+        auto shape=VisualScale::framePair(R->Stack<SHPStruct*>(4),R->Stack<int>(8),scale,cleanBody);
         if(shape) {R->Stack(4,shape);R->Stack<int>(8,0);}
     }
     return 0;

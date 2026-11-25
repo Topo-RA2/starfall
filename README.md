@@ -14,7 +14,7 @@ Starfall Lab（流火实验室，简称流火）是《红色警戒 2：尤里的
 
 ## 在 Windows 上编译
 
-可选行为扩展 **ActSp** 提供原版飞行子机的定点警戒、随行护卫和环绕巡航，独立构建为 `ActSp.dll`。[配置与示例](modules/ActSp/README.md)
+**ActSp 特殊行为子模块**随 `Starfall.dll` 一起构建，提供飞行子机巡逻、建筑地面守卫、高级驻军和可建造高台。[配置与示例](modules/ActSp/README.md)
 
 安装 Git 和 Visual Studio 2022（Community 或 Build Tools）。勾选“使用 C++ 的桌面开发”，包含 MSVC v143 x86/x64 工具和 Windows SDK。编译本身无需安装游戏。
 
@@ -40,6 +40,8 @@ cd starfall
 1. 把编译出的 `Starfall.dll` 放在游戏根目录，与 `gamemd.exe` 同级。可在游戏实际加载的 `rulesmd.ini` 中配置流火，也可自行创建 `Starfall.ini`。默认科研面板、图标和示例音效已打包在 DLL 中，无需另行复制。自定义 PNG 图标和 WAV 音效需按配置放置。
 2. 使用与所选扩展版本匹配的 Syringe 或 SyringeEx 启动游戏。与 Phobos 同时使用时，应让 Starfall 先于 Phobos 加载，以保持心控免疫生效。战场右上角的图标打开科研面板。
 3. 可选：将 [tests/maps](tests/maps) 中的地图放入客户端的 `Maps/Custom/`。在 `Starfall - Research Points Test` 选择 1 号出生位，地图触发器先给 90 点，在 `[CAHOSP]` 配置 `Starfall.ResearchPoints=10` 和 `Starfall.ResearchInterval=150` 后，科技医院运行 150 帧即可补齐到 100 点。
+
+从双 DLL 版本升级时，将旧 `ActSp.dll` 移出游戏目录，并删除启动配置中的 `-i=ActSp.dll`。原有特殊行为配置可直接使用。
 
 查字段、默认值和配置示例，可以访问 [在线规则手册](https://windswhisper.github.io/starfall/docs/manual.html)，也可以下载项目后用浏览器打开 [中文 HTML 查询手册](docs/manual.html)。面向 AI 和模组开发者的 [英文 Markdown 参考手册](docs/manual.md) 按当前实现整理了字段类型、默认值、适用范围、Lua 接口和配置示例。保持科研项目 ID 稳定可以让后续版本继续识别存档中的研究记录。
 

@@ -17,6 +17,7 @@
 | `src/BuildingSpawn.h` / `BuildingSpawn.cpp` | 生成建筑的类型约束、完整占地检查、确定性邻近空地搜索和原生创建；无独立持久状态 |
 | `src/BuildingTransform.h` / `BuildingTransform.cpp` | 完整占地一致性、建筑转换资格、原生对象创建与身份衔接；运行时回调重绑定缓存，已有按 ID 保存的被动和 Lua 状态继续使用 |
 | `src/CarrierConversion.h` / `CarrierConversion.cpp` | 移动母体内置变形时调整子机槽位。游戏的子机管理器持有母子关联和补充计时，并负责存读档 |
+| `modules/ActSp/` | 飞行子机、地面守卫、高级驻军、可建造高台，与主运行时共用游戏循环和存读档入口 |
 | `src/Starfall.cpp` | 场景初始化与重置、每帧调用顺序、被动事件队列与分发、跨模块协调 |
 | `src/PassiveTypes.h` / `PassiveRules.cpp` | 被动与动作定义、配置读取、持续状态和动作字段校验。验证脚本函数和拾取物 ID 时只读查询场景注册表 |
 | `src/BuildingResearch.cpp` | 建筑与全局科研点收入、工程师和间谍触发的免费科研、免费选项与领取。拥有按建筑类型索引的规则缓存 |
@@ -42,6 +43,7 @@
 - `Research::clearOfferCache()` 同时清除候选、生产价格和科技生产权限缓存，保持购买、读档及配置重读后的失效关系。
 - `Research::reset()` 清理科研运行状态和展示资源，停止旧场景声音；场景重置同时调用 `BuildingResearch::clearTypeCaches()` 清理建筑类型缓存。
 - 模块拆分不调整 `SF_Frame` 中各系统的调用顺序，也不改变存档标记、字段顺序或异常存档的事务提交方式。
+- 特殊行为每帧在主运行时之后执行。沿用 `ActSp.GuardPoints` 和 `ActSp.HighPlatforms` 存档流以读取旧版状态。
 
 ## 构建与检查
 

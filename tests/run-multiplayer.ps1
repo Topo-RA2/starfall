@@ -23,7 +23,6 @@ $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $game=(Resolve-Path -LiteralPath $GameDirectory).Path
 $package=(Resolve-Path -LiteralPath $PhobosPackageDirectory).Path
 & (Join-Path $PSScriptRoot 'build.ps1') -Case multiplayer -Rebuild:$Rebuild -CheckOnly:$SkipBuild
-if($ActSp) { & (Join-Path $PSScriptRoot 'build.ps1') -Case actsp -CheckOnly:$SkipBuild }
 $run=Join-Path $PSScriptRoot ('local/runs/multiplayer-'+[guid]::NewGuid().ToString('N'))
 $null=New-Item -ItemType Directory $run
 Write-Output "Multiplayer directory: $run"
@@ -66,9 +65,13 @@ try {
         $map=[regex]::Replace($map,'(?ms)^\[(?:Units|Infantry|Structures|Triggers|Tags|Events|Actions|TeamTypes|TaskForces|ScriptTypes)\]\r?\n.*?(?=^\[|\z)','')
         if($PlayerCount -eq 3) {$map=$map.Replace('MaxPlayer=2','MaxPlayer=3').Replace('1=48075', "1=48075`r`n2=80076")}
         if($ActSp) {
-            Copy-Item -LiteralPath (Join-Path $root 'build/ActSp.dll') -Destination $dir
-            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'game/actsp/rules_include.ini') -Destination $dir
+            $null=New-Item -ItemType File (Join-Path $dir 'actsp-network.flag')
+            $rules=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'game/actsp/rules_include.ini'))
+            [IO.File]::WriteAllText((Join-Path $dir 'rules_include.ini'),$rules.Replace('3=GrizzlyGround.rules.ini',"3=GrizzlyGround.rules.ini`r`n4=HighPlatform.rules.ini"))
+            [IO.File]::WriteAllText((Join-Path $dir 'art_include.ini'),"[#include]`r`n1=art_triumph.ini`r`n2=HighPlatform.art.ini`r`n")
             Copy-Item -LiteralPath (Join-Path $root 'examples/GrizzlyGroundOutpost/GrizzlyGround.rules.ini') -Destination $dir
+            Get-ChildItem -LiteralPath (Join-Path $root 'examples/HighPlatform') -File |
+                Where-Object Extension -in '.ini','.shp','.pal' | Copy-Item -Destination $dir
             $map+=[Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'game/actsp/Network.ini'))
         }
         [IO.File]::WriteAllText((Join-Path $dir 'spawnmap.ini'),$map)
@@ -92,14 +95,10 @@ try {
         [IO.File]::AppendAllText((Join-Path $dir 'RA2MD.ini'),"`r`n[Debug]`r`nSkipCreateAppMutex=yes`r`nMPDebug=yes`r`nMPDebug.Show=no`r`n")
         Copy-Item -LiteralPath $StandaloneSpawner -Destination (Join-Path $dir 'CnCNet-Spawner.dll')
         $modules=@('Starfall.dll','Ares.dll','CnCNet-Spawner.dll','Phobos.dll')
-        if($ActSp) {
-            & (Join-Path $PSScriptRoot 'check-hook-ranges.ps1') -Primary (Join-Path $dir 'ActSp.dll') -Extensions @($modules | ForEach-Object {Join-Path $dir $_})
-            $modules=@('Starfall.dll','ActSp.dll')+$modules[1..3]
-        }
         & (Join-Path $PSScriptRoot 'check-hook-ranges.ps1') -Primary (Join-Path $dir 'Starfall.dll') -Extensions @($modules | Select-Object -Skip 1 | ForEach-Object {Join-Path $dir $_})
     }
     $identities=@('Starfall.dll','Ares.dll','Phobos.dll','gamemd.exe','Syringe.exe','Starfall.ini','spawnmap.ini','Network.lua')
-    if($ActSp) {$identities+=@('ActSp.dll','rules_include.ini','GrizzlyGround.rules.ini')}
+    if($ActSp) {$identities+=@('actsp-network.flag','rules_include.ini','art_include.ini','GrizzlyGround.rules.ini','HighPlatform.rules.ini','HighPlatform.art.ini')}
     $identities+='CnCNet-Spawner.dll'
     $fingerprints=@(foreach($name in $identities) {
         $left=(Get-FileHash -LiteralPath (Join-Path $dirs[0] $name)).Hash
