@@ -118,7 +118,7 @@ void ActSp::tick() {
     HighPlatforms::tick();
     BetterGarrison::tick();
     DWORD frame=Unsorted::CurrentFrame;
-    if(frame%8) return;
+    if(frame%8 || !GroundGuards::mayHaveConfiguredType()) return;
     for(auto post:BuildingClass::Array) {
         if(!post) continue;
         if(auto config=GroundGuards::config(post)) GroundGuards::update(post,*config,frame);

@@ -8,6 +8,7 @@
 #include <InfantryClass.h>
 #include <SessionClass.h>
 #include <Unsorted.h>
+#include <unordered_map>
 
 using std::string;
 using std::vector;
@@ -26,32 +27,71 @@ using PassiveRules::invalidField;
 using PassiveRules::read;
 
 namespace {
-struct Income { int amount,interval; };
-std::map<BuildingTypeClass*,Income> incomeTypes;
-std::map<BuildingTypeClass*,RewardRule> rewardTypes;
+struct BuildingRules {
+    RewardRule reward;
+    int points=0,interval=0;
+    bool producesPoints() const {return points>0 && interval>0;}
+    bool needsTick() const {return producesPoints() || !reward.options.empty();}
+};
+std::unordered_map<BuildingTypeClass*,BuildingRules> buildingTypeRules;
+BuildingTypeClass* const* scannedTypes=nullptr;
+int scannedTypeCount=-1;
+bool typeRegistryComplete=false;
+bool hasConfiguredBuildingRules=false;
+
+BuildingRules readBuildingRules(BuildingTypeClass* type) {
+    BuildingRules rules;
+    rules.reward.options=split(read(type->ID,"Starfall.ResearchOptions"));
+    auto flag=[&](const char* key) {
+        auto value=read(type->ID,key,"no");
+        if(includes({"yes","true","1"},value)) return true;
+        if(!includes({"no","false","0"},value)) invalidField(type->ID,key);
+        return false;
+    };
+    rules.reward.engineer=flag("Starfall.ResearchOptions.AllowEngineerCapture");
+    rules.reward.spy=flag("Starfall.ResearchOptions.AllowSpyInfiltration");
+    rules.points=number(read(type->ID,"Starfall.ResearchPoints","0"));
+    rules.interval=number(read(type->ID,"Starfall.ResearchInterval","150"));
+    return rules;
 }
 
-void clearTypeCaches() {
-    incomeTypes.clear();
-    rewardTypes.clear();
-}
-const RewardRule& rewardRule(BuildingTypeClass* type) {
-    auto [it,fresh]=rewardTypes.try_emplace(type);
+const BuildingRules& rulesForType(BuildingTypeClass* type) {
+    auto [it,fresh]=buildingTypeRules.try_emplace(type);
     if(fresh) {
-        it->second.options=split(read(type->ID,"Starfall.ResearchOptions"));
-        auto flag=[&](const char* key) {
-            auto value=read(type->ID,key,"no");
-            if(includes({"yes","true","1"},value)) return true;
-            if(!includes({"no","false","0"},value)) invalidField(type->ID,key);
-            return false;
-        };
-        it->second.engineer=flag("Starfall.ResearchOptions.AllowEngineerCapture");
-        it->second.spy=flag("Starfall.ResearchOptions.AllowSpyInfiltration");
+        it->second=readBuildingRules(type);
+        hasConfiguredBuildingRules|=it->second.needsTick();
     }
     return it->second;
 }
-const vector<string>& rewardOptions(BuildingTypeClass* type) {
-    return rewardRule(type).options;
+
+bool needsBuildingScan() {
+    if(hasConfiguredBuildingRules) return true;
+    const auto& types=BuildingTypeClass::Array;
+    if(scannedTypes!=types.Items || scannedTypeCount!=types.Count) {
+        scannedTypes=types.Items;
+        scannedTypeCount=types.Count;
+        // Only a complete native type registry can prove no buildings use research.
+        typeRegistryComplete=false;
+        if(!types.Items || types.Count<=0) return true;
+        for(int i=0;i<types.Count;++i) {
+            auto type=types.Items[i];
+            if(!type || type->ArrayIndex!=i || rulesForType(type).needsTick()) return true;
+        }
+        typeRegistryComplete=true;
+    }
+    return !typeRegistryComplete;
+}
+}
+
+void clearTypeCaches() {
+    buildingTypeRules.clear();
+    scannedTypes=nullptr;
+    scannedTypeCount=-1;
+    typeRegistryComplete=false;
+    hasConfiguredBuildingRules=false;
+}
+const RewardRule& rewardRule(BuildingTypeClass* type) {
+    return rulesForType(type).reward;
 }
 void tickGlobalResearch() {
     auto& state=Research::globalIncome;
@@ -70,12 +110,12 @@ void tickGlobalResearch() {
         state.lastFrame=frame;
     }
 }
-void tickBuildings() {
-    if(!Research::isEnabled()) return;
-    tickGlobalResearch();
+namespace {
+void tickConfiguredBuildings() {
     for(auto* b:BuildingClass::Array) {
         if(!b || !b->Type) continue;
-        if(!rewardOptions(b->Type).empty() && b->Owner && alive(b)) {
+        const auto& rules=rulesForType(b->Type);
+        if(!rules.reward.options.empty() && b->Owner && alive(b)) {
             auto [reward,added]=Research::buildingRewards.try_emplace(b->UniqueID,Research::BuildingReward{b->Owner->ArrayIndex,-1,false});
             if(!added && reward->second.owner!=b->Owner->ArrayIndex) {
                 reward->second.owner=b->Owner->ArrayIndex;
@@ -83,11 +123,7 @@ void tickBuildings() {
                 reward->second.source=Research::BuildingRewardSource::None;
             }
         }
-        auto [it,fresh]=incomeTypes.try_emplace(b->Type);
-        if(fresh) it->second={number(read(b->Type->ID,"Starfall.ResearchPoints","0")),
-                              number(read(b->Type->ID,"Starfall.ResearchInterval","150"))};
-        auto income=it->second;
-        if(income.amount<=0 || income.interval<=0) continue;
+        if(!rules.producesPoints()) continue;
         auto id=b->UniqueID;
         if(!eligibleHouse(b->Owner) || !alive(b) || !b->IsOnMap || b->InLimbo ||
             b->CurrentMission==Mission::Selling || b->CurrentMission==Mission::Construction) {
@@ -98,10 +134,17 @@ void tickBuildings() {
         auto& timer=entry->second;
         if(timer.owner!=owner) timer={owner,0};
         if(b->IsUnderEMP() || !b->IsPowerOnline() || b->BeingWarpedOut) continue;
-        if(++timer.elapsed>=income.interval) {
-            Research::award(owner,income.amount); timer.elapsed=0;
+        if(++timer.elapsed>=rules.interval) {
+            Research::award(owner,rules.points); timer.elapsed=0;
         }
     }
+}
+}
+
+void tickBuildings() {
+    if(!Research::isEnabled()) return;
+    tickGlobalResearch();
+    if(needsBuildingScan()) tickConfiguredBuildings();
     const unsigned frame=static_cast<unsigned>(Unsorted::CurrentFrame);
     if(Research::allowAIResearch && frame%15==0) {
         for(auto* house:HouseClass::Array) {
@@ -120,8 +163,9 @@ void tickBuildings() {
 }
 void authorizeBuildingReward(InfantryClass* infantry,BuildingClass* building,Research::BuildingRewardSource source) {
     if(source==Research::BuildingRewardSource::None) return;
-    if(Research::isEnabled() && infantry && eligibleHouse(infantry->Owner) && building && building->Owner && building->Type && alive(building) && !rewardOptions(building->Type).empty()) {
+    if(Research::isEnabled() && infantry && eligibleHouse(infantry->Owner) && building && building->Owner && building->Type && alive(building)) {
         const auto& rule=rewardRule(building->Type);
+        if(rule.options.empty()) return;
         if(source==Research::BuildingRewardSource::Engineer && (!rule.engineer || !infantry->Type || !infantry->Type->Engineer || building->Owner!=infantry->Owner)) return;
         if(source==Research::BuildingRewardSource::Spy && !rule.spy) return;
         auto [it,added]=Research::buildingRewards.try_emplace(building->UniqueID,Research::BuildingReward{building->Owner->ArrayIndex,-1,false});

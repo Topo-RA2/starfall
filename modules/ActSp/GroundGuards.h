@@ -16,5 +16,6 @@ struct Config {
     int radius=5;
     int delay=300;
 };
+bool mayHaveConfiguredType();
 const Config* config(BuildingClass* building);
 }
