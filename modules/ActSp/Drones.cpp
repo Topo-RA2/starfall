@@ -1,5 +1,6 @@
 #include <HouseClass.h>
 #include <AircraftTrackerClass.h>
+#include <BuildingTypeClass.h>
 #include <BulletTypeClass.h>
 #include <CCINIClass.h>
 #include <MapClass.h>
@@ -9,6 +10,7 @@
 #include <array>
 #include <charconv>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include "GuardPoints.h"
@@ -25,6 +27,13 @@ struct Rules {
     GroundGuards::Config ground;
 };
 std::map<const TechnoTypeClass*,Rules> profiles;
+struct GroundGuardAvailability {
+    const CCINIClass* rules;
+    int buildingTypeCount;
+    int unitTypeCount;
+    bool configured;
+};
+std::optional<GroundGuardAvailability> groundGuardAvailability;
 
 std::string field(const char* type,const char* key,const char* fallback="") {
     char value[96]{};
@@ -196,7 +205,32 @@ bool patrol(AircraftClass* child,CellClass* point,int guardRange) {
 }
 }
 
-void GuardPoints::clearProfiles() { profiles.clear(); }
+void GuardPoints::clearProfiles() {
+    profiles.clear();
+    groundGuardAvailability.reset();
+}
+bool GroundGuards::mayHaveConfiguredType() {
+    const CCINIClass* rules=CCINIClass::INI_Rules;
+    const int buildingTypeCount=BuildingTypeClass::Array.Count;
+    const int unitTypeCount=UnitTypeClass::Array.Count;
+    // An unavailable registry cannot prove that the scenario has no guard rules.
+    if(!rules || buildingTypeCount<=0 || unitTypeCount<=0) return true;
+    if(groundGuardAvailability && groundGuardAvailability->rules==rules &&
+       groundGuardAvailability->buildingTypeCount==buildingTypeCount &&
+       groundGuardAvailability->unitTypeCount==unitTypeCount)
+        return groundGuardAvailability->configured;
+
+    bool configured=false;
+    for(auto type:BuildingTypeClass::Array) {
+        if(!type) return true;
+        if(readRules(type->ID).ground.type) {
+            configured=true;
+            break;
+        }
+    }
+    groundGuardAvailability=GroundGuardAvailability{rules,buildingTypeCount,unitTypeCount,configured};
+    return configured;
+}
 const GroundGuards::Config* GroundGuards::config(BuildingClass* building) {
     if(!CCINIClass::INI_Rules || building->SpawnManager) return nullptr;
     const auto& ground=rulesFor(building).ground;
