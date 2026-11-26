@@ -15,6 +15,9 @@ namespace VisualScale {
     // Attached animation ID -> owning unit ID; its scale is read at draw time.
     inline std::map<DWORD,DWORD> attachedAnims;
     int percent(DWORD id);
+#ifdef STARFALL_EMBEDDED
+    bool overridesAnimationFrame(ObjectClass* animation);
+#endif
     void setStateFactor(TechnoClass* unit,double factor);
     int placementPercent(BuildingTypeClass* type);
     void clearSprites();

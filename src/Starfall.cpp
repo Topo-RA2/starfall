@@ -1384,6 +1384,18 @@ DEFINE_HOOK(0x6E944B, SF_TeamGrantPassives, 6) {
 
 #include "runtime/Savegame.inc"
 
+#ifdef STARFALL_EMBEDDED
+// Called by the host at the ordinary AnimClass draw site. Preserve Starfall's
+// native SHP rendering for this frame when its scale or palette is in use.
+extern "C" bool __cdecl Starfall_OverridesAnimationFrame(const void* animation) noexcept {
+    if(!animation) return false;
+    auto anim=static_cast<AnimClass*>(const_cast<void*>(animation));
+    if(VisualScale::overridesAnimationFrame(anim)) return true;
+    auto owner=anim->OwnerObject;
+    return !passiveTints.empty() && anim->IsBuildingAnim && owner &&
+        owner->WhatAmI()==AbstractType::Building && visibleTint(static_cast<BuildingClass*>(owner));
+}
+#else
 SYRINGE_HANDSHAKE(info) {
     if(!info || info->cbSize<sizeof(SyringeHandshakeInfo)) return E_INVALIDARG;
     if(info->exeCRC!=0x54CC0A13) return E_FAIL;
@@ -1391,3 +1403,4 @@ SYRINGE_HANDSHAKE(info) {
         _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"Starfall Lab 0.39");
     return S_OK;
 }
+#endif

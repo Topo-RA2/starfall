@@ -60,7 +60,7 @@ static int projectileRaster(DWORD id) {
     auto it=projectiles.find(id);
     return it==projectiles.end()?100:rasterPercent(it->second);
 }
-static int animationPercent(ObjectClass* object) {
+static int animationPercent(ObjectClass* object, bool cacheOwner=true) {
     auto id=object->UniqueID;
     if(auto it=attachedAnims.find(id);it!=attachedAnims.end()) return percent(it->second);
     if(auto it=explosions.find(id);it!=explosions.end()) return rasterPercent(it->second);
@@ -72,13 +72,20 @@ static int animationPercent(ObjectClass* object) {
             // often without OwnerObject. Resolve once, also after a save load.
             for(auto building:BuildingClass::Array)
                 for(auto slot:building->Anims) if(slot==anim) {
-                    attachedAnims[id]=building->UniqueID;
+                    if(cacheOwner) attachedAnims[id]=building->UniqueID;
                     return percent(building->UniqueID);
                 }
         }
     } else if(object->WhatAmI()==AbstractType::Building) return percent(id);
     return 100;
 }
+#ifdef STARFALL_EMBEDDED
+bool overridesAnimationFrame(ObjectClass* animation) {
+    if(placementScale!=100) return true;
+    if(explosions.empty() && attachedAnims.empty() && state.empty() && base.empty()) return false;
+    return animationPercent(animation, false)!=100;
+}
+#endif
 namespace {
 using Bytes=std::vector<BYTE>;
 using FrameKey=std::tuple<SHPStruct*,int,int,int,int,bool>;
